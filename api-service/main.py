@@ -11,7 +11,15 @@ import asyncio
 
 # Database setup
 DATABASE_URL = "sqlite:///./app.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    DATABASE_URL, 
+    connect_args={"check_same_thread": False},
+    pool_size=20,
+    max_overflow=30,
+    pool_timeout=60,
+    pool_recycle=3600,
+    pool_pre_ping=True
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -97,8 +105,9 @@ class ConnectionManager:
         for connection in disconnected:
             self.disconnect(connection)
 
-    async def send_full_state(self, websocket: WebSocket, db: Session):
+    async def send_full_state(self, websocket: WebSocket):
         """Send complete current state to a newly connected client"""
+        db = SessionLocal()
         try:
             # Get current active scene
             active_scene = db.query(Scene).filter(Scene.is_active == True).first()
@@ -165,6 +174,8 @@ class ConnectionManager:
                 }),
                 websocket
             )
+        finally:
+            db.close()
 
 async def broadcast_error(error_code: str, message: str, context: Dict[str, Any] = None):
     """Broadcast error events to all connected clients"""
@@ -315,11 +326,10 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
-    db = SessionLocal()
     
     try:
         # Send full state snapshot on connection
-        await manager.send_full_state(websocket, db)
+        await manager.send_full_state(websocket)
         
         # Keep connection alive and handle incoming messages
         while True:
@@ -342,7 +352,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         
                     elif message.get("event") == "state_sync_request":
                         # Handle state sync request
-                        await manager.send_full_state(websocket, db)
+                        await manager.send_full_state(websocket)
                         
                     elif message.get("event") == "subscribe":
                         # Handle subscription management (future enhancement)
@@ -376,8 +386,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
         manager.disconnect(websocket)
-    finally:
-        db.close()
 
 # Initialize database with sample data
 def init_sample_data():
