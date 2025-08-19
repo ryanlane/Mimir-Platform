@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, JSON, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import datetime
 import json
+import asyncio
 
 # Database setup
 DATABASE_URL = "sqlite:///./app.db"
@@ -57,6 +58,54 @@ class DisplayStatus(Base):
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# WebSocket Connection Manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        try:
+            await websocket.send_text(message)
+        except:
+            self.disconnect(websocket)
+
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients"""
+        message_str = json.dumps(message)
+        disconnected = []
+        
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message_str)
+            except:
+                disconnected.append(connection)
+        
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.disconnect(connection)
+
+# Global connection manager instance
+manager = ConnectionManager()
+
+# WebSocket Event Models
+class WebSocketEvent(BaseModel):
+    event: str
+    data: Dict[str, Any]
+    timestamp: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
+
+async def broadcast_event(event_type: str, data: Dict[str, Any]):
+    """Helper function to broadcast events to all connected clients"""
+    event = WebSocketEvent(event=event_type, data=data)
+    await manager.broadcast(event.dict())
+
 # Dependency
 def get_db():
     db = SessionLocal()
@@ -103,6 +152,7 @@ class SceneResponse(BaseModel):
     channels: List[str]
     overlay: Optional[SceneOverlay] = None
     schedule: Optional[SceneSchedule] = None
+    isActive: Optional[bool] = False
 
 class SceneCreateRequest(BaseModel):
     name: str
@@ -158,6 +208,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# WebSocket endpoint for real-time updates
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        # Send initial connection confirmation
+        await manager.send_personal_message(
+            json.dumps({
+                "event": "connected",
+                "data": {"message": "WebSocket connection established"},
+                "timestamp": datetime.datetime.now().isoformat()
+            }),
+            websocket
+        )
+        
+        # Keep connection alive and handle incoming messages
+        while True:
+            # Wait for messages from client (for future client-to-server events)
+            data = await websocket.receive_text()
+            # Echo back for now (could implement client-to-server events here)
+            await manager.send_personal_message(f"Echo: {data}", websocket)
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 # Initialize database with sample data
 def init_sample_data():
@@ -361,7 +436,8 @@ async def list_scenes(
             name=s.name,
             channels=s.channels or [],
             overlay=s.overlay,
-            schedule=s.schedule
+            schedule=s.schedule,
+            isActive=s.is_active
         ) for s in scenes
     ]
     
@@ -393,6 +469,13 @@ async def create_scene(scene_data: SceneCreateRequest, db: Session = Depends(get
     db.commit()
     db.refresh(db_scene)
     
+    # Broadcast WebSocket event
+    await broadcast_event("scene_created", {
+        "sceneId": scene_id,
+        "sceneName": scene_data.name,
+        "channels": scene_data.channels
+    })
+    
     return {
         "id": scene_id,
         "name": scene_data.name,
@@ -410,7 +493,8 @@ async def get_scene(scene_id: str, db: Session = Depends(get_db)):
         name=scene.name,
         channels=scene.channels or [],
         overlay=scene.overlay,
-        schedule=scene.schedule
+        schedule=scene.schedule,
+        isActive=scene.is_active
     )
 
 @app.put("/api/scenes/{scene_id}")
@@ -430,6 +514,13 @@ async def update_scene(
     
     db.commit()
     
+    # Broadcast WebSocket event
+    await broadcast_event("scene_updated", {
+        "sceneId": scene_id,
+        "sceneName": scene_data.name,
+        "channels": scene_data.channels
+    })
+    
     return {
         "id": scene_id,
         "name": scene_data.name,
@@ -442,8 +533,15 @@ async def delete_scene(scene_id: str, db: Session = Depends(get_db)):
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
     
+    scene_name = scene.name
     db.delete(scene)
     db.commit()
+    
+    # Broadcast WebSocket event
+    await broadcast_event("scene_deleted", {
+        "sceneId": scene_id,
+        "sceneName": scene_name
+    })
     
     return {"message": f"Scene {scene_id} deleted successfully"}
 
@@ -460,6 +558,12 @@ async def activate_scene(scene_id: str, db: Session = Depends(get_db)):
     scene.is_active = True
     db.commit()
     
+    # Broadcast WebSocket event
+    await broadcast_event("scene_activated", {
+        "sceneId": scene_id,
+        "sceneName": scene.name
+    })
+    
     return {"message": f"Scene {scene_id} activated successfully"}
 
 @app.post("/api/scenes/{scene_id}/deactivate")
@@ -471,6 +575,12 @@ async def deactivate_scene(scene_id: str, db: Session = Depends(get_db)):
     scene.is_active = False
     db.commit()
     
+    # Broadcast WebSocket event
+    await broadcast_event("scene_deactivated", {
+        "sceneId": scene_id,
+        "sceneName": scene.name
+    })
+    
     return {"message": f"Scene {scene_id} deactivated successfully"}
 
 @app.post("/api/scenes/{scene_id}/display")
@@ -478,6 +588,12 @@ async def display_scene(scene_id: str, db: Session = Depends(get_db)):
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # Broadcast WebSocket event
+    await broadcast_event("scene_displayed", {
+        "sceneId": scene_id,
+        "sceneName": scene.name
+    })
     
     # Mock display functionality
     return {"message": f"Scene {scene_id} displayed successfully"}
@@ -534,6 +650,14 @@ async def get_display_status(db: Session = Depends(get_db)):
 @app.post("/api/display/clear")
 async def clear_display():
     return {"success": True}
+
+# WebSocket status endpoint
+@app.get("/api/websocket/status")
+async def websocket_status():
+    return {
+        "connected_clients": len(manager.active_connections),
+        "websocket_url": "ws://localhost:5000/ws"
+    }
 
 if __name__ == "__main__":
     import uvicorn
