@@ -11,8 +11,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
 
-  // Initialize WebSocket connection
-  useWebSocket();
+  // Initialize WebSocket connection with enhanced features
+  const { isConnected, currentState } = useWebSocket();
 
   // Listen to scene events for real-time activity updates
   useSceneEvents({
@@ -52,8 +52,39 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    // Only load data via API if we don't have WebSocket state yet
+    if (!currentState && isConnected) {
+      console.log('No WebSocket state available, loading via API');
+      loadDashboardData();
+    } else if (!isConnected) {
+      console.log('WebSocket not connected, loading via API as fallback');
+      loadDashboardData();
+    }
+  }, [currentState, isConnected]);
+
+  // Handle full state received on connection
+  useEffect(() => {
+    if (currentState?.displayStatus) {
+      console.log('🚀 Dashboard initializing from full state:', currentState.displayStatus);
+      setDisplayStatus(currentState.displayStatus);
+      setLoading(false); // Mark as loaded from WebSocket
+      
+      // Also update scenes if provided
+      if (currentState.allScenes) {
+        console.log('📋 Setting scenes from WebSocket:', currentState.allScenes);
+        setScenes(currentState.allScenes);
+      }
+      
+      // Update channels if provided
+      if (currentState.channels) {
+        console.log('🔌 Setting channels from WebSocket:', currentState.channels);
+        setChannels(currentState.channels);
+      }
+      
+      // Add activity log entry for connection
+      addToActivityLog('WebSocket connected with live state');
+    }
+  }, [currentState]);
 
   const loadDashboardData = async () => {
     try {
@@ -109,7 +140,10 @@ const Dashboard = () => {
     <div className="dashboard">
       <div className="dashboard-header">
         <h1>Dashboard</h1>
-        <p className="text-tertiary">Monitor and control your Mimir display platform</p>
+        <p className="text-tertiary">
+          Monitor and control your Mimir display platform
+          {isConnected && <span className="connection-status"> • Live updates enabled</span>}
+        </p>
       </div>
 
       <div className="dashboard-grid">

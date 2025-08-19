@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import wsService from '../services/websocket';
 
-// Hook for WebSocket connection management
+// Hook for WebSocket connection management with enhanced features
 export const useWebSocket = () => {
   const connectionInitialized = useRef(false);
+  const [isConnected, setIsConnected] = useState(wsService.isConnected);
+  const [currentState, setCurrentState] = useState(null);
 
   useEffect(() => {
     if (!connectionInitialized.current) {
@@ -11,13 +13,41 @@ export const useWebSocket = () => {
       connectionInitialized.current = true;
     }
 
+    // Enhanced event listeners
+    const handleConnection = (data) => {
+      setIsConnected(data.status === 'connected');
+    };
+
+    const handleFullState = (state) => {
+      console.log('🚀 Full state received:', state);
+      setCurrentState(state);
+    };
+
+    const handleServerError = (error) => {
+      console.error('🚨 Server error:', error);
+    };
+
+    const cleanupConnection = wsService.on('connection', handleConnection);
+    const cleanupFullState = wsService.on('full_state_received', handleFullState);
+    const cleanupError = wsService.on('server_error', handleServerError);
+
+    // Initialize state
+    setIsConnected(wsService.isConnected);
+
     return () => {
+      cleanupConnection();
+      cleanupFullState();
+      cleanupError();
       // Don't disconnect on unmount as this is a global service
-      // Only disconnect when the app is closing
     };
   }, []);
 
-  return wsService;
+  return {
+    wsService,
+    isConnected,
+    currentState,
+    requestStateSync: () => wsService.requestStateSync()
+  };
 };
 
 // Hook for listening to specific WebSocket events

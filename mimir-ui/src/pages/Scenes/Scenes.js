@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Play, Square, Monitor, Edit, Trash2 } from 'lucide-react';
+import { Plus, Play, Square, Monitor, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useWebSocket, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
@@ -14,25 +14,40 @@ const Scenes = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingScene, setEditingScene] = useState(null);
 
-  // Initialize WebSocket connection
-  useWebSocket();
+  // Initialize WebSocket connection with enhanced features
+  const { isConnected, currentState, requestStateSync } = useWebSocket();
 
   // Listen to scene events via WebSocket
   useSceneEvents({
     onActivated: (data) => {
       console.log('Scene activated via WebSocket:', data);
-      // Make sure we have the scene ID
+      // Use enhanced event data
       const sceneId = data?.sceneId || data?.scene_id || data?.id;
+      const sceneName = data?.sceneName || data?.scene_name;
       if (sceneId) {
-        setDisplayStatus(prev => prev ? { ...prev, currentScene: sceneId } : { currentScene: sceneId });
-        console.log('Set active scene to:', sceneId);
+        setDisplayStatus(prev => prev ? { 
+          ...prev, 
+          currentScene: sceneId,
+          currentSceneName: sceneName 
+        } : { 
+          currentScene: sceneId,
+          currentSceneName: sceneName 
+        });
+        console.log('Set active scene to:', sceneId, sceneName);
       } else {
         console.warn('Scene activated but no scene ID found in data:', data);
       }
     },
     onDeactivated: (data) => {
       console.log('Scene deactivated via WebSocket:', data);
-      setDisplayStatus(prev => prev ? { ...prev, currentScene: null } : { currentScene: null });
+      setDisplayStatus(prev => prev ? { 
+        ...prev, 
+        currentScene: null,
+        currentSceneName: null 
+      } : { 
+        currentScene: null,
+        currentSceneName: null 
+      });
       console.log('Set active scene to null');
     },
     onCreated: (data) => {
@@ -53,9 +68,37 @@ const Scenes = () => {
     }
   });
 
+  // Handle full state received on connection
   useEffect(() => {
-    loadData();
-  }, []);
+    if (currentState?.displayStatus) {
+      console.log('🚀 Initializing from full state:', currentState.displayStatus);
+      setDisplayStatus(currentState.displayStatus);
+      setLoading(false); // Mark as loaded from WebSocket
+      
+      // Also update scenes if provided
+      if (currentState.allScenes) {
+        console.log('📋 Setting scenes from WebSocket:', currentState.allScenes);
+        setScenes(currentState.allScenes);
+      }
+      
+      // Update channels if provided
+      if (currentState.channels) {
+        console.log('🔌 Setting channels from WebSocket:', currentState.channels);
+        setChannels(currentState.channels);
+      }
+    }
+  }, [currentState]);
+
+  useEffect(() => {
+    // Only load data via API if we don't have WebSocket state yet
+    if (!currentState && isConnected) {
+      console.log('No WebSocket state available, loading via API');
+      loadData();
+    } else if (!isConnected) {
+      console.log('WebSocket not connected, loading via API as fallback');
+      loadData();
+    }
+  }, [currentState, isConnected]);
 
   // Debug useEffect to monitor activeScene changes
   useEffect(() => {
@@ -149,7 +192,9 @@ const Scenes = () => {
     return (
       <div className="loading">
         <div className="loading-spinner"></div>
-        <span>Loading scenes...</span>
+        <span>
+          {isConnected ? 'Loading from WebSocket...' : 'Connecting and loading...'}
+        </span>
       </div>
     );
   }
@@ -159,12 +204,24 @@ const Scenes = () => {
       <div className="scenes-header">
         <div>
           <h1>Scenes</h1>
-          <p className="text-tertiary">Manage your display scenes and configurations</p>
+          <p className="text-tertiary">
+            Manage your display scenes and configurations
+            {isConnected && <span className="connection-status"> • Live updates enabled</span>}
+          </p>
         </div>
-        <button className="btn btn-primary" onClick={handleCreateScene}>
-          <Plus size={18} />
-          Create Scene
-        </button>
+        <div className="scenes-header-actions">
+          <button className="btn btn-secondary" onClick={() => {
+            console.log('🔄 Manual state sync requested');
+            requestStateSync();
+          }}>
+            <RefreshCw size={18} />
+            Sync State
+          </button>
+          <button className="btn btn-primary" onClick={handleCreateScene}>
+            <Plus size={18} />
+            Create Scene
+          </button>
+        </div>
       </div>
 
       {scenes.length > 0 ? (

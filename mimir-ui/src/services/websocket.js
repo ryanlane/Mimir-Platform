@@ -6,14 +6,25 @@ class WebSocketService {
     this.reconnectDelay = 1000;
     this.listeners = new Map();
     this.isConnected = false;
+    
+    // Enhanced features for new API
+    this.lastSequenceId = 0;
+    this.currentState = null;
+    this.heartbeatInterval = null;
+    this.heartbeatTimeout = null;
+    this.connectionId = null;
+    
+    // Auto-connect on initialization
+    this.connect();
   }
 
   connect(baseUrl = 'ws://172.31.79.107:5000') {
     try {
+      console.log('🔌 Connecting to enhanced WebSocket...');
       this.ws = new WebSocket(`${baseUrl}/ws`);
       
       this.ws.onopen = (event) => {
-        console.log('🟢 WebSocket connected');
+        console.log('🟢 Enhanced WebSocket connected');
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.emit('connection', { status: 'connected', event });
@@ -22,7 +33,15 @@ class WebSocketService {
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log('📨 WebSocket message received:', message);
+          console.log('📨 Enhanced WebSocket message received:', message);
+          
+          // Update sequence tracking
+          if (message.sequenceId) {
+            this.lastSequenceId = message.sequenceId;
+          }
+          
+          // Handle special events
+          this.handleSpecialEvents(message);
           
           // Emit the specific event type
           this.emit(message.event, message.data);
@@ -37,6 +56,7 @@ class WebSocketService {
       this.ws.onclose = (event) => {
         console.log('🔴 WebSocket disconnected:', event.code, event.reason);
         this.isConnected = false;
+        this.stopHeartbeat();
         this.emit('connection', { status: 'disconnected', event });
         
         // Attempt to reconnect if not a normal closure
@@ -54,6 +74,94 @@ class WebSocketService {
       console.error('❌ Failed to create WebSocket connection:', error);
       this.scheduleReconnect();
     }
+  }
+
+  // Handle special enhanced events
+  handleSpecialEvents(message) {
+    switch (message.event) {
+      case 'connection_established':
+        console.log('🚀 Connection established with full state');
+        this.connectionId = message.data.connectionId;
+        this.currentState = message.data.currentState;
+        this.emit('full_state_received', message.data.currentState);
+        break;
+        
+      case 'ping':
+        console.log('💓 Received ping, sending pong');
+        this.sendPong(message.data.timestamp);
+        break;
+        
+      case 'state_sync_response':
+        console.log('🔄 Received state sync response');
+        this.currentState = message.data.currentState;
+        this.emit('state_sync_received', message.data);
+        break;
+        
+      case 'error':
+        console.error('🚨 Server error:', message.data);
+        this.emit('server_error', message.data);
+        break;
+        
+      default:
+        // Regular events, no special handling needed
+        break;
+    }
+  }
+
+  // Send pong response to server ping
+  sendPong(timestamp) {
+    if (this.isConnected && this.ws) {
+      this.ws.send(JSON.stringify({
+        event: 'pong',
+        data: { timestamp }
+      }));
+    }
+  }
+
+  // Request state synchronization
+  requestStateSync() {
+    if (this.isConnected && this.ws) {
+      console.log('🔄 Requesting state sync from sequence:', this.lastSequenceId);
+      this.ws.send(JSON.stringify({
+        event: 'state_sync_request',
+        data: { lastKnownSequenceId: this.lastSequenceId }
+      }));
+    }
+  }
+
+  // Start heartbeat monitoring (client-side)
+  startHeartbeat() {
+    // Clear any existing heartbeat
+    this.stopHeartbeat();
+    
+    // Monitor for server pings - if we don't receive one in 60 seconds, something's wrong
+    this.heartbeatTimeout = setTimeout(() => {
+      console.warn('⚠️ No heartbeat received from server, connection may be stale');
+      this.emit('heartbeat_timeout');
+    }, 60000);
+  }
+
+  // Stop heartbeat monitoring
+  stopHeartbeat() {
+    if (this.heartbeatTimeout) {
+      clearTimeout(this.heartbeatTimeout);
+      this.heartbeatTimeout = null;
+    }
+  }
+
+  // Get current application state
+  getCurrentState() {
+    return this.currentState;
+  }
+
+  // Get last sequence ID
+  getLastSequenceId() {
+    return this.lastSequenceId;
+  }
+
+  // Get connection ID
+  getConnectionId() {
+    return this.connectionId;
   }
 
   scheduleReconnect() {
