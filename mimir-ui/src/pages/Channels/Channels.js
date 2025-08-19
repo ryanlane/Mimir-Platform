@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, RefreshCw, Image, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import ChannelSettings from './ChannelSettings';
 import './Channels.css';
 
@@ -10,8 +11,28 @@ const Channels = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState(null);
 
+  // WebSocket integration for real-time updates
+  const { isConnected } = useWebSocket();
+
   useEffect(() => {
     loadChannels();
+  }, []);
+
+  // Listen for channel-related events
+  useEffect(() => {
+    const handleChannelUpdate = (event) => {
+      if (event.data?.type === 'channel_status_update') {
+        const { channelId, status } = event.data;
+        setChannels(prev => prev.map(channel => 
+          channel.id === channelId 
+            ? { ...channel, status: { ...channel.status, ...status } }
+            : channel
+        ));
+      }
+    };
+
+    window.addEventListener('websocket-message', handleChannelUpdate);
+    return () => window.removeEventListener('websocket-message', handleChannelUpdate);
   }, []);
 
   const loadChannels = async () => {
@@ -75,7 +96,10 @@ const Channels = () => {
       <div className="channels-header">
         <div>
           <h1>Channels</h1>
-          <p className="text-tertiary">Manage channel configurations and settings</p>
+          <p className="text-tertiary">
+            Manage channel configurations and settings
+            {isConnected && <span className="connection-status"> • Live updates enabled</span>}
+          </p>
         </div>
         <button className="btn btn-primary" onClick={loadChannels}>
           <RefreshCw size={18} />

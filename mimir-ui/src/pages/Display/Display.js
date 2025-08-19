@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Monitor, RefreshCw, Square, Image } from 'lucide-react';
 import { api } from '../../services/api';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import './Display.css';
 
 const Display = () => {
   const [displayStatus, setDisplayStatus] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadDisplayStatus();
-  }, []);
+  // WebSocket integration for real-time display updates
+  const { isConnected } = useWebSocket();
 
-  const loadDisplayStatus = async () => {
+  const loadDisplayStatus = useCallback(async () => {
     try {
       const response = await api.getDisplayStatus();
       setDisplayStatus(response.data);
@@ -20,7 +20,27 @@ const Display = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadDisplayStatus();
+  }, [loadDisplayStatus]);
+
+  // Listen for display-related events
+  useEffect(() => {
+    const handleDisplayUpdate = (event) => {
+      if (event.data?.type === 'display_update') {
+        // Reload display status when display changes
+        loadDisplayStatus();
+      } else if (event.data?.type === 'scene_activated' || event.data?.type === 'scene_deactivated') {
+        // Reload display status when scenes change
+        loadDisplayStatus();
+      }
+    };
+
+    window.addEventListener('websocket-message', handleDisplayUpdate);
+    return () => window.removeEventListener('websocket-message', handleDisplayUpdate);
+  }, [loadDisplayStatus]);
 
   const handleClearDisplay = async () => {
     try {
@@ -49,7 +69,10 @@ const Display = () => {
       <div className="display-header">
         <div>
           <h1>Display Control</h1>
-          <p className="text-tertiary">Monitor and control your e-ink display hardware</p>
+          <p className="text-tertiary">
+            Monitor and control your e-ink display hardware
+            {isConnected && <span className="connection-status"> • Live updates enabled</span>}
+          </p>
         </div>
         <button className="btn btn-primary" onClick={loadDisplayStatus}>
           <RefreshCw size={18} />

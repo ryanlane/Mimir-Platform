@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Play, Square, Monitor, Edit, Trash2 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useWebSocket, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
 import './Scenes.css';
 
@@ -8,14 +9,58 @@ const Scenes = () => {
   const [scenes, setScenes] = useState([]);
   const [channels, setChannels] = useState([]);
   const [overlays, setOverlays] = useState([]);
-  const [activeScene, setActiveScene] = useState(null);
+  const [displayStatus, setDisplayStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingScene, setEditingScene] = useState(null);
 
+  // Initialize WebSocket connection
+  useWebSocket();
+
+  // Listen to scene events via WebSocket
+  useSceneEvents({
+    onActivated: (data) => {
+      console.log('Scene activated via WebSocket:', data);
+      // Make sure we have the scene ID
+      const sceneId = data?.sceneId || data?.scene_id || data?.id;
+      if (sceneId) {
+        setDisplayStatus(prev => prev ? { ...prev, currentScene: sceneId } : { currentScene: sceneId });
+        console.log('Set active scene to:', sceneId);
+      } else {
+        console.warn('Scene activated but no scene ID found in data:', data);
+      }
+    },
+    onDeactivated: (data) => {
+      console.log('Scene deactivated via WebSocket:', data);
+      setDisplayStatus(prev => prev ? { ...prev, currentScene: null } : { currentScene: null });
+      console.log('Set active scene to null');
+    },
+    onCreated: (data) => {
+      console.log('Scene created via WebSocket:', data);
+      loadData(); // Refresh the list
+    },
+    onUpdated: (data) => {
+      console.log('Scene updated via WebSocket:', data);
+      loadData(); // Refresh the list
+    },
+    onDeleted: (data) => {
+      console.log('Scene deleted via WebSocket:', data);
+      loadData(); // Refresh the list
+    },
+    onDisplayed: (data) => {
+      console.log('Scene displayed via WebSocket:', data);
+      // Could show a notification here
+    }
+  });
+
   useEffect(() => {
     loadData();
   }, []);
+
+  // Debug useEffect to monitor activeScene changes
+  useEffect(() => {
+    console.log('Active scene changed to:', displayStatus?.currentScene);
+  }, [displayStatus?.currentScene]);
 
   const loadData = async () => {
     try {
@@ -26,10 +71,15 @@ const Scenes = () => {
         api.getDisplayStatus()
       ]);
 
+      console.log('Display response:', displayResponse.data);
+      console.log('Current scene from API:', displayResponse.data.currentScene);
+
       setScenes(scenesResponse.data.scenes || []);
       setChannels(channelsResponse.data.channels || []);
       setOverlays(overlaysResponse.data.overlays || []);
-      setActiveScene(displayResponse.data.currentScene || null);
+      setDisplayStatus(displayResponse.data);
+      
+      console.log('Set displayStatus to:', displayResponse.data);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -59,20 +109,25 @@ const Scenes = () => {
   };
 
   const handleActivateScene = async (sceneId) => {
+    const activeScene = displayStatus?.currentScene;
+    console.log('handleActivateScene called with:', sceneId, 'current activeScene:', activeScene);
     try {
       if (activeScene === sceneId) {
         // If this scene is already active, deactivate it
+        console.log('Deactivating scene:', sceneId);
         await api.deactivateScene(sceneId);
-        setActiveScene(null);
+        // Don't call setState here - let WebSocket handle it
       } else {
         // Activate this scene (this will automatically deactivate any other active scene)
+        console.log('Activating scene:', sceneId);
         await api.activateScene(sceneId);
-        setActiveScene(sceneId);
+        // Don't call setState here - let WebSocket handle it
       }
-      // Refresh data to ensure consistency
-      await loadData();
+      // Don't call loadData() here - WebSocket events will handle the state updates
     } catch (error) {
       console.error('Error toggling scene activation:', error);
+      // On error, reload data to ensure consistency
+      await loadData();
     }
   };
 
@@ -115,7 +170,7 @@ const Scenes = () => {
       {scenes.length > 0 ? (
         <div className="scenes-grid">
           {scenes.map((scene) => {
-            const isActive = activeScene === scene.id;
+            const isActive = displayStatus?.currentScene === scene.id;
             return (
               <div key={scene.id} className={`scene-card ${isActive ? 'scene-card-active' : ''}`}>
                 <div className="scene-card-header">

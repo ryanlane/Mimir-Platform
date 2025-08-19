@@ -1,7 +1,7 @@
 # Mimir Platform API Documentation
 
-**Version:** 1.0  
-**Last Updated:** August 17, 2025  
+**Version:** 1.1  
+**Last Updated:** August 19, 2025  
 **Base URL:** `http://localhost:5000`  
 
 ---
@@ -14,9 +14,10 @@
 4. [Channel System](#channel-system)
 5. [Overlay System](#overlay-system)
 6. [Display Management](#display-management)
-7.  [Error Handling](#error-handling)
-8.  [Response Formats](#response-formats)
-9.  [Examples](#examples)
+7. [WebSocket Real-time Updates](#websocket-real-time-updates)
+8. [Error Handling](#error-handling)
+9. [Response Formats](#response-formats)
+10. [Examples](#examples)
 
 ---
 
@@ -507,6 +508,168 @@ Clear the display (remove current content).
 
 ---
 
+## WebSocket Real-time Updates
+
+The API provides WebSocket support for real-time updates across all connected clients. This enables live synchronization of scene changes, activations, and other events.
+
+### WebSocket Connection
+
+#### WS `/ws`
+Establish a WebSocket connection for real-time updates.
+
+**Connection URL:** `ws://localhost:5000/ws`
+
+**Connection Example (JavaScript):**
+```javascript
+const ws = new WebSocket('ws://localhost:5000/ws');
+
+ws.onopen = function(event) {
+    console.log('WebSocket connected');
+};
+
+ws.onmessage = function(event) {
+    const message = JSON.parse(event.data);
+    console.log('Received event:', message);
+    
+    // Handle different event types
+    switch(message.event) {
+        case 'scene_activated':
+            updateSceneUI(message.data.sceneId, true);
+            break;
+        case 'scene_deactivated':
+            updateSceneUI(message.data.sceneId, false);
+            break;
+        case 'scene_created':
+            addSceneToUI(message.data);
+            break;
+        // ... handle other events
+    }
+};
+```
+
+### Event Types
+
+All WebSocket messages follow this format:
+```json
+{
+  "event": "event_type",
+  "data": { /* event-specific data */ },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+#### Scene Events
+
+**`scene_activated`**
+```json
+{
+  "event": "scene_activated",
+  "data": {
+    "sceneId": "morning-gallery",
+    "sceneName": "Morning Gallery"
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+**`scene_deactivated`**
+```json
+{
+  "event": "scene_deactivated", 
+  "data": {
+    "sceneId": "morning-gallery",
+    "sceneName": "Morning Gallery"
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+**`scene_created`**
+```json
+{
+  "event": "scene_created",
+  "data": {
+    "sceneId": "new-scene",
+    "sceneName": "New Scene",
+    "channels": ["weather_channel"]
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+**`scene_updated`**
+```json
+{
+  "event": "scene_updated",
+  "data": {
+    "sceneId": "morning-gallery",
+    "sceneName": "Updated Morning Gallery",
+    "channels": ["weather_channel", "photos"]
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+**`scene_deleted`**
+```json
+{
+  "event": "scene_deleted",
+  "data": {
+    "sceneId": "old-scene",
+    "sceneName": "Old Scene"
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+**`scene_displayed`**
+```json
+{
+  "event": "scene_displayed",
+  "data": {
+    "sceneId": "morning-gallery",
+    "sceneName": "Morning Gallery"
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+#### Connection Events
+
+**`connected`**
+Sent immediately when WebSocket connection is established.
+```json
+{
+  "event": "connected",
+  "data": {
+    "message": "WebSocket connection established"
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z"
+}
+```
+
+### WebSocket Status
+
+#### GET `/api/websocket/status`
+Get current WebSocket connection information.
+
+**Response:**
+```json
+{
+  "connected_clients": 3,
+  "websocket_url": "ws://localhost:5000/ws"
+}
+```
+
+### Benefits
+
+- **Live Updates:** Changes are instantly reflected across all browser tabs
+- **Multi-User Support:** Multiple users see changes in real-time
+- **Better UX:** No need to refresh or poll for updates
+- **Event-Driven:** React to specific events rather than full data refreshes
+
+---
+
 ## Error Handling
 
 ### HTTP Status Codes
@@ -553,14 +716,18 @@ Clear the display (remove current content).
   "id": "scene-identifier",
   "name": "Human Readable Name",
   "channels": ["channel_id"],
-  "image_fit": "cover",
-  "overlays": ["overlay_id"],
+  "overlay": {
+    "overlays": ["overlay_id"],
+    "position": ["top", "right"],
+    "background": true,
+    "backgroundColor": {"red": 0, "green": 0, "blue": 0, "alpha": 10}
+  },
   "schedule": {
     "days": ["mon", "tue", "wed"],
     "start": "18:00",
     "end": "22:00"
   },
-  "theme": null
+  "isActive": false
 }
 ```
 
@@ -642,6 +809,8 @@ curl -X POST http://localhost:5000/api/display/clear
 - Channel management with configuration schemas
 - Overlay system endpoints
 - Display management endpoints
+- **WebSocket real-time updates** for live scene synchronization
+- Scene activation state tracking (`isActive` field)
 - Pagination support for all list endpoints
 - React-friendly camelCase property naming
 - CORS support for frontend integration

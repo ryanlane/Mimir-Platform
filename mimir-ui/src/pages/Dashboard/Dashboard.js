@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Layers, Settings, Activity } from 'lucide-react';
 import { api } from '../../services/api';
+import { useWebSocket, useSceneEvents } from '../../hooks/useWebSocket';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -8,6 +9,47 @@ const Dashboard = () => {
   const [scenes, setScenes] = useState([]);
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activityLog, setActivityLog] = useState([]);
+
+  // Initialize WebSocket connection
+  useWebSocket();
+
+  // Listen to scene events for real-time activity updates
+  useSceneEvents({
+    onActivated: (data) => {
+      console.log('Scene activated via WebSocket:', data);
+      // Update display status and add to activity log
+      setDisplayStatus(prev => prev ? { ...prev, currentScene: data.sceneId } : null);
+      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" activated`);
+    },
+    onDeactivated: (data) => {
+      console.log('Scene deactivated via WebSocket:', data);
+      setDisplayStatus(prev => prev ? { ...prev, currentScene: null } : null);
+      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" deactivated`);
+    },
+    onDisplayed: (data) => {
+      console.log('Scene displayed via WebSocket:', data);
+      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" displayed`);
+    },
+    onCreated: (data) => {
+      console.log('Scene created via WebSocket:', data);
+      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" created`);
+      loadDashboardData(); // Refresh scenes list
+    },
+    onDeleted: (data) => {
+      console.log('Scene deleted via WebSocket:', data);
+      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" deleted`);
+      loadDashboardData(); // Refresh scenes list
+    }
+  });
+
+  const addToActivityLog = (message) => {
+    const newActivity = {
+      timestamp: new Date().toLocaleTimeString(),
+      message
+    };
+    setActivityLog(prev => [newActivity, ...prev.slice(0, 9)]); // Keep last 10 items
+  };
 
   useEffect(() => {
     loadDashboardData();
@@ -204,6 +246,14 @@ const Dashboard = () => {
                 </span>
                 <span>Dashboard loaded</span>
               </div>
+              {activityLog.map((activity, index) => (
+                <div key={index} className="activity-item">
+                  <span className="activity-time">
+                    {activity.timestamp}
+                  </span>
+                  <span>{activity.message}</span>
+                </div>
+              ))}
               {displayStatus?.currentScene && (
                 <div className="activity-item">
                   <span className="activity-time">
