@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Layers, Settings, Activity } from 'lucide-react';
 import { api } from '../../services/api';
-import { useWebSocket, useSceneEvents } from '../../hooks/useWebSocket';
+import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -11,20 +11,33 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
 
-  // Initialize WebSocket connection with enhanced features
-  const { isConnected, currentState } = useWebSocket();
+  // Initialize WebSocket connection with automatic state sync on mount
+  const { isConnected, currentState } = useEnsureFreshState();
 
   // Listen to scene events for real-time activity updates
   useSceneEvents({
     onActivated: (data) => {
-      console.log('Scene activated via WebSocket:', data);
+      console.log('🟢 Dashboard: Scene activated via WebSocket:', data);
       // Update display status and add to activity log
-      setDisplayStatus(prev => prev ? { ...prev, currentScene: data.sceneId } : null);
-      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" activated`);
+      const sceneId = data?.sceneId || data?.scene_id || data?.id;
+      const sceneName = data?.sceneName || data?.scene_name;
+      console.log('🔄 Dashboard: Current display status before update:', displayStatus);
+      console.log('🔄 Dashboard: Updating with scene ID:', sceneId);
+      setDisplayStatus(prev => {
+        const newStatus = prev ? { ...prev, currentScene: sceneId, currentSceneName: sceneName } : { currentScene: sceneId, currentSceneName: sceneName };
+        console.log('🔄 Dashboard: New display status after activation:', newStatus);
+        return newStatus;
+      });
+      addToActivityLog(`Scene "${sceneName || sceneId}" activated`);
     },
     onDeactivated: (data) => {
-      console.log('Scene deactivated via WebSocket:', data);
-      setDisplayStatus(prev => prev ? { ...prev, currentScene: null } : null);
+      console.log('🔴 Dashboard: Scene deactivated via WebSocket:', data);
+      console.log('🔄 Dashboard: Current display status before deactivation:', displayStatus);
+      setDisplayStatus(prev => {
+        const newStatus = prev ? { ...prev, currentScene: null, currentSceneName: null } : null;
+        console.log('🔄 Dashboard: New display status after deactivation:', newStatus);
+        return newStatus;
+      });
       addToActivityLog(`Scene "${data.sceneName || data.sceneId}" deactivated`);
     },
     onDisplayed: (data) => {
@@ -52,14 +65,20 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
-    // Only load data via API if we don't have WebSocket state yet
-    if (!currentState && isConnected) {
-      console.log('No WebSocket state available, loading via API');
-      loadDashboardData();
-    } else if (!isConnected) {
-      console.log('WebSocket not connected, loading via API as fallback');
-      loadDashboardData();
-    }
+    // Wait a bit for WebSocket to potentially connect and provide state
+    const timer = setTimeout(() => {
+      if (!currentState && !isConnected) {
+        console.log('⏰ WebSocket not connected after timeout, loading via API as fallback');
+        loadDashboardData();
+      } else if (!currentState && isConnected) {
+        console.log('⏰ WebSocket connected but no state received, loading via API');
+        loadDashboardData();
+      } else {
+        console.log('✅ Using WebSocket state, skipping API load');
+      }
+    }, 1000); // Give WebSocket 1 second to connect and send state
+
+    return () => clearTimeout(timer);
   }, [currentState, isConnected]);
 
   // Handle full state received on connection
@@ -107,21 +126,31 @@ const Dashboard = () => {
   const handleActivateScene = async (sceneId) => {
     try {
       const isCurrentlyActive = displayStatus?.currentScene === sceneId;
+      console.log(`🎬 Dashboard: handleActivateScene called for ${sceneId}, currently active: ${isCurrentlyActive}`);
+      console.log('🎬 Dashboard: Current displayStatus:', displayStatus);
+      
       if (isCurrentlyActive) {
+        console.log('🔴 Dashboard: Deactivating scene via API');
         await api.deactivateScene(sceneId);
       } else {
+        console.log('🟢 Dashboard: Activating scene via API');
         await api.activateScene(sceneId);
       }
-      await loadDashboardData(); // Refresh all data to update the current scene
+      
+      // Don't reload data immediately - let WebSocket handle the state update
+      console.log('🔄 Dashboard: Scene action completed, waiting for WebSocket update');
     } catch (error) {
       console.error('Error toggling scene activation:', error);
+      // Fallback to reload on error
+      await loadDashboardData();
     }
   };
 
   const handleDisplayScene = async (sceneId) => {
     try {
+      console.log(`📺 Dashboard: Displaying scene ${sceneId}`);
       await api.displayScene(sceneId);
-      await loadDashboardData(); // Refresh data
+      console.log('📺 Dashboard: Display action completed');
     } catch (error) {
       console.error('Error displaying scene:', error);
     }
@@ -196,6 +225,7 @@ const Dashboard = () => {
               <div className="scenes-list">
                 {scenes.map((scene) => {
                   const isActive = displayStatus?.currentScene === scene.id;
+                  console.log(`Dashboard Scene ${scene.id}: isActive=${isActive}, displayStatus.currentScene=${displayStatus?.currentScene}`);
                   return (
                     <div key={scene.id} className={`scene-item ${isActive ? 'scene-item-active' : ''}`}>
                       <div className="scene-info">

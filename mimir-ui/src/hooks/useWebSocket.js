@@ -4,11 +4,13 @@ import wsService from '../services/websocket';
 // Hook for WebSocket connection management with enhanced features
 export const useWebSocket = () => {
   const connectionInitialized = useRef(false);
+  const stateSyncRequested = useRef(false);
   const [isConnected, setIsConnected] = useState(wsService.isConnected);
   const [currentState, setCurrentState] = useState(null);
 
   useEffect(() => {
     if (!connectionInitialized.current) {
+      // Start connection
       wsService.connect();
       connectionInitialized.current = true;
     }
@@ -16,11 +18,21 @@ export const useWebSocket = () => {
     // Enhanced event listeners
     const handleConnection = (data) => {
       setIsConnected(data.status === 'connected');
+      
+      // Auto-request state sync when connection is established and we don't have current state
+      if (data.status === 'connected' && !currentState && !stateSyncRequested.current) {
+        console.log('🔄 Connection established, requesting state sync');
+        setTimeout(() => {
+          wsService.requestStateSync();
+          stateSyncRequested.current = true;
+        }, 100); // Small delay to ensure connection is fully established
+      }
     };
 
     const handleFullState = (state) => {
       console.log('🚀 Full state received:', state);
       setCurrentState(state);
+      stateSyncRequested.current = false; // Reset flag so we can request again if needed
     };
 
     const handleServerError = (error) => {
@@ -33,6 +45,15 @@ export const useWebSocket = () => {
 
     // Initialize state
     setIsConnected(wsService.isConnected);
+    
+    // If already connected but no state, request sync
+    if (wsService.isConnected && !currentState && !stateSyncRequested.current) {
+      console.log('🔄 Already connected but no state, requesting sync');
+      setTimeout(() => {
+        wsService.requestStateSync();
+        stateSyncRequested.current = true;
+      }, 100);
+    }
 
     return () => {
       cleanupConnection();
@@ -40,14 +61,35 @@ export const useWebSocket = () => {
       cleanupError();
       // Don't disconnect on unmount as this is a global service
     };
-  }, []);
+  }, [currentState]); // Add currentState as dependency so it can trigger sync when needed
 
   return {
     wsService,
     isConnected,
     currentState,
-    requestStateSync: () => wsService.requestStateSync()
+    requestStateSync: () => {
+      console.log('🔄 Manual state sync requested');
+      wsService.requestStateSync();
+      stateSyncRequested.current = true;
+    }
   };
+};
+
+// Hook for ensuring fresh state on component mount
+export const useEnsureFreshState = () => {
+  const { isConnected, currentState, requestStateSync } = useWebSocket();
+  const syncAttempted = useRef(false);
+
+  useEffect(() => {
+    // Only request sync once per component mount, and only if we're connected but have no state
+    if (isConnected && !currentState && !syncAttempted.current) {
+      console.log('🔄 Component mounted without state, requesting sync');
+      requestStateSync();
+      syncAttempted.current = true;
+    }
+  }, [isConnected, currentState, requestStateSync]);
+
+  return { isConnected, currentState, requestStateSync };
 };
 
 // Hook for listening to specific WebSocket events

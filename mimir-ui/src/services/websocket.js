@@ -13,12 +13,15 @@ class WebSocketService {
     this.heartbeatInterval = null;
     this.heartbeatTimeout = null;
     this.connectionId = null;
-    
-    // Auto-connect on initialization
-    this.connect();
   }
 
   connect(baseUrl = 'ws://172.31.79.107:5000') {
+    // Prevent multiple connections
+    if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+      console.log('🔄 WebSocket already connected or connecting, skipping...');
+      return;
+    }
+
     try {
       console.log('🔌 Connecting to enhanced WebSocket...');
       this.ws = new WebSocket(`${baseUrl}/ws`);
@@ -32,6 +35,12 @@ class WebSocketService {
 
       this.ws.onmessage = (event) => {
         try {
+          // Handle potential echo/non-JSON responses
+          if (typeof event.data === 'string' && event.data.startsWith('Echo:')) {
+            console.log('🔇 Ignoring server echo:', event.data);
+            return;
+          }
+
           const message = JSON.parse(event.data);
           console.log('📨 Enhanced WebSocket message received:', message);
           
@@ -49,7 +58,7 @@ class WebSocketService {
           // Also emit a general 'message' event
           this.emit('message', message);
         } catch (error) {
-          console.error('❌ Error parsing WebSocket message:', error);
+          console.error('❌ Error parsing WebSocket message:', error, 'Raw data:', event.data);
         }
       };
 
@@ -259,3 +268,4 @@ class WebSocketService {
 const wsService = new WebSocketService();
 
 export default wsService;
+export { wsService };
