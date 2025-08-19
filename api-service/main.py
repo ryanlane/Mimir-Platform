@@ -62,6 +62,7 @@ Base.metadata.create_all(bind=engine)
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.sequence_id = 0
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -70,6 +71,10 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+
+    def get_next_sequence_id(self) -> int:
+        self.sequence_id += 1
+        return self.sequence_id
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         try:
@@ -92,6 +97,87 @@ class ConnectionManager:
         for connection in disconnected:
             self.disconnect(connection)
 
+    async def send_full_state(self, websocket: WebSocket, db: Session):
+        """Send complete current state to a newly connected client"""
+        try:
+            # Get current active scene
+            active_scene = db.query(Scene).filter(Scene.is_active == True).first()
+            
+            # Get all scenes
+            all_scenes = db.query(Scene).all()
+            
+            # Get all channels
+            channels = db.query(Channel).all()
+            
+            # Get display status
+            display_status = db.query(DisplayStatus).first()
+            
+            full_state = {
+                "event": "connection_established",
+                "data": {
+                    "connectionId": f"conn_{datetime.datetime.now().timestamp()}",
+                    "currentState": {
+                        "displayStatus": {
+                            "currentScene": active_scene.id if active_scene else None,
+                            "currentSceneName": active_scene.name if active_scene else None,
+                            "hardware": display_status.hardware if display_status else {
+                                "type": "mock", "resolution": [800, 600], "available": True
+                            },
+                            "resolution": display_status.resolution if display_status else [800, 600]
+                        },
+                        "activeScenes": [s.id for s in all_scenes if s.is_active],
+                        "allScenes": [
+                            {
+                                "id": s.id,
+                                "name": s.name,
+                                "isActive": s.is_active,
+                                "channels": s.channels or []
+                            } for s in all_scenes
+                        ],
+                        "channels": [
+                            {
+                                "id": c.id,
+                                "name": c.name,
+                                "status": c.status or {"lastUpdate": None, "lastError": None, "usingFallback": False}
+                            } for c in channels
+                        ]
+                    },
+                    "serverInfo": {
+                        "version": "1.0",
+                        "connectedClients": len(self.active_connections),
+                        "serverTime": datetime.datetime.now().isoformat()
+                    }
+                },
+                "timestamp": datetime.datetime.now().isoformat(),
+                "sequenceId": self.get_next_sequence_id()
+            }
+            
+            await self.send_personal_message(json.dumps(full_state), websocket)
+            
+        except Exception as e:
+            print(f"Error sending full state: {e}")
+            # Send basic connection confirmation as fallback
+            await self.send_personal_message(
+                json.dumps({
+                    "event": "connected",
+                    "data": {"message": "WebSocket connection established"},
+                    "timestamp": datetime.datetime.now().isoformat()
+                }),
+                websocket
+            )
+
+async def broadcast_error(error_code: str, message: str, context: Dict[str, Any] = None):
+    """Broadcast error events to all connected clients"""
+    await broadcast_event("error", {
+        "code": error_code,
+        "message": message,
+        "context": context or {},
+        "recovery": {
+            "action": "check_logs",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    })
+
 # Global connection manager instance
 manager = ConnectionManager()
 
@@ -101,10 +187,26 @@ class WebSocketEvent(BaseModel):
     data: Dict[str, Any]
     timestamp: str = Field(default_factory=lambda: datetime.datetime.now().isoformat())
 
-async def broadcast_event(event_type: str, data: Dict[str, Any]):
-    """Helper function to broadcast events to all connected clients"""
-    event = WebSocketEvent(event=event_type, data=data)
-    await manager.broadcast(event.dict())
+async def broadcast_event(event_type: str, data: Dict[str, Any], previous_state: Optional[Dict[str, Any]] = None):
+    """Helper function to broadcast enhanced events to all connected clients"""
+    enhanced_data = {
+        **data,
+        "triggeredBy": {
+            "source": "api",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    }
+    
+    if previous_state:
+        enhanced_data["previousState"] = previous_state
+    
+    event = {
+        "event": event_type,
+        "data": enhanced_data,
+        "timestamp": datetime.datetime.now().isoformat(),
+        "sequenceId": manager.get_next_sequence_id()
+    }
+    await manager.broadcast(event)
 
 # Dependency
 def get_db():
@@ -213,26 +315,69 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    db = SessionLocal()
+    
     try:
-        # Send initial connection confirmation
-        await manager.send_personal_message(
-            json.dumps({
-                "event": "connected",
-                "data": {"message": "WebSocket connection established"},
-                "timestamp": datetime.datetime.now().isoformat()
-            }),
-            websocket
-        )
+        # Send full state snapshot on connection
+        await manager.send_full_state(websocket, db)
         
         # Keep connection alive and handle incoming messages
         while True:
-            # Wait for messages from client (for future client-to-server events)
-            data = await websocket.receive_text()
-            # Echo back for now (could implement client-to-server events here)
-            await manager.send_personal_message(f"Echo: {data}", websocket)
-            
+            try:
+                # Wait for messages from client with timeout for heartbeat
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                
+                try:
+                    message = json.loads(data)
+                    
+                    # Handle different client message types
+                    if message.get("event") == "ping":
+                        # Respond to ping with pong
+                        pong_response = {
+                            "event": "pong",
+                            "data": {"timestamp": datetime.datetime.now().isoformat()},
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                        await manager.send_personal_message(json.dumps(pong_response), websocket)
+                        
+                    elif message.get("event") == "state_sync_request":
+                        # Handle state sync request
+                        await manager.send_full_state(websocket, db)
+                        
+                    elif message.get("event") == "subscribe":
+                        # Handle subscription management (future enhancement)
+                        await manager.send_personal_message(
+                            json.dumps({
+                                "event": "subscription_confirmed",
+                                "data": {"events": message.get("data", {}).get("events", [])},
+                                "timestamp": datetime.datetime.now().isoformat()
+                            }),
+                            websocket
+                        )
+                    else:
+                        # Echo back unknown messages for debugging
+                        await manager.send_personal_message(f"Echo: {data}", websocket)
+                        
+                except json.JSONDecodeError:
+                    # Handle non-JSON messages
+                    await manager.send_personal_message(f"Echo: {data}", websocket)
+                    
+            except asyncio.TimeoutError:
+                # Send heartbeat ping if no message received
+                ping_message = {
+                    "event": "ping",
+                    "data": {"timestamp": datetime.datetime.now().isoformat()},
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+                await manager.send_personal_message(json.dumps(ping_message), websocket)
+                
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        manager.disconnect(websocket)
+    finally:
+        db.close()
 
 # Initialize database with sample data
 def init_sample_data():
@@ -399,7 +544,27 @@ async def update_channel_settings(
     
     # Update settings
     channel.current_settings = settings
+    
+    # Update status to reflect settings change
+    current_status = channel.status or {}
+    current_status["lastSettingsUpdate"] = datetime.datetime.now().isoformat()
+    channel.status = current_status
+    
     db.commit()
+    
+    # Broadcast channel status update
+    await broadcast_event("channel_status_update", {
+        "channelId": channel_id,
+        "channelName": channel.name,
+        "status": {
+            "active": True,
+            "lastUpdate": current_status.get("lastUpdate"),
+            "lastSettingsUpdate": current_status["lastSettingsUpdate"],
+            "usingFallback": current_status.get("usingFallback", False),
+            "lastError": current_status.get("lastError")
+        },
+        "settingsUpdated": True
+    })
     
     return {"message": "Settings updated successfully"}
 
@@ -412,6 +577,27 @@ async def request_channel_image(
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Update channel status
+    current_status = channel.status or {}
+    current_status["lastImageRequest"] = datetime.datetime.now().isoformat()
+    current_status["lastError"] = None
+    channel.status = current_status
+    db.commit()
+    
+    # Broadcast channel status update
+    await broadcast_event("channel_status_update", {
+        "channelId": channel_id,
+        "channelName": channel.name,
+        "status": {
+            "active": True,
+            "lastUpdate": current_status["lastImageRequest"],
+            "imageGenerated": True,
+            "usingFallback": False,
+            "lastError": None
+        },
+        "imageGenerated": True
+    })
     
     # Mock image generation
     return {
@@ -551,6 +737,9 @@ async def activate_scene(scene_id: str, db: Session = Depends(get_db)):
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
     
+    # Get previous active scene for context
+    previous_scene = db.query(Scene).filter(Scene.is_active == True).first()
+    
     # Deactivate all other scenes
     db.query(Scene).update({"is_active": False})
     
@@ -558,10 +747,22 @@ async def activate_scene(scene_id: str, db: Session = Depends(get_db)):
     scene.is_active = True
     db.commit()
     
-    # Broadcast WebSocket event
+    # Get display status for enhanced event data
+    display_status = db.query(DisplayStatus).first()
+    
+    # Broadcast enhanced WebSocket event
     await broadcast_event("scene_activated", {
         "sceneId": scene_id,
-        "sceneName": scene.name
+        "sceneName": scene.name,
+        "channels": scene.channels or [],
+        "previousScene": previous_scene.id if previous_scene else None,
+        "previousSceneName": previous_scene.name if previous_scene else None,
+        "displayUpdate": {
+            "resolution": display_status.resolution if display_status else [800, 600],
+            "hardware": display_status.hardware if display_status else {
+                "type": "mock", "available": True
+            }
+        }
     })
     
     return {"message": f"Scene {scene_id} activated successfully"}
@@ -575,10 +776,15 @@ async def deactivate_scene(scene_id: str, db: Session = Depends(get_db)):
     scene.is_active = False
     db.commit()
     
-    # Broadcast WebSocket event
+    # Broadcast enhanced WebSocket event
     await broadcast_event("scene_deactivated", {
         "sceneId": scene_id,
-        "sceneName": scene.name
+        "sceneName": scene.name,
+        "channels": scene.channels or [],
+        "displayUpdate": {
+            "currentScene": None,
+            "currentSceneName": None
+        }
     })
     
     return {"message": f"Scene {scene_id} deactivated successfully"}
@@ -649,6 +855,20 @@ async def get_display_status(db: Session = Depends(get_db)):
 
 @app.post("/api/display/clear")
 async def clear_display():
+    # Broadcast display update event
+    await broadcast_event("display_hardware_update", {
+        "hardware": {
+            "type": "mock",
+            "available": True,
+            "resolution": [800, 600]
+        },
+        "action": "display_cleared",
+        "impact": {
+            "currentScene": None,
+            "displayActive": False
+        }
+    })
+    
     return {"success": True}
 
 # WebSocket status endpoint
@@ -656,7 +876,15 @@ async def clear_display():
 async def websocket_status():
     return {
         "connected_clients": len(manager.active_connections),
-        "websocket_url": "ws://localhost:5000/ws"
+        "websocket_url": "ws://localhost:5000/ws",
+        "current_sequence_id": manager.sequence_id,
+        "features": {
+            "full_state_on_connect": True,
+            "heartbeat_support": True,
+            "enhanced_events": True,
+            "error_broadcasting": True,
+            "channel_status_updates": True
+        }
     }
 
 if __name__ == "__main__":

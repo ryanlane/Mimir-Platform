@@ -515,13 +515,22 @@ The API provides WebSocket support for real-time updates across all connected cl
 ### WebSocket Connection
 
 #### WS `/ws`
-Establish a WebSocket connection for real-time updates.
+Establish a WebSocket connection for real-time updates with enhanced features.
 
 **Connection URL:** `ws://localhost:5000/ws`
+
+**Enhanced Features:**
+- **Full State Broadcast** - Complete application state sent on connection
+- **Sequence IDs** - Message ordering and duplicate detection
+- **Heartbeat/Ping-Pong** - Connection health monitoring
+- **Enhanced Event Data** - Rich context and previous state information
+- **Error Broadcasting** - Real-time error notifications
+- **Channel Status Updates** - Live channel monitoring
 
 **Connection Example (JavaScript):**
 ```javascript
 const ws = new WebSocket('ws://localhost:5000/ws');
+let lastSequenceId = 0;
 
 ws.onopen = function(event) {
     console.log('WebSocket connected');
@@ -529,31 +538,122 @@ ws.onopen = function(event) {
 
 ws.onmessage = function(event) {
     const message = JSON.parse(event.data);
-    console.log('Received event:', message);
+    
+    // Track sequence for state management
+    if (message.sequenceId) {
+        lastSequenceId = message.sequenceId;
+    }
     
     // Handle different event types
     switch(message.event) {
+        case 'connection_established':
+            // Initialize app with full state
+            initializeAppState(message.data.currentState);
+            break;
         case 'scene_activated':
-            updateSceneUI(message.data.sceneId, true);
+            updateSceneUI(message.data);
             break;
-        case 'scene_deactivated':
-            updateSceneUI(message.data.sceneId, false);
+        case 'channel_status_update':
+            updateChannelStatus(message.data);
             break;
-        case 'scene_created':
-            addSceneToUI(message.data);
+        case 'ping':
+            // Respond to server ping
+            ws.send(JSON.stringify({
+                event: 'pong',
+                data: { timestamp: message.data.timestamp }
+            }));
             break;
         // ... handle other events
     }
 };
+
+// Request state sync if needed
+function requestStateSync() {
+    ws.send(JSON.stringify({
+        event: 'state_sync_request',
+        data: { lastKnownSequenceId: lastSequenceId }
+    }));
+}
 ```
 
 ### Event Types
 
-All WebSocket messages follow this format:
+All WebSocket messages follow this enhanced format:
 ```json
 {
   "event": "event_type",
-  "data": { /* event-specific data */ },
+  "data": { 
+    /* event-specific data */,
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-19T10:30:00.000Z"
+    }
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z",
+  "sequenceId": 12345
+}
+```
+
+#### Connection Events
+
+**`connection_established`**
+Sent immediately when WebSocket connection is established with complete application state.
+```json
+{
+  "event": "connection_established",
+  "data": {
+    "connectionId": "conn_1692451800.123",
+    "currentState": {
+      "displayStatus": {
+        "currentScene": "morning-gallery",
+        "currentSceneName": "Morning Gallery",
+        "hardware": {
+          "type": "mock",
+          "resolution": [800, 600],
+          "available": true
+        },
+        "resolution": [800, 600]
+      },
+      "activeScenes": ["morning-gallery"],
+      "allScenes": [
+        {
+          "id": "morning-gallery",
+          "name": "Morning Gallery", 
+          "isActive": true,
+          "channels": ["weather_channel"]
+        }
+      ],
+      "channels": [
+        {
+          "id": "weather_channel",
+          "name": "Weather Display",
+          "status": {
+            "lastUpdate": "2025-08-19T10:30:00Z",
+            "lastError": null,
+            "usingFallback": false
+          }
+        }
+      ]
+    },
+    "serverInfo": {
+      "version": "1.0",
+      "connectedClients": 3,
+      "serverTime": "2025-08-19T10:30:00Z"
+    }
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z",
+  "sequenceId": 1
+}
+```
+
+**`ping` / `pong`**
+Heartbeat mechanism for connection health monitoring.
+```json
+{
+  "event": "ping",
+  "data": {
+    "timestamp": "2025-08-19T10:30:00.000Z"
+  },
   "timestamp": "2025-08-19T10:30:00.000Z"
 }
 ```
@@ -566,9 +666,24 @@ All WebSocket messages follow this format:
   "event": "scene_activated",
   "data": {
     "sceneId": "morning-gallery",
-    "sceneName": "Morning Gallery"
+    "sceneName": "Morning Gallery",
+    "channels": ["weather_channel"],
+    "previousScene": "evening-display",
+    "previousSceneName": "Evening Display",
+    "displayUpdate": {
+      "resolution": [800, 600],
+      "hardware": {
+        "type": "mock",
+        "available": true
+      }
+    },
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-19T10:30:00.000Z"
+    }
   },
-  "timestamp": "2025-08-19T10:30:00.000Z"
+  "timestamp": "2025-08-19T10:30:00.000Z",
+  "sequenceId": 12345
 }
 ```
 
@@ -578,9 +693,19 @@ All WebSocket messages follow this format:
   "event": "scene_deactivated", 
   "data": {
     "sceneId": "morning-gallery",
-    "sceneName": "Morning Gallery"
+    "sceneName": "Morning Gallery",
+    "channels": ["weather_channel"],
+    "displayUpdate": {
+      "currentScene": null,
+      "currentSceneName": null
+    },
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-19T10:30:00.000Z"
+    }
   },
-  "timestamp": "2025-08-19T10:30:00.000Z"
+  "timestamp": "2025-08-19T10:30:00.000Z",
+  "sequenceId": 12346
 }
 ```
 
@@ -622,29 +747,88 @@ All WebSocket messages follow this format:
 }
 ```
 
-**`scene_displayed`**
+#### Channel Events
+
+**`channel_status_update`**
+Real-time channel monitoring and status updates.
 ```json
 {
-  "event": "scene_displayed",
+  "event": "channel_status_update",
   "data": {
-    "sceneId": "morning-gallery",
-    "sceneName": "Morning Gallery"
+    "channelId": "weather_channel",
+    "channelName": "Weather Display",
+    "status": {
+      "active": true,
+      "lastUpdate": "2025-08-19T10:30:00Z",
+      "lastSettingsUpdate": "2025-08-19T10:30:00Z",
+      "usingFallback": false,
+      "lastError": null,
+      "imageGenerated": true
+    },
+    "settingsUpdated": true,
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-19T10:30:00.000Z"
+    }
   },
-  "timestamp": "2025-08-19T10:30:00.000Z"
+  "timestamp": "2025-08-19T10:30:00.000Z",
+  "sequenceId": 12347
 }
 ```
 
-#### Connection Events
+#### Error Events
 
-**`connected`**
-Sent immediately when WebSocket connection is established.
+**`error`**
+Real-time error notifications with recovery suggestions.
 ```json
 {
-  "event": "connected",
+  "event": "error",
   "data": {
-    "message": "WebSocket connection established"
+    "code": "SCENE_ACTIVATION_FAILED",
+    "message": "Failed to activate scene: hardware unavailable",
+    "context": {
+      "sceneId": "evening-gallery",
+      "attemptedAction": "activate"
+    },
+    "recovery": {
+      "action": "check_logs",
+      "timestamp": "2025-08-19T10:30:00Z"
+    },
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-19T10:30:00.000Z"
+    }
   },
-  "timestamp": "2025-08-19T10:30:00.000Z"
+  "timestamp": "2025-08-19T10:30:00.000Z",
+  "sequenceId": 12348
+}
+```
+
+#### Display Events
+
+**`display_hardware_update`**
+Monitor display hardware status changes.
+```json
+{
+  "event": "display_hardware_update",
+  "data": {
+    "hardware": {
+      "type": "mock",
+      "available": true,
+      "resolution": [800, 600]
+    },
+    "action": "display_cleared",
+    "impact": {
+      "currentScene": null,
+      "displayActive": false
+    },
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-19T10:30:00.000Z"
+    }
+  },
+  "timestamp": "2025-08-19T10:30:00.000Z",
+  "sequenceId": 12349
 }
 ```
 
@@ -657,16 +841,30 @@ Get current WebSocket connection information.
 ```json
 {
   "connected_clients": 3,
-  "websocket_url": "ws://localhost:5000/ws"
+  "websocket_url": "ws://localhost:5000/ws",
+  "current_sequence_id": 12350,
+  "features": {
+    "full_state_on_connect": true,
+    "heartbeat_support": true,
+    "enhanced_events": true,
+    "error_broadcasting": true,
+    "channel_status_updates": true
+  }
 }
 ```
 
 ### Benefits
 
-- **Live Updates:** Changes are instantly reflected across all browser tabs
-- **Multi-User Support:** Multiple users see changes in real-time
-- **Better UX:** No need to refresh or poll for updates
-- **Event-Driven:** React to specific events rather than full data refreshes
+- **🚀 Instant State Sync** - Full application state delivered on connection
+- **📊 Sequence Tracking** - Message ordering and duplicate detection via sequence IDs
+- **💓 Connection Health** - Automatic heartbeat/ping-pong for connection monitoring
+- **🔍 Rich Context** - Enhanced event data with previous state and trigger information
+- **⚡ Live Updates** - Changes are instantly reflected across all browser tabs
+- **👥 Multi-User Support** - Multiple users see changes in real-time
+- **🛡️ Better Error Handling** - Real-time error notifications with recovery suggestions
+- **📡 Channel Monitoring** - Live status updates for all channels
+- **🔄 State Recovery** - Automatic state synchronization on reconnection
+- **🎯 Event-Driven** - React to specific events rather than full data refreshes
 
 ---
 
