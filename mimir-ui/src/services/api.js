@@ -2,7 +2,33 @@ import axios from 'axios';
 
 // API base URL
 function getApiBaseUrl() {
-  return window.mimirApiBaseUrl || localStorage.getItem('mimir-api-base-url') || 'http://172.31.79.107:5000/api';
+  const raw =
+    (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
+    localStorage.getItem('mimir-api-base-url');
+
+  // Fallback includes /api already
+  if (!raw) return 'http://172.31.79.107:5000/api';
+  return ensureApiSuffix(raw);
+}
+
+function ensureApiSuffix(base) {
+  try {
+    // Handle absolute or relative bases
+    const u = new URL(base, window.location.origin);
+
+    // Normalize trailing slashes
+    u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+
+    // If path doesn't already start with /api, append it
+    if (!/^\/api(\/|$)/i.test(u.pathname)) {
+      u.pathname = (u.pathname === '/' ? '' : u.pathname) + '/api';
+    }
+    return u.toString();
+  } catch {
+    // Fallback for unusual inputs
+    const t = String(base).replace(/\/+$/, '');
+    return /\/api(\/|$)/i.test(t) ? t : `${t}/api`;
+  }
 }
 
 // Create axios instance with default config
