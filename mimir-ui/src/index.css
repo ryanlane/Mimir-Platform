@@ -17,6 +17,9 @@
   --color-success: #4caf50;
   --color-warning: #ff9800;
   --color-error: #f44336;
+
+  /* Navigation */
+  --active-hover: #ff9800;
   
   /* Text colors */
   --color-text: #000000;

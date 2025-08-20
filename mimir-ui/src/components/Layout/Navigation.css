@@ -61,6 +61,7 @@
 
 .navigation-link-active:hover {
   background-color: var(--color-secondary);
+  color: var(--active-hover);
 }
 
 @media (max-width: 768px) {

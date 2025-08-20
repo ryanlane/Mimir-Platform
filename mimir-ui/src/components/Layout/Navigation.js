@@ -38,10 +38,7 @@ const Navigation = () => {
         ))}
       </ul>
       
-      {/* Debug info - remove this after testing */}
-      <div style={{ fontSize: '10px', color: '#666', padding: '10px' }}>
-        Current: {location.pathname}
-      </div>
+      
     </nav>
   );
 };

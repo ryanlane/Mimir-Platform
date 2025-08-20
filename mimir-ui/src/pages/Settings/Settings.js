@@ -4,6 +4,8 @@ import { api } from '../../services/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { logger } from '../../utils/logger';
 import './Settings.css';
+import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
+import DisplayClientManager from '../../components/Settings/DisplayClientManager';
 
 const Settings = () => {
   const [displayStatus, setDisplayStatus] = useState(null);
@@ -20,6 +22,9 @@ const Settings = () => {
 
   // WebSocket integration for real-time display updates
   const { isConnected } = useWebSocket();
+  const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('mimir-api-base-url') || 'http://localhost:5000');
+  const [apiConnectionStatus, setApiConnectionStatus] = useState(null);
+  const [testingApi, setTestingApi] = useState(false);
 
   const loadDisplayStatus = useCallback(async () => {
     try {
@@ -115,6 +120,40 @@ const Settings = () => {
     window.mimirConsoleSettings = consoleSettings;
   }, [consoleSettings]);
 
+  useEffect(() => {
+    window.mimirApiBaseUrl = apiBaseUrl;
+    localStorage.setItem('mimir-api-base-url', apiBaseUrl);
+  }, [apiBaseUrl]);
+
+  const testApiConnection = async () => {
+    setTestingApi(true);
+    setApiConnectionStatus(null);
+    try {
+      const url = `${apiBaseUrl.replace(/\/$/, '')}/api/health`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ok' && data.message === 'Mimir API service is healthy') {
+          setApiConnectionStatus('success');
+        } else {
+          setApiConnectionStatus('error');
+        }
+      } else {
+        setApiConnectionStatus('error');
+      }
+    } catch {
+      setApiConnectionStatus('error');
+    } finally {
+      setTestingApi(false);
+    }
+  };
+
+  useEffect(() => {
+    if (apiBaseUrl) {
+      testApiConnection();
+    }
+  }, [apiBaseUrl]);
+
   if (loading) {
     return (
       <div className="loading">
@@ -137,6 +176,9 @@ const Settings = () => {
           </div>
         </div>
       </div>
+      {/* WebSocket Status Component */}
+      <WebSocketStatus />
+      <DisplayClientManager />
 
       <div className="settings-grid">
         {/* Display Control Section */}
@@ -281,6 +323,36 @@ const Settings = () => {
               >
                 Test Logging
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* API Base URL Configuration */}
+        <div className="settings-card">
+          <div className="card-header">
+            <h3 className="card-title">API Base URL</h3>
+          </div>
+          <div className="card-body">
+            <div className="form-group">
+              <label htmlFor="api-base-url">API Base URL</label>
+              <input
+                type="text"
+                id="api-base-url"
+                value={apiBaseUrl}
+                onChange={e => setApiBaseUrl(e.target.value)}
+                placeholder="http://localhost:5000"
+                className="form-control"
+              />
+              <button className="btn btn-outline" type="button" onClick={testApiConnection} disabled={testingApi} style={{marginTop: '0.5rem'}}>
+                {testingApi ? 'Testing...' : 'Test Connection'}
+              </button>
+              {apiConnectionStatus === 'success' && (
+                <span style={{color: 'var(--color-success)', marginLeft: '1rem'}}>✔ Connected</span>
+              )}
+              {apiConnectionStatus === 'error' && (
+                <span style={{color: 'var(--color-error)', marginLeft: '1rem'}}>✖ Connection Failed</span>
+              )}
+              <small className="form-help">Change the API server address for all requests.</small>
             </div>
           </div>
         </div>

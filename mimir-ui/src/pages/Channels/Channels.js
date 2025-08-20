@@ -5,7 +5,6 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
 import ChannelSettings from './ChannelSettings';
-import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import './Channels.css';
 
 // Global cache for channels data to prevent excessive API requests
@@ -250,8 +249,6 @@ const Channels = () => {
         </div>
       </div>
 
-      {/* WebSocket Status Component */}
-      <WebSocketStatus />
 
       {channels.length > 0 ? (
         <div className="channels-grid">

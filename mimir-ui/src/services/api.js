@@ -1,15 +1,28 @@
 import axios from 'axios';
 
 // API base URL
-const API_BASE_URL = 'http://172.31.79.107:5000/api';
+function getApiBaseUrl() {
+  return window.mimirApiBaseUrl || localStorage.getItem('mimir-api-base-url') || 'http://172.31.79.107:5000/api';
+}
 
 // Create axios instance with default config
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+let apiClient = axios.create({
+  baseURL: getApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
   timeout: 10000,
+});
+
+// Listen for changes to API base URL and update axios instance
+window.addEventListener('storage', (e) => {
+  if (e.key === 'mimir-api-base-url') {
+    apiClient = axios.create({
+      baseURL: getApiBaseUrl(),
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+    });
+  }
 });
 
 // API service methods
@@ -67,8 +80,8 @@ export const api = {
   },
 
   // v2.1 Channel Static Assets
-  getChannelUIAsset: (channelId, assetPath) => `${API_BASE_URL}/channels/${channelId}/ui/${assetPath}`,
-  getChannelAsset: (channelId, assetPath) => `${API_BASE_URL}/channels/${channelId}/assets/${assetPath}`,
+  getChannelUIAsset: (channelId, assetPath) => `${getApiBaseUrl()}/channels/${channelId}/ui/${assetPath}`,
+  getChannelAsset: (channelId, assetPath) => `${getApiBaseUrl()}/channels/${channelId}/assets/${assetPath}`,
 
   // v2.3: Display Management API endpoints
   registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),
@@ -81,7 +94,7 @@ export const api = {
   deleteDisplay: (displayId) => apiClient.delete(`/displays/${displayId}`),
 
   // Helper function for display image URLs
-  getDisplayImageUrl: (displayId) => `${API_BASE_URL}/displays/${displayId}/current_image_file`,
+  getDisplayImageUrl: (displayId) => `${getApiBaseUrl()}/displays/${displayId}/current_image_file`,
 };
 
 // Request interceptor for logging
