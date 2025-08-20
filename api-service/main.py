@@ -1888,6 +1888,67 @@ async def assign_scene_to_display(
         "message_sent": sent
     }
 
+@app.delete("/api/displays/{display_id}/assign_scene")
+async def unassign_scene_from_display(
+    display_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Remove scene assignment from a display client"""
+    
+    # Get display client
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Store previous assignment for messaging
+    old_scene_id = display_client.assigned_scene_id
+    old_scene_name = None
+    if old_scene_id:
+        old_scene = db.query(Scene).filter(Scene.id == old_scene_id).first()
+        if old_scene:
+            old_scene_name = old_scene.name
+    
+    # Remove assignment
+    display_client.assigned_scene_id = None
+    display_client.updated_at = datetime.datetime.now()
+    db.commit()
+    
+    # Send targeted WebSocket message to the specific display
+    scene_unassignment_message = {
+        "event": "scene_unassigned",
+        "data": {
+            "displayId": display_id,
+            "previousSceneId": old_scene_id,
+            "previousSceneName": old_scene_name,
+            "timestamp": datetime.datetime.now().isoformat()
+        },
+        "timestamp": datetime.datetime.now().isoformat(),
+        "sequenceId": manager.get_next_sequence_id()
+    }
+    
+    # Send to specific display client
+    sent = await manager.send_to_display_client(display_id, scene_unassignment_message)
+    
+    # Also broadcast to dashboard clients for monitoring
+    await manager.broadcast_to_dashboard_clients({
+        "event": "display_assignment_updated",
+        "data": {
+            "displayId": display_id,
+            "displayName": display_client.name,
+            "newSceneId": None,
+            "newSceneName": None,
+            "previousSceneId": old_scene_id,
+            "previousSceneName": old_scene_name
+        },
+        "timestamp": datetime.datetime.now().isoformat()
+    })
+    
+    return {
+        "message": f"Scene unassigned from display {display_client.name}",
+        "message_sent": sent
+    }
+
 @app.websocket("/ws/display/{display_id}")
 async def display_websocket_endpoint(websocket: WebSocket, display_id: str):
     """WebSocket endpoint for specific display clients"""
@@ -2093,6 +2154,59 @@ async def get_display_current_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate scene image: {str(e)}")
 
+@app.get("/api/displays/{display_id}/current_image_file")
+async def get_display_current_image_file(
+    display_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Download the actual image file for the display client"""
+    
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    if not display_client.assigned_scene_id:
+        raise HTTPException(
+            status_code=404, 
+            detail="No scene assigned to this display",
+            headers={
+                "X-Display-ID": display_id,
+                "X-Display-Name": display_client.name
+            }
+        )
+    
+    # Get the scene
+    scene = db.query(Scene).filter(Scene.id == display_client.assigned_scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Assigned scene not found")
+    
+    try:
+        # Generate or get the current image for this display
+        image_info = await generate_scene_image_for_display(scene, display_client)
+        
+        # For now, we'll return a mock image since we don't have actual image generation
+        # In a real implementation, this would serve the actual image file from image_info["path"]
+        from fastapi.responses import Response
+        
+        # Mock image content (1x1 pixel transparent PNG)
+        mock_image_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x00\x01\x00\x18\xdd\x8d\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+        
+        return Response(
+            content=mock_image_data,
+            media_type="image/png",
+            headers={
+                "Content-Length": str(len(mock_image_data)),
+                "Last-Modified": image_info["generated_at"],
+                "Cache-Control": f"max-age={image_info.get('cache_expires_in', 300)}",
+                "X-Display-ID": display_id,
+                "X-Scene-ID": scene.id
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to serve display image: {str(e)}")
+
 @app.get("/api/displays/{display_id}/status")
 async def get_display_status(
     display_id: str,
@@ -2132,6 +2246,92 @@ async def get_display_status(
         "settings": display_client.settings,
         "tags": display_client.tags
     }
+
+@app.put("/api/displays/{display_id}")
+async def update_display_client(
+    display_id: str,
+    update_data: dict,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Update display client information and settings"""
+    
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Update allowed fields
+    if "name" in update_data:
+        display_client.name = update_data["name"]
+    if "description" in update_data:
+        display_client.description = update_data["description"]
+    if "location" in update_data:
+        display_client.location = update_data["location"]
+    if "tags" in update_data:
+        display_client.tags = update_data["tags"]
+    if "settings" in update_data:
+        display_client.settings = update_data["settings"]
+    
+    try:
+        db.commit()
+        
+        # Broadcast update event
+        await broadcast_event("display_client_updated", {
+            "displayId": display_id,
+            "displayName": display_client.name,
+            "location": display_client.location,
+            "tags": display_client.tags,
+            "triggeredBy": {
+                "source": "api",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        })
+        
+        return {
+            "message": "Display client updated successfully",
+            "display_id": display_id
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update display client: {str(e)}")
+
+@app.delete("/api/displays/{display_id}")
+async def delete_display_client(
+    display_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Remove a display client from the system"""
+    
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    display_name = display_client.name
+    
+    try:
+        # Remove the display client from database
+        db.delete(display_client)
+        db.commit()
+        
+        # Broadcast deletion event
+        await broadcast_event("display_client_deleted", {
+            "displayId": display_id,
+            "displayName": display_name,
+            "triggeredBy": {
+                "source": "api",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        })
+        
+        return {
+            "message": f"Display client {display_name} deleted successfully"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete display client: {str(e)}")
 
 async def generate_scene_image_for_display(scene, display_client):
     """Generate scene image optimized for specific display client"""
