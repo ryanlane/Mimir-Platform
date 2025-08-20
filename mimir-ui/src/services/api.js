@@ -37,6 +37,38 @@ export const api = {
   // Display
   getDisplayStatus: () => apiClient.get('/display/status'),
   clearDisplay: () => apiClient.post('/display/clear'),
+
+  // v2.1 Channel System
+  getChannelsManifest: () => apiClient.get('/channels/manifest'),
+  testChannel: (channelId) => apiClient.post(`/channels/${channelId}/test`),
+  getChannelHealth: (channelId) => apiClient.get(`/channels/${channelId}/health`),
+  getChannelToken: (channelId) => apiClient.get(`/channels/${channelId}/token`),
+
+  // v2.1 WebSocket Status
+  getWebSocketStatus: () => apiClient.get('/websocket/status'),
+
+  // v2.1 Dynamic Channel APIs
+  callChannelAPI: (channelId, endpoint, method = 'GET', data = null, params = {}) => {
+    const url = `/channels/${channelId}/${endpoint}`;
+    const config = { params };
+    
+    switch (method.toUpperCase()) {
+      case 'GET':
+        return apiClient.get(url, config);
+      case 'POST':
+        return apiClient.post(url, data, config);
+      case 'PUT':
+        return apiClient.put(url, data, config);
+      case 'DELETE':
+        return apiClient.delete(url, config);
+      default:
+        throw new Error(`Unsupported HTTP method: ${method}`);
+    }
+  },
+
+  // v2.1 Channel Static Assets
+  getChannelUIAsset: (channelId, assetPath) => `${API_BASE_URL}/channels/${channelId}/ui/${assetPath}`,
+  getChannelAsset: (channelId, assetPath) => `${API_BASE_URL}/channels/${channelId}/assets/${assetPath}`,
 };
 
 // Request interceptor for logging

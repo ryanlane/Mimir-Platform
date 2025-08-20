@@ -1,0 +1,128 @@
+/* Plugin Slot Component Styles */
+
+.plugin-slot {
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  margin: var(--spacing-sm) 0;
+  background-color: var(--color-surface);
+  min-height: 100px;
+}
+
+.plugin-slot.loading,
+.plugin-slot.error,
+.plugin-slot.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+}
+
+.plugin-loading,
+.plugin-error,
+.plugin-empty {
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--color-tertiary);
+}
+
+.plugin-error {
+  color: var(--color-error);
+}
+
+.plugin-slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.slot-name {
+  font-weight: 600;
+  color: var(--color-secondary);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.plugin-count {
+  background-color: var(--color-accent);
+  color: white;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.plugin-container {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+  background-color: var(--color-background);
+}
+
+.plugin-container:last-child {
+  margin-bottom: 0;
+}
+
+.plugin-info {
+  margin-bottom: var(--spacing-sm);
+}
+
+.plugin-info strong {
+  color: var(--color-primary);
+  font-family: var(--font-family-mono);
+}
+
+.plugin-details {
+  margin-top: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.plugin-details small {
+  color: var(--color-tertiary);
+  font-size: 0.75rem;
+  font-family: var(--font-family-mono);
+}
+
+.web-component-placeholder {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #0ea5e9;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  color: #0369a1;
+  font-size: 0.875rem;
+}
+
+.web-component-placeholder p {
+  margin: 0 0 var(--spacing-xs) 0;
+}
+
+.web-component-placeholder p:last-child {
+  margin-bottom: 0;
+  font-style: italic;
+  font-size: 0.75rem;
+  color: #075985;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .plugin-slot-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+  }
+  
+  .plugin-details {
+    gap: var(--spacing-xs);
+  }
+  
+  .plugin-details small {
+    font-size: 0.7rem;
+  }
+}

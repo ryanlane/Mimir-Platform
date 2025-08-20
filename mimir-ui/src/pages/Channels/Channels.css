@@ -14,6 +14,21 @@
   margin-bottom: var(--spacing-xs);
 }
 
+.header-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.api-version {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.connection-status {
+  color: var(--color-success);
+}
+
 .channels-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -46,11 +61,91 @@
   margin: 0 0 var(--spacing-xs) 0;
   font-size: 1.125rem;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 
 .channel-info p {
   margin: 0;
   font-size: 0.875rem;
+}
+
+.status-indicators {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  align-items: flex-end;
+}
+
+.v21-badge {
+  background: linear-gradient(45deg, var(--color-accent), var(--color-primary));
+  color: white;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.health-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.health-indicator.healthy {
+  background-color: #e8f5e8;
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.health-indicator.unhealthy {
+  background-color: #ffebee;
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.ui-badge {
+  background-color: var(--color-surface);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.permissions {
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+  color: var(--color-tertiary);
+}
+
+.test-result {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  margin-top: var(--spacing-sm);
+}
+
+.test-result.success {
+  background-color: #e8f5e8;
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.test-result.error {
+  background-color: #ffebee;
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
 }
 
 .channel-card-body {
