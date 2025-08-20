@@ -2182,8 +2182,7 @@ async def get_display_current_image_file(
         raise HTTPException(status_code=404, detail="Assigned scene not found")
     
     try:
-        # Generate or get the current image for this display
-        image_info = await generate_scene_image_for_display(scene, display_client)
+        # Generate or get the current image for this display        image_info = await generate_scene_image_for_display(scene, display_client)
         
         # For now, we'll return a mock image since we don't have actual image generation
         # In a real implementation, this would serve the actual image file from image_info["path"]
@@ -2374,6 +2373,12 @@ async def generate_scene_image_for_display(scene, display_client):
         db.close()
     
     return mock_image_info
+
+# Global health check endpoint
+@app.get("/api/health")
+async def health_check():
+    """Global health check endpoint"""
+    return {"status": "ok", "message": "Mimir API service is healthy"}
 
 if __name__ == "__main__":
     import uvicorn
