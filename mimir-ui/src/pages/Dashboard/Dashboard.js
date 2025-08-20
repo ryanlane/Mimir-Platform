@@ -3,7 +3,6 @@ import { Monitor, Layers, Settings, Activity } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
-import PluginSlot from '../../components/PluginSlot/PluginSlot';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -337,61 +336,6 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Plugin Slots for v2.1 Web Components */}
-      <div className="plugin-section">
-        <h2>Plugin Dashboard</h2>
-        <p className="text-tertiary">v2.1 Web Components will render in these slots</p>
-        
-        <div className="plugin-grid">
-          <div className="plugin-column">
-            <PluginSlot 
-              name="dashboard.topLeft" 
-              hostProps={{ 
-                user: { name: 'Dashboard User' }, 
-                theme: 'default',
-                currentScene: displayStatus?.currentScene 
-              }} 
-            />
-            <PluginSlot 
-              name="dashboard.bottomLeft" 
-              hostProps={{ 
-                user: { name: 'Dashboard User' }, 
-                theme: 'default',
-                displayStatus: displayStatus 
-              }} 
-            />
-          </div>
-          
-          <div className="plugin-column">
-            <PluginSlot 
-              name="dashboard.topRight" 
-              hostProps={{ 
-                user: { name: 'Dashboard User' }, 
-                theme: 'default',
-                scenes: scenes 
-              }} 
-            />
-            <PluginSlot 
-              name="dashboard.bottomRight" 
-              hostProps={{ 
-                user: { name: 'Dashboard User' }, 
-                theme: 'default',
-                activityLog: activityLog 
-              }} 
-            />
-          </div>
-        </div>
-        
-        <PluginSlot 
-          name="dashboard.center" 
-          hostProps={{ 
-            user: { name: 'Dashboard User' }, 
-            theme: 'default',
-            fullDashboardState: { displayStatus, scenes, activityLog }
-          }} 
-        />
       </div>
     </div>
   );

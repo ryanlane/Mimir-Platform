@@ -69,6 +69,19 @@ export const api = {
   // v2.1 Channel Static Assets
   getChannelUIAsset: (channelId, assetPath) => `${API_BASE_URL}/channels/${channelId}/ui/${assetPath}`,
   getChannelAsset: (channelId, assetPath) => `${API_BASE_URL}/channels/${channelId}/assets/${assetPath}`,
+
+  // v2.3: Display Management API endpoints
+  registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),
+  getDisplays: (params = {}) => apiClient.get('/displays', { params }),
+  assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${displayId}/assign_scene`, { scene_id: sceneId }),
+  unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/assign_scene`),
+  getDisplayImage: (displayId) => apiClient.get(`/displays/${displayId}/current_image`),
+  getDisplayImageFile: (displayId) => apiClient.get(`/displays/${displayId}/current_image_file`, { responseType: 'blob' }),
+  updateDisplay: (displayId, updates) => apiClient.put(`/displays/${displayId}`, updates),
+  deleteDisplay: (displayId) => apiClient.delete(`/displays/${displayId}`),
+
+  // Helper function for display image URLs
+  getDisplayImageUrl: (displayId) => `${API_BASE_URL}/displays/${displayId}/current_image_file`,
 };
 
 // Request interceptor for logging

@@ -4,7 +4,8 @@ import Layout from './components/Layout/Layout';
 import Dashboard from './pages/Dashboard/Dashboard';
 import Scenes from './pages/Scenes/Scenes';
 import Channels from './pages/Channels/Channels';
-import Display from './pages/Display/Display';
+import Settings from './pages/Settings/Settings';
+import Displays from './pages/Displays/Displays';
 import './App.css';
 
 function App() {
@@ -15,7 +16,8 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/scenes" element={<Scenes />} />
           <Route path="/channels" element={<Channels />} />
-          <Route path="/display" element={<Display />} />
+          <Route path="/displays" element={<Displays />} />
+          <Route path="/settings" element={<Settings />} />
           {/* Catch-all route for unmatched paths */}
           <Route path="*" element={<Dashboard />} />
         </Routes>

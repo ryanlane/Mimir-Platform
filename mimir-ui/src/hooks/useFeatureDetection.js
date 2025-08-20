@@ -39,10 +39,12 @@ export const useFeatureDetection = () => {
     ...features,
     hasFeature: (featureName) => featureDetection.hasFeature(featureName),
     supportsV21: () => featureDetection.supportsV21(),
+    supportsV23: () => featureDetection.supportsV23(),
     supportsPluginSystem: () => featureDetection.supportsPluginSystem(),
     supportsChannelHealth: () => featureDetection.supportsChannelHealth(),
     supportsChannelTesting: () => featureDetection.supportsChannelTesting(),
     supportsEnhancedWebSocket: () => featureDetection.supportsEnhancedWebSocket(),
+    supportsDisplayManagement: () => featureDetection.supportsDisplayManagement(),
     getFeatureAwareAPI: () => featureDetection.createFeatureAwareAPI()
   };
 };

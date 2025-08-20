@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Monitor, Tv, Layers, Home } from 'lucide-react';
+import { Settings, Tv, Layers, Home, MonitorSpeaker } from 'lucide-react';
 import './Navigation.css';
 
 const Navigation = () => {
@@ -10,7 +10,8 @@ const Navigation = () => {
     { path: '/', label: 'Dashboard', icon: Home },
     { path: '/scenes', label: 'Scenes', icon: Layers },
     { path: '/channels', label: 'Channels', icon: Tv },
-    { path: '/display', label: 'Display', icon: Monitor },
+    { path: '/displays', label: 'Displays', icon: MonitorSpeaker },
+    { path: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (

@@ -42,6 +42,17 @@ class FeatureDetectionService {
         console.log('❌ v2.1 WebSocket status not available');
       }
 
+      // Test for v2.3 Display management endpoints
+      try {
+        await api.getDisplays();
+        console.log('✅ Display management endpoints detected');
+        this.supportedFeatures.add('display_management');
+        this.supportedFeatures.add('v2.3_displays');
+        this.apiVersion = '2.3';
+      } catch (error) {
+        console.log('❌ v2.3 Display management not available');
+      }
+
       // Test for v2.1 Channel manifest endpoint
       try {
         const manifest = await api.getChannelsManifest();
@@ -117,7 +128,12 @@ class FeatureDetectionService {
 
   // Check if v2.1 features are available
   supportsV21() {
-    return this.apiVersion === '2.1';
+    return this.apiVersion === '2.1' || this.apiVersion === '2.3';
+  }
+
+  // Check if v2.3 features are available
+  supportsV23() {
+    return this.apiVersion === '2.3';
   }
 
   // Get all supported features
@@ -140,6 +156,10 @@ class FeatureDetectionService {
 
   supportsEnhancedWebSocket() {
     return this.hasFeature('v2.1_websocket');
+  }
+
+  supportsDisplayManagement() {
+    return this.hasFeature('display_management');
   }
 
   // Create feature-aware API wrapper
