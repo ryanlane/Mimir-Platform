@@ -6,6 +6,11 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import './WebSocketStatus.css';
 
+// Global cache for WebSocket status to prevent excessive API requests
+let wsStatusCache = null;
+let wsStatusCacheTime = null;
+const WS_STATUS_CACHE_TIMEOUT = 15 * 1000; // 15 seconds - shorter than manifest cache
+
 const WebSocketStatus = () => {
   const { isConnected } = useWebSocket();
   const { supportsEnhancedWebSocket } = useFeatureDetection();
@@ -19,7 +24,23 @@ const WebSocketStatus = () => {
 
     try {
       setLoading(true);
+      
+      // Check cache first
+      const now = Date.now();
+      if (wsStatusCache && wsStatusCacheTime && (now - wsStatusCacheTime) < WS_STATUS_CACHE_TIMEOUT) {
+        console.log('🚀 Using cached WebSocket status');
+        setWsStatus(wsStatusCache);
+        setLoading(false);
+        return;
+      }
+      
+      console.log('📡 Fetching fresh WebSocket status');
       const response = await api.getWebSocketStatus();
+      
+      // Update cache
+      wsStatusCache = response.data;
+      wsStatusCacheTime = now;
+      
       setWsStatus(response.data);
       console.log('📡 WebSocket status:', response.data);
     } catch (error) {
@@ -32,8 +53,8 @@ const WebSocketStatus = () => {
   useEffect(() => {
     loadWebSocketStatus();
     
-    // Refresh status every 30 seconds
-    const interval = setInterval(loadWebSocketStatus, 30000);
+    // Refresh status every 60 seconds (reduced from 30 seconds since we have caching)
+    const interval = setInterval(loadWebSocketStatus, 60000);
     return () => clearInterval(interval);
   }, [loadWebSocketStatus]);
 

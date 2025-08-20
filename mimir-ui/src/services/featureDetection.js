@@ -6,12 +6,22 @@ class FeatureDetectionService {
     this.apiVersion = null;
     this.supportedFeatures = new Set();
     this.detectionPromise = null;
+    this.lastDetectionTime = null;
+    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes cache
   }
 
-  // Main feature detection method
+  // Main feature detection method with caching
   async detectFeatures() {
-    if (this.detectionPromise) {
+    // Return cached results if still valid
+    if (this.detectionPromise && this.lastDetectionTime && 
+        (Date.now() - this.lastDetectionTime) < this.cacheTimeout) {
+      console.log('🔄 Using cached feature detection results');
       return this.detectionPromise;
+    }
+
+    // Clear old cache
+    if (this.detectionPromise) {
+      console.log('🧹 Clearing expired feature detection cache');
     }
 
     this.detectionPromise = this._performDetection();
@@ -76,6 +86,9 @@ class FeatureDetectionService {
         apiVersion: this.apiVersion,
         supportedFeatures: Array.from(this.supportedFeatures)
       });
+
+      // Mark detection time for caching
+      this.lastDetectionTime = Date.now();
 
       return {
         apiVersion: this.apiVersion,

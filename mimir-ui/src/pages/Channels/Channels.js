@@ -3,9 +3,15 @@ import { Settings, RefreshCw, Image, AlertCircle, TestTube, Heart, Info } from '
 import { api } from '../../services/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
+import featureDetection from '../../services/featureDetection';
 import ChannelSettings from './ChannelSettings';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import './Channels.css';
+
+// Global cache for channels data to prevent excessive API requests
+let channelsCache = null;
+let channelsCacheTime = null;
+const CHANNELS_CACHE_TIMEOUT = 30 * 1000; // 30 seconds
 
 const Channels = () => {
   const [channels, setChannels] = useState([]);
@@ -31,6 +37,10 @@ const Channels = () => {
 
   // v2.1: Load channel manifest
   const loadManifest = useCallback(async () => {
+    if (!featureDetection.supportsPluginSystem()) {
+      return;
+    }
+    
     try {
       const response = await api.getChannelsManifest();
       setManifest(response.data || []);
@@ -42,31 +52,59 @@ const Channels = () => {
 
   const loadChannels = useCallback(async () => {
     try {
+      // Check cache first
+      const now = Date.now();
+      if (channelsCache && channelsCacheTime && (now - channelsCacheTime) < CHANNELS_CACHE_TIMEOUT) {
+        console.log('🚀 Using cached channels data');
+        setChannels(channelsCache);
+        
+        // Load health for cached channels if supported
+        if (featureDetection.supportsChannelHealth()) {
+          loadAllChannelHealth(channelsCache);
+        }
+        setLoading(false);
+        return;
+      }
+      
+      console.log('📡 Fetching fresh channels data');
       const response = await api.getChannels();
-      setChannels(response.data.channels || []);
+      const channelsData = response.data.channels || [];
+      
+      // Update cache
+      channelsCache = channelsData;
+      channelsCacheTime = now;
+      
+      setChannels(channelsData);
       
       // Load health for all channels if supported
-      if (supportsChannelHealth()) {
-        loadAllChannelHealth(response.data.channels || []);
+      if (featureDetection.supportsChannelHealth()) {
+        loadAllChannelHealth(channelsData);
       }
     } catch (error) {
       console.error('Error loading channels:', error);
     } finally {
       setLoading(false);
     }
-  }, [supportsChannelHealth]);
+  }, []);
+
+  // Manual refresh function that bypasses cache
+  const refreshChannels = useCallback(async () => {
+    // Clear cache to force fresh data
+    channelsCache = null;
+    channelsCacheTime = null;
+    setLoading(true);
+    await loadChannels();
+  }, [loadChannels]);
 
   useEffect(() => {
     const initializeChannels = async () => {
       await loadChannels();
       // Load v2.1 features if supported
-      if (supportsPluginSystem()) {
-        await loadManifest();
-      }
+      await loadManifest();
     };
     
     initializeChannels();
-  }, [loadChannels, loadManifest, supportsPluginSystem]);
+  }, [loadChannels, loadManifest]);
   useEffect(() => {
     const handleChannelUpdate = (event) => {
       if (event.data?.type === 'channel_status_update') {
@@ -205,7 +243,7 @@ const Channels = () => {
               Load Manifest
             </button>
           )}
-          <button className="btn btn-primary" onClick={loadChannels}>
+          <button className="btn btn-primary" onClick={refreshChannels}>
             <RefreshCw size={18} />
             Refresh
           </button>
@@ -354,7 +392,7 @@ const Channels = () => {
           <p className="text-tertiary">
             No channels were discovered. Make sure channels are properly installed in the channels directory.
           </p>
-          <button className="btn btn-primary" onClick={loadChannels}>
+          <button className="btn btn-primary" onClick={refreshChannels}>
             <RefreshCw size={18} />
             Refresh Channels
           </button>

@@ -4,6 +4,11 @@ import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { api } from '../../services/api';
 import './PluginSlot.css';
 
+// Global cache for manifest data to prevent excessive API requests
+let manifestCache = null;
+let manifestCacheTime = null;
+const MANIFEST_CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
 /**
  * PluginSlot component for rendering Web Components from v2.1 channels
  * @param {string} name - The slot name (e.g., 'dashboard.topRight')
@@ -16,6 +21,26 @@ const PluginSlot = ({ name, hostProps = {}, style = {}, className = '' }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const processManifestData = useCallback((manifests) => {
+    // Find all UI components that target this slot
+    const slotPlugins = manifests
+      .flatMap(manifest => 
+        (manifest.ui || []).map(ui => ({
+          ...ui,
+          channelId: manifest.id,
+          channelName: manifest.name,
+          manifestData: manifest
+        }))
+      )
+      .filter(ui => ui.slots && ui.slots.includes(name));
+
+    console.log(`🔌 Found ${slotPlugins.length} plugins for slot '${name}':`, slotPlugins);
+    setPlugins(slotPlugins);
+    
+    // Load Web Components
+    loadWebComponents(slotPlugins);
+  }, [name]);
+
   const loadPluginsForSlot = useCallback(async () => {
     if (!supportsPluginSystem()) {
       return;
@@ -25,26 +50,23 @@ const PluginSlot = ({ name, hostProps = {}, style = {}, className = '' }) => {
       setLoading(true);
       setError(null);
       
+      // Check cache first
+      const now = Date.now();
+      if (manifestCache && manifestCacheTime && (now - manifestCacheTime) < MANIFEST_CACHE_TIMEOUT) {
+        console.log('🚀 Using cached manifest data');
+        processManifestData(manifestCache);
+        return;
+      }
+      
+      console.log('📡 Fetching fresh manifest data');
       const response = await api.getChannelsManifest();
       const manifests = response.data || [];
       
-      // Find all UI components that target this slot
-      const slotPlugins = manifests
-        .flatMap(manifest => 
-          (manifest.ui || []).map(ui => ({
-            ...ui,
-            channelId: manifest.id,
-            channelName: manifest.name,
-            manifestData: manifest
-          }))
-        )
-        .filter(ui => ui.slots && ui.slots.includes(name));
-
-      console.log(`🔌 Found ${slotPlugins.length} plugins for slot '${name}':`, slotPlugins);
-      setPlugins(slotPlugins);
+      // Update cache
+      manifestCache = manifests;
+      manifestCacheTime = now;
       
-      // Load Web Components
-      await loadWebComponents(slotPlugins);
+      processManifestData(manifests);
       
     } catch (error) {
       console.error(`Error loading plugins for slot '${name}':`, error);
@@ -52,7 +74,7 @@ const PluginSlot = ({ name, hostProps = {}, style = {}, className = '' }) => {
     } finally {
       setLoading(false);
     }
-  }, [name, supportsPluginSystem]);
+  }, [name, supportsPluginSystem, processManifestData]);
 
   const loadWebComponents = async (slotPlugins) => {
     for (const plugin of slotPlugins) {

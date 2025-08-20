@@ -16,6 +16,8 @@ function App() {
           <Route path="/scenes" element={<Scenes />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/display" element={<Display />} />
+          {/* Catch-all route for unmatched paths */}
+          <Route path="*" element={<Dashboard />} />
         </Routes>
       </Layout>
     </Router>
