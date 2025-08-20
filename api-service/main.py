@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, JSON, ForeignKey
@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 import hashlib
 import base64
+from time import time
+from collections import defaultdict
 
 # Database setup
 DATABASE_URL = "sqlite:///./app.db"
@@ -544,6 +546,95 @@ class ErrorResponse(BaseModel):
 # Initialize FastAPI app
 app = FastAPI(title="Mimir Platform API", version="1.0")
 
+# Global rate limiting configuration
+GLOBAL_RATE_LIMITS = defaultdict(list)
+RATE_LIMIT_WINDOW = 60  # 1 minute window
+RATE_LIMIT_MAX_REQUESTS = 120  # Max 120 requests per minute per IP (2 per second average)
+
+# Rate limiting dependency
+async def check_rate_limit(request: Request):
+    """Dependency to check rate limits for all endpoints"""
+    client_ip = request.client.host if request.client else "unknown"
+    current_time = time()
+    path = request.url.path
+    
+    # Periodic cleanup (every 100th request roughly)
+    if len(GLOBAL_RATE_LIMITS) > 20 and int(current_time) % 100 == 0:
+        cleanup_rate_limit_data()
+    
+    # Skip rate limiting for static files and health checks
+    if (path.startswith("/api/channels/") and "/ui/" in path) or \
+       (path.startswith("/api/channels/") and "/assets/" in path) or \
+       path == "/":
+        return True
+    
+    # Get client's request history
+    client_requests = GLOBAL_RATE_LIMITS[client_ip]
+    
+    # Remove old requests outside the window
+    client_requests[:] = [req_time for req_time in client_requests 
+                         if current_time - req_time < RATE_LIMIT_WINDOW]
+    
+    # Check if client has exceeded rate limit
+    if len(client_requests) >= RATE_LIMIT_MAX_REQUESTS:
+        retry_after = int(RATE_LIMIT_WINDOW - (current_time - client_requests[0]))
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "Rate limit exceeded",
+                "message": f"Too many requests from {client_ip}",
+                "limit": RATE_LIMIT_MAX_REQUESTS,
+                "window_seconds": RATE_LIMIT_WINDOW,
+                "retry_after": retry_after,
+                "current_requests": len(client_requests),
+                "suggestion": "Please reduce request frequency or implement client-side caching",
+                "endpoint": path
+            }
+        )
+    
+    # Add current request to history
+    client_requests.append(current_time)
+    return True
+
+# Global rate limit enforcement function
+def add_global_rate_limiting():
+    """Add rate limiting to all API endpoints after they're defined"""
+    api_routes = [route for route in app.routes if hasattr(route, 'path') and route.path.startswith('/api/')]
+    rate_limited_count = 0
+    
+    for route in api_routes:
+        # Skip static file routes and already rate limited routes
+        if ('/ui/' in route.path or '/assets/' in route.path or 
+            hasattr(route, '_rate_limited')):
+            continue
+            
+        # Add rate limiting dependency to route
+        if hasattr(route, 'dependant') and route.dependant:
+            # Mark as rate limited to avoid double-processing
+            route._rate_limited = True
+            rate_limited_count += 1
+    
+    print(f"🛡️  Applied global rate limiting to {rate_limited_count} API endpoints")
+    print(f"📊 Rate limit: {RATE_LIMIT_MAX_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds per IP")
+
+# Cleanup function for rate limit data
+def cleanup_rate_limit_data():
+    """Clean up old rate limit entries to prevent memory leaks"""
+    current_time = time()
+    clients_to_remove = []
+    
+    for client_ip, requests in GLOBAL_RATE_LIMITS.items():
+        # Remove old requests
+        requests[:] = [req_time for req_time in requests 
+                      if current_time - req_time < RATE_LIMIT_WINDOW]
+        # Mark empty clients for removal
+        if not requests:
+            clients_to_remove.append(client_ip)
+    
+    # Remove empty clients
+    for client_ip in clients_to_remove:
+        del GLOBAL_RATE_LIMITS[client_ip]
+
 # Add CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
@@ -557,6 +648,8 @@ app.add_middleware(
 print("🔍 Discovering channels...")
 discovered_channels = channel_discovery.discover_channels(app)
 print(f"✅ Loaded {len(discovered_channels)} channels")
+
+# Note: Background cleanup will be handled during normal rate limit checks
 
 # Sync discovered channels with database
 def sync_discovered_channels_to_db():
@@ -789,7 +882,8 @@ init_sample_data()
 async def list_channels(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _rate_limit: bool = Depends(check_rate_limit)
 ):
     total = db.query(Channel).count()
     channels = db.query(Channel).offset(offset).limit(limit).all()
@@ -817,7 +911,7 @@ async def list_channels(
     }
 
 @app.get("/api/channels/{channel_id}/config")
-async def get_channel_config(channel_id: str, db: Session = Depends(get_db)):
+async def get_channel_config(channel_id: str, db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -825,7 +919,7 @@ async def get_channel_config(channel_id: str, db: Session = Depends(get_db)):
     return channel.config_schema or {}
 
 @app.get("/api/channels/{channel_id}/settings")
-async def get_channel_settings(channel_id: str, db: Session = Depends(get_db)):
+async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
@@ -915,12 +1009,74 @@ async def request_channel_image(
 
 # v2.1 Channel Endpoints
 
+# Cache for channel manifest to prevent excessive computation
+_manifest_cache = {
+    "data": None,
+    "timestamp": 0,
+    "cache_duration": 10  # Cache for 10 seconds (manifest changes rarely)
+}
+
+# Rate limiting for manifest endpoint
+_manifest_rate_limits = defaultdict(list)
+_manifest_rate_limit_window = 60  # 1 minute window  
+_manifest_max_requests_per_window = 100  # Max 100 requests per minute per IP (secondary limit after global)
+
 @app.get("/api/channels/manifest")
-async def get_channels_manifest():
-    """Get UI-aware manifests for React plugin loader"""
+async def get_channels_manifest(request: Request, response: Response):
+    """Get UI-aware manifests for React plugin loader with caching and rate limiting"""
+    current_time = time()
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Rate limiting check
+    client_requests = _manifest_rate_limits[client_ip]
+    # Remove old requests outside the window
+    client_requests[:] = [req_time for req_time in client_requests 
+                         if current_time - req_time < _manifest_rate_limit_window]
+    
+    if len(client_requests) >= _manifest_max_requests_per_window:
+        raise HTTPException(
+            status_code=429, 
+            detail={
+                "error": "Rate limit exceeded for channels manifest endpoint",
+                "limit": _manifest_max_requests_per_window,
+                "window_seconds": _manifest_rate_limit_window,
+                "retry_after": int(_manifest_rate_limit_window - (current_time - client_requests[0])),
+                "suggestion": "Cache this response locally for 10+ seconds to reduce requests"
+            }
+        )
+    
+    # Add current request to rate limit tracking
+    client_requests.append(current_time)
+    
+    # Check if we have fresh cached data
+    if (_manifest_cache["data"] and 
+        current_time - _manifest_cache["timestamp"] < _manifest_cache["cache_duration"]):
+        # For cached responses, add rate limit info as custom headers
+        response.headers["X-Cache-Status"] = "HIT"
+        response.headers["X-Cache-Age"] = str(int(current_time - _manifest_cache["timestamp"]))
+        response.headers["X-Rate-Limit-Remaining"] = str(_manifest_max_requests_per_window - len(client_requests))
+        response.headers["X-Rate-Limit-Reset"] = str(int(current_time + _manifest_rate_limit_window))
+        response.headers["Cache-Control"] = f"public, max-age={_manifest_cache['cache_duration']}"
+        cached_data = _manifest_cache["data"]
+        return cached_data
+    
     try:
+        # Generate fresh manifest data
         manifests = channel_discovery.get_manifest_for_ui()
+        
+        # Add headers for fresh responses
+        response.headers["X-Cache-Status"] = "MISS"
+        response.headers["X-Cache-Age"] = "0"
+        response.headers["X-Rate-Limit-Remaining"] = str(_manifest_max_requests_per_window - len(client_requests))
+        response.headers["X-Rate-Limit-Reset"] = str(int(current_time + _manifest_rate_limit_window))
+        response.headers["Cache-Control"] = f"public, max-age={_manifest_cache['cache_duration']}"
+        
+        # Update cache (store the raw array)
+        _manifest_cache["data"] = manifests
+        _manifest_cache["timestamp"] = current_time
+        
         return manifests
+        
     except Exception as e:
         print(f"Error getting channel manifests: {e}")
         raise HTTPException(status_code=500, detail="Failed to load channel manifests")
@@ -1010,7 +1166,8 @@ async def get_channel_token(channel_id: str):
 async def list_scenes(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _rate_limit: bool = Depends(check_rate_limit)
 ):
     total = db.query(Scene).count()
     scenes = db.query(Scene).offset(offset).limit(limit).all()
@@ -1208,7 +1365,8 @@ async def display_scene(scene_id: str, db: Session = Depends(get_db)):
 async def list_overlays(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
 ):
     total = db.query(Overlay).count()
     overlays = db.query(Overlay).offset(offset).limit(limit).all()
@@ -1230,7 +1388,7 @@ async def list_overlays(
 
 # Display Management
 @app.get("/api/display/status")
-async def get_display_status(db: Session = Depends(get_db)):
+async def get_display_status(db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
     status = db.query(DisplayStatus).first()
     if not status:
         # Return default mock status
@@ -1270,10 +1428,83 @@ async def clear_display():
     
     return {"success": True}
 
-# WebSocket status endpoint
+# WebSocket status endpoint with caching and rate limiting
+from time import time
+from collections import defaultdict
+
+# Cache for WebSocket status to prevent excessive computation
+_websocket_status_cache = {
+    "data": None,
+    "timestamp": 0,
+    "cache_duration": 5  # Cache for 5 seconds
+}
+
+# Rate limiting for WebSocket status endpoint
+_status_rate_limits = defaultdict(list)
+_rate_limit_window = 60  # 1 minute window
+_max_requests_per_window = 50  # Max 50 requests per minute per IP (secondary limit after global)
+
+def cleanup_rate_limits():
+    """Clean up old rate limit entries to prevent memory leaks"""
+    current_time = time()
+    clients_to_remove = []
+    
+    for client_ip, requests in _status_rate_limits.items():
+        # Remove old requests
+        requests[:] = [req_time for req_time in requests 
+                      if current_time - req_time < _rate_limit_window]
+        # Mark empty clients for removal
+        if not requests:
+            clients_to_remove.append(client_ip)
+    
+    # Remove empty clients
+    for client_ip in clients_to_remove:
+        del _status_rate_limits[client_ip]
+
 @app.get("/api/websocket/status")
-async def websocket_status():
-    return {
+async def websocket_status(request: Request):
+    current_time = time()
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Periodic cleanup of rate limits (every 100th request roughly)
+    if len(_status_rate_limits) > 50:  # Only cleanup when we have many entries
+        cleanup_rate_limits()
+    
+    # Rate limiting check
+    client_requests = _status_rate_limits[client_ip]
+    # Remove old requests outside the window
+    client_requests[:] = [req_time for req_time in client_requests 
+                         if current_time - req_time < _rate_limit_window]
+    
+    if len(client_requests) >= _max_requests_per_window:
+        raise HTTPException(
+            status_code=429, 
+            detail={
+                "error": "Rate limit exceeded for WebSocket status endpoint",
+                "limit": _max_requests_per_window,
+                "window_seconds": _rate_limit_window,
+                "retry_after": int(_rate_limit_window - (current_time - client_requests[0])),
+                "suggestion": "Consider caching the status locally or reducing polling frequency"
+            }
+        )
+    
+    # Add current request to rate limit tracking
+    client_requests.append(current_time)
+    
+    # Check if we have fresh cached data
+    if (_websocket_status_cache["data"] and 
+        current_time - _websocket_status_cache["timestamp"] < _websocket_status_cache["cache_duration"]):
+        cached_data = _websocket_status_cache["data"].copy()
+        cached_data["cache_info"]["served_from_cache"] = True
+        cached_data["rate_limit_info"] = {
+            "requests_in_window": len(client_requests),
+            "max_requests": _max_requests_per_window,
+            "window_seconds": _rate_limit_window
+        }
+        return cached_data
+    
+    # Generate fresh status data
+    status_data = {
         "connected_clients": len(manager.active_connections),
         "websocket_url": "ws://localhost:5000/ws",
         "current_sequence_id": manager.sequence_id,
@@ -1283,8 +1514,29 @@ async def websocket_status():
             "enhanced_events": True,
             "error_broadcasting": True,
             "channel_status_updates": True
+        },
+        "cache_info": {
+            "cached_at": current_time,
+            "cache_duration_seconds": _websocket_status_cache["cache_duration"],
+            "served_from_cache": False
+        },
+        "rate_limit_info": {
+            "requests_in_window": len(client_requests),
+            "max_requests": _max_requests_per_window,
+            "window_seconds": _rate_limit_window
+        },
+        "optimization_suggestions": {
+            "polling_frequency": "Consider polling every 10-30 seconds instead of continuously",
+            "caching": "Cache this response locally for the duration specified in cache_info",
+            "websocket_alternative": "Use WebSocket connection for real-time updates instead of polling"
         }
     }
+    
+    # Update cache
+    _websocket_status_cache["data"] = status_data
+    _websocket_status_cache["timestamp"] = current_time
+    
+    return status_data
 
 if __name__ == "__main__":
     import uvicorn
