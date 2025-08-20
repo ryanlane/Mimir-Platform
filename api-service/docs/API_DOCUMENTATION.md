@@ -1,7 +1,7 @@
 # Mimir Platform API Documentation
 
-**Version:** 1.1  
-**Last Updated:** August 19, 2025  
+**Version:** 2.1  
+**Last Updated:** August 20, 2025  
 **Base URL:** `http://localhost:5000`  
 
 ---
@@ -10,8 +10,8 @@
 
 1. [Overview](#overview)
 2. [Core API Endpoints](#core-api-endpoints)
-3. [Scene Management](#scene-management)
-4. [Channel System](#channel-system)
+3. [Channel System v2.1](#channel-system-v21)
+4. [Scene Management](#scene-management)
 5. [Overlay System](#overlay-system)
 6. [Display Management](#display-management)
 7. [WebSocket Real-time Updates](#websocket-real-time-updates)
@@ -25,9 +25,13 @@
 
 The Mimir Platform provides a RESTful API for managing ambient display scenes, channels, overlays, and content. The API is built with FastAPI and follows REST conventions with JSON request/response bodies.
 
+**Architecture v2.1** introduces a modern plugin system with filesystem-based channel discovery, Web Component UI support, and enhanced security features including Subresource Integrity (SRI) validation.
+
 ### Base URLs
 
 - **Main API:** `http://localhost:5000/api`
+- **Channel UI Assets:** `http://localhost:5000/api/channels/{id}/ui/`
+- **Channel Static Assets:** `http://localhost:5000/api/channels/{id}/assets/`
 
 ### Content Types
 
@@ -80,15 +84,21 @@ List all discovered channels with their configuration and status.
     {
       "id": "weather_channel",
       "name": "Weather Display",
-      "description": "Shows current weather conditions",
-      "relLogoImagePath": "static/logo.png",
-      "version": "1.0.0",
+      "description": "Shows current weather conditions with forecast",
+      "relLogoImagePath": null,
+      "version": "1.2.0",
       "settingsType": "simple",      
       "status": {
-        "lastUpdate": "2025-08-18T10:30:00Z",
+        "active": true,
+        "lastUpdate": "2025-08-20T09:47:13.528309",
         "lastError": null,
         "usingFallback": false
-      }
+      },
+      "schemaVersion": "2.1",
+      "permissions": ["read:weather"],
+      "hasUI": true,
+      "hasAssets": true,
+      "channelDir": "channels/weather_channel"
     }
   ],
   "meta": {
@@ -184,6 +194,156 @@ Request a new image from channel
   "success": true,
   "imagePath": "/channels/weather_channel/current.jpg",
   "message": "Test image generated successfully"
+}
+```
+
+#### GET `/api/channels/manifest`
+Get UI-aware manifests for React plugin loader (v2.1).
+
+**Response:**
+```json
+[
+  {
+    "id": "weather_channel",
+    "name": "Weather Display",
+    "description": "Shows current weather conditions with forecast",
+    "version": "1.2.0",
+    "schemaVersion": "2.1",
+    "permissions": ["read:weather"],
+    "ui": [
+      {
+        "element": "x-weather-card",
+        "moduleUrl": "/api/channels/weather_channel/ui/index.esm.js",
+        "styleUrl": "/api/channels/weather_channel/ui/styles.css",
+        "slots": ["dashboard.topRight"],
+        "renderMode": "element",
+        "propsSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "user": {"type": "object"},
+            "theme": {"type": "string"}
+          }
+        },
+        "integrity": {
+          "module": "sha384-5KTNP4UMxHg0D31IeO3SJgz1h3r4XT4GcykOy3dYIfEqLQbO0L82tg81sP5hFge8",
+          "style": "sha384-x4JTkDc0j6knV84b98wFp2jku9cOWMYOFeaQRUHwUu26AQhrRMY/HdoGdYjYO4hD"
+        }
+      }
+    ],
+    "assets": [
+      {
+        "name": "logo",
+        "url": "/api/channels/weather_channel/assets/logo.svg"
+      }
+    ]
+  }
+]
+```
+
+#### POST `/api/channels/{channel_id}/test`
+Test channel functionality (v2.1).
+
+**Parameters:**
+- `channel_id` (string): Channel identifier
+
+**Response:**
+```json
+{
+  "success": true,
+  "channelId": "weather_channel",
+  "status": {
+    "active": true,
+    "lastUpdate": "2025-08-20T09:48:56.926195",
+    "lastError": null,
+    "usingFallback": false,
+    "version": "1.2.0"
+  },
+  "test_result": {
+    "success": true,
+    "message": "Weather channel is working correctly",
+    "timestamp": "2025-08-20T09:48:48.076744"
+  },
+  "timestamp": "2025-08-20T09:48:48.076744"
+}
+```
+
+#### GET `/api/channels/{channel_id}/health`
+Get channel health status (v2.1).
+
+**Parameters:**
+- `channel_id` (string): Channel identifier
+
+**Response:**
+```json
+{
+  "channelId": "weather_channel",
+  "name": "Weather Display",
+  "version": "1.2.0",
+  "status": {
+    "active": true,
+    "lastUpdate": "2025-08-20T09:48:56.926195",
+    "lastError": null,
+    "usingFallback": false,
+    "version": "1.2.0"
+  },
+  "healthy": true,
+  "lastCheck": "2025-08-20T09:48:56.931834"
+}
+```
+
+#### GET `/api/channels/{channel_id}/token`
+Get channel-scoped authentication token (v2.1).
+
+**Parameters:**
+- `channel_id` (string): Channel identifier
+
+**Response:**
+```json
+{
+  "token": "channel_weather_channel_1755708543",
+  "channelId": "weather_channel",
+  "permissions": ["read:weather"],
+  "expiresIn": 3600,
+  "tokenType": "Bearer"
+}
+```
+
+#### Dynamic Channel APIs
+Channels can define their own API endpoints that are automatically mounted under `/api/channels/{channel_id}/`. For example, the weather channel provides:
+
+#### GET `/api/channels/weather_channel/forecast`
+Get weather forecast data (channel-specific endpoint).
+
+**Query Parameters:**
+- `city` (string, optional): City name (default: "Seattle")
+
+**Response:**
+```json
+{
+  "city": "London",
+  "current": {
+    "tempC": 22,
+    "tempF": 72,
+    "condition": "Partly Cloudy",
+    "humidity": 65,
+    "windSpeed": 10
+  },
+  "forecast": [
+    {
+      "day": "Today",
+      "high": 24,
+      "low": 18,
+      "condition": "Sunny"
+    },
+    {
+      "day": "Tomorrow", 
+      "high": 26,
+      "low": 20,
+      "condition": "Cloudy"
+    }
+  ],
+  "lastUpdate": "2025-08-20T09:48:27.570275"
 }
       "hasOverlays": false,
       "overlays": []
@@ -407,62 +567,256 @@ Display a scene on the e-ink display (one-time rendering).
 
 ---
 
-## Channel System
+## Channel System v2.1
 
-### Channel Configuration
+The v2.1 Channel System introduces a modern, filesystem-based plugin architecture with support for rich UI components and enhanced security.
 
-Channels are self-contained modules discovered via `config.json` files in the `channels/` directory. Each channel generates images on-demand when requested by the scene engine.
+### Key Features
 
-#### Channel Discovery
+- **🔍 Automatic Discovery** - Channels auto-discovered from `channels/` directory
+- **🌐 Web Component UI** - Self-contained UI with ES Modules and Shadow DOM
+- **🛡️ Security Hardening** - Subresource Integrity (SRI) validation and Content Security Policy
+- **📦 Static Asset Serving** - Dedicated endpoints for UI and assets
+- **🔌 Dynamic API Routes** - Channels can define their own API endpoints
+- **⚡ Hot-Reload Ready** - Foundation for live channel updates
 
-The platform automatically discovers channels by scanning for:
-- `channels/{channel_name}/config.json` - Channel configuration
-- `channels/{channel_name}/channel.py` - Python implementation
-- `channels/{channel_name}/placeholder.jpg` - Default/fallback image
+### Channel Directory Structure
 
-#### Channel Configuration Schema
+Channels are self-contained directories under `channels/` with the following structure:
+
+```
+channels/
+└── weather_channel/
+    ├── config.json              # v2.1 manifest
+    ├── channel.py               # Channel implementation
+    ├── ui/                      # Optional: Web Component UI
+    │   ├── index.esm.js         # Web Component entry (ESM)
+    │   ├── page.esm.js          # Optional page component
+    │   └── styles.css           # Scoped styles
+    └── assets/                  # Static assets (images, fonts)
+        └── logo.svg             # Channel logo
+```
+
+### Channel Discovery Process
+
+1. **Scan** `channels/` directory for subdirectories
+2. **Load** and validate `config.json` manifests
+3. **Import** `channel.py` and instantiate channel class
+4. **Mount** static file serving for UI and assets
+5. **Register** channel-specific API routes
+6. **Compute** SRI hashes for security validation
+7. **Sync** channel data to database
+
+### v2.1 Channel Manifest (config.json)
 
 ```json
 {
+  "schemaVersion": "2.1",
+  "id": "weather_channel",
   "name": "Weather Display",
-  "description": "Shows current weather conditions",
-  "update_schedule": {
-    "unit": "minutes",
-    "duration": 15
-  },
-  "placeholder_image": "placeholder.jpg",
-  "current_image": "current.jpg",
+  "description": "Shows current weather conditions with forecast",
+  "version": "1.2.0",
+  "permissions": ["read:weather"],
   "settings_type": "simple",
   "settings": {
-    "api_key": {"type": "string", "required": true, "secret": true},
-    "location": {"type": "string", "required": true, "default": "New York"}
-  }
+    "api_key": {
+      "type": "string",
+      "required": true,
+      "secret": true,
+      "label": "Weather API Key"
+    },
+    "location": {
+      "type": "string",
+      "required": true,
+      "default": "Seattle",
+      "label": "Default Location"
+    }
+  },
+  "ui": [
+    {
+      "element": "x-weather-card",
+      "moduleUrl": "/api/channels/weather_channel/ui/index.esm.js",
+      "styleUrl": "/api/channels/weather_channel/ui/styles.css",
+      "slots": ["dashboard.topRight"],
+      "renderMode": "element",
+      "propsSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "user": {"type": "object"},
+          "theme": {"type": "string"}
+        }
+      }
+    },
+    {
+      "route": "/weather",
+      "element": "x-weather-page",
+      "moduleUrl": "/api/channels/weather_channel/ui/page.esm.js",
+      "nav": {"label": "Weather", "icon": "cloud"},
+      "renderMode": "element"
+    }
+  ],
+  "assets": [
+    {
+      "name": "logo",
+      "url": "/api/channels/weather_channel/assets/logo.svg"
+    }
+  ]
 }
 ```
 
-#### Image Generation API
+### Channel Implementation Protocol
 
-Channels implement a standardized interface:
+Channels implement a standardized Python interface:
 
 ```python
-async def render_image(
-    resolution: tuple[int, int], 
-    orientation: str, 
-    settings: dict
-) -> str:
-    """Generate image and return relative path"""
+class WeatherChannel:
+    def __init__(self, channel_dir: str):
+        self.channel_dir = Path(channel_dir)
+        
+    @property
+    def id(self) -> str:
+        return "weather_channel"
+        
+    @property 
+    def config(self) -> dict:
+        # Load and return config.json
+        
+    async def render_image(self, resolution: tuple[int,int], orientation: str, settings: dict) -> str:
+        # Generate display image, return path
+        
+    async def validate_settings(self, settings: dict) -> dict[str,str]:
+        # Validate settings, return errors
+        
+    def get_status(self) -> dict:
+        # Return channel health/status
+        
+    def get_router(self) -> Optional[APIRouter]:
+        # Return FastAPI router for channel APIs (optional)
 ```
 
-#### Error Handling
+### UI Component Development
 
-- **Generation Fails**: Use last successful cached image
-- **No Cache**: Use placeholder.jpg from channel
-- **No Placeholder**: Show error state in console UI
+Channels can include Web Components for rich UI integration:
 
-#### Settings Types
+```javascript
+// ui/index.esm.js - Weather Card Component
+class WeatherCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
 
-- **Simple**: Platform generates UI from JSON schema
-- **Complex**: Channel provides custom management interface
+  async connectedCallback() {
+    const props = JSON.parse(this.getAttribute('data-hostprops') || '{}');
+    const user = props.user || {};
+    
+    // Fetch data from channel API
+    const response = await fetch(
+      `/api/channels/weather_channel/forecast?city=${user.city || 'Seattle'}`,
+      { credentials: 'include' }
+    );
+    const data = await response.json();
+    
+    // Render with Shadow DOM isolation
+    this.render(data, props.theme);
+  }
+  
+  render(weatherData, theme) {
+    this.shadowRoot.innerHTML = `
+      <style>/* Scoped styles */</style>
+      <div class="weather-card">
+        <h3>${weatherData.city}</h3>
+        <div class="temp">${weatherData.current.tempC}°C</div>
+        <div class="condition">${weatherData.current.condition}</div>
+      </div>
+    `;
+  }
+}
+
+customElements.define('x-weather-card', WeatherCard);
+```
+
+### Security Features
+
+#### Subresource Integrity (SRI)
+- **Automatic hash computation** for all UI files (SHA-384)
+- **Integrity validation** prevents tampering
+- **Manifest includes hashes** for client-side verification
+
+#### Content Security Policy
+- **Restricted script execution** to validated sources
+- **Style isolation** via Shadow DOM
+- **Asset sandboxing** through dedicated mount points
+
+#### Permission System
+- **Channel-scoped permissions** declared in manifest
+- **API token generation** with limited scope
+- **Rate limiting** per channel (planned)
+
+### Static File Serving
+
+UI and assets are served via dedicated endpoints:
+
+```
+GET /api/channels/{channel_id}/ui/index.esm.js     # Web Component code
+GET /api/channels/{channel_id}/ui/styles.css       # Scoped styles  
+GET /api/channels/{channel_id}/assets/logo.svg     # Static assets
+```
+
+**Headers:**
+- `Content-Type: application/javascript` for ES modules
+- `Content-Type: text/css` for stylesheets
+- SRI hashes included in manifest for validation
+
+### React Integration
+
+The v2.1 system provides everything needed for React plugin loading:
+
+```javascript
+// 1. Fetch channel manifests
+const manifests = await fetch('/api/channels/manifest').then(r => r.json());
+
+// 2. Load Web Components dynamically
+for (const manifest of manifests) {
+  for (const ui of manifest.ui) {
+    if (ui.renderMode === 'element') {
+      // Validate integrity hash (optional)
+      await import(/* webpackIgnore: true */ ui.moduleUrl);
+    }
+  }
+}
+
+// 3. Use in React components
+function PluginSlot({ name, hostProps }) {
+  const uiElements = manifests
+    .flatMap(m => m.ui)
+    .filter(ui => ui.slots?.includes(name));
+    
+  return (
+    <>
+      {uiElements.map((ui, i) => 
+        React.createElement(ui.element, {
+          key: i,
+          'data-hostprops': JSON.stringify(hostProps)
+        })
+      )}
+    </>
+  );
+}
+
+// 4. Use plugin slot in dashboard
+<PluginSlot name="dashboard.topRight" hostProps={{ user, theme }} />
+```
+
+### Migration from v2.0
+
+- **v2.0 channels continue working** unchanged
+- **To add UI capabilities:**
+  1. Add `ui/` directory with Web Components
+  2. Update `config.json` with `ui` array
+  3. Optionally add `get_router()` for custom APIs
+- **Database automatically migrated** to v2.1 schema
 
 ---
 
@@ -932,22 +1286,68 @@ Get current WebSocket connection information.
 ### Channel Object
 ```json
 {
-  "id": "channel_identifier",
-  "name": "Channel Name",
-  "description": "Channel description",
-  "version": "1.0.0",
+  "id": "weather_channel",
+  "name": "Weather Display",
+  "description": "Shows current weather conditions with forecast",
+  "relLogoImagePath": null,
+  "version": "1.2.0",
   "settingsType": "simple",
   "status": {
-    "lastUpdate": "2025-08-18T10:30:00Z",
+    "active": true,
+    "lastUpdate": "2025-08-20T09:47:13.528309",
     "lastError": null,
     "usingFallback": false
-  }
+  },
+  "schemaVersion": "2.1",
+  "permissions": ["read:weather"],
+  "hasUI": true,
+  "hasAssets": true,
+  "channelDir": "channels/weather_channel"
 }
 ```
 
 ---
 
 ## Examples
+
+### v2.1 Channel Development Workflow
+
+1. **Check discovered channels:**
+```bash
+curl -X GET "http://localhost:5000/api/channels"
+```
+
+2. **Get UI manifests for React integration:**
+```bash
+curl -X GET "http://localhost:5000/api/channels/manifest"
+```
+
+3. **Test channel functionality:**
+```bash
+curl -X POST "http://localhost:5000/api/channels/weather_channel/test"
+```
+
+4. **Check channel health:**
+```bash
+curl -X GET "http://localhost:5000/api/channels/weather_channel/health"
+```
+
+5. **Access channel-specific APIs:**
+```bash
+curl -X GET "http://localhost:5000/api/channels/weather_channel/forecast?city=London"
+```
+
+6. **Access channel UI assets:**
+```bash
+# Web Component code
+curl -X GET "http://localhost:5000/api/channels/weather_channel/ui/index.esm.js"
+
+# Styles
+curl -X GET "http://localhost:5000/api/channels/weather_channel/ui/styles.css"
+
+# Static assets
+curl -X GET "http://localhost:5000/api/channels/weather_channel/assets/logo.svg"
+```
 
 ### Complete Scene Creation Workflow
 
@@ -1000,6 +1400,32 @@ curl -X POST http://localhost:5000/api/display/clear
 
 ## Changelog
 
+### v2.1 (August 2025)
+- **🚀 Channel Architecture v2.1** - Complete overhaul of plugin system
+- **🔍 Filesystem-based Discovery** - Automatic channel discovery from `channels/` directory
+- **🌐 Web Component Support** - Self-contained UI with ES Modules and Shadow DOM
+- **🛡️ Enhanced Security** - Subresource Integrity (SRI) validation for UI assets
+- **📦 Static Asset Serving** - Dedicated endpoints for UI and assets at `/api/channels/{id}/ui/` and `/api/channels/{id}/assets/`
+- **🔌 Dynamic API Routes** - Channels can define custom API endpoints
+- **📊 New v2.1 Endpoints:**
+  - `GET /api/channels/manifest` - UI manifests for React plugin loader
+  - `POST /api/channels/{id}/test` - Channel functionality testing
+  - `GET /api/channels/{id}/health` - Channel health monitoring
+  - `GET /api/channels/{id}/token` - Channel-scoped authentication tokens
+- **🎯 React Integration Ready** - Complete plugin loading system for React frontends
+- **📈 Enhanced Channel Responses** - Added `schemaVersion`, `permissions`, `hasUI`, `hasAssets`, `channelDir`
+- **⚡ Performance Improvements** - Efficient static file serving and database connection pooling
+- **🔄 Backwards Compatibility** - v2.0 channels continue to work unchanged
+
+### v1.1 (August 2025)
+- Enhanced WebSocket real-time updates with full state broadcast
+- Sequence ID tracking for message ordering
+- Heartbeat/ping-pong connection health monitoring
+- Enhanced event context with previous state information
+- Error broadcasting with recovery suggestions
+- Channel status updates in real-time
+- Connection status endpoint at `/api/websocket/status`
+
 ### v1.0 (August 2025)
 - Initial API implementation with FastAPI
 - SQLite database integration with SQLAlchemy
@@ -1007,7 +1433,7 @@ curl -X POST http://localhost:5000/api/display/clear
 - Channel management with configuration schemas
 - Overlay system endpoints
 - Display management endpoints
-- **WebSocket real-time updates** for live scene synchronization
+- WebSocket real-time updates for live scene synchronization
 - Scene activation state tracking (`isActive` field)
 - Pagination support for all list endpoints
 - React-friendly camelCase property naming

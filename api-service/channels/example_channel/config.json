@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "2.1",
+  "id": "example_channel",
+  "name": "Example Channel",
+  "description": "Sample photo display channel for testing",
+  "version": "1.0.0",
+  "update_schedule": {
+    "unit": "hours",
+    "duration": 1
+  },
+  "permissions": ["read:photos"],
+  "settings_type": "simple",
+  "settings": {
+    "photo_source": {
+      "type": "select",
+      "options": ["local", "unsplash", "custom"],
+      "default": "local",
+      "label": "Photo Source"
+    },
+    "category": {
+      "type": "string",
+      "default": "nature",
+      "label": "Photo Category"
+    }
+  }
+}
