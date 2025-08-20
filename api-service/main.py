@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 import hashlib
 import base64
+import uuid
 from time import time
 from collections import defaultdict
 
@@ -77,6 +78,40 @@ class DisplayStatus(Base):
     current_scene = Column(String, nullable=True)
     current_image = Column(JSON, nullable=True)
     resolution = Column(JSON)
+
+class DisplayClient(Base):
+    """Represents a connected display client"""
+    __tablename__ = "display_clients"
+    
+    id = Column(String, primary_key=True, index=True)  # UUID
+    name = Column(String, nullable=False)  # Human-readable name
+    description = Column(String, nullable=True)
+    location = Column(String, nullable=True)  # Physical location
+    
+    # Client capabilities
+    resolution = Column(JSON, nullable=True)  # [width, height]
+    supported_formats = Column(JSON, nullable=True)  # ["jpg", "png", "gif"]
+    orientation = Column(String, default="landscape")  # "landscape", "portrait"
+    refresh_rate_hz = Column(Integer, nullable=True)  # Display refresh rate
+    client_version = Column(String, nullable=True)  # Client software version
+    
+    # Connection status
+    is_online = Column(Boolean, default=False)
+    last_seen = Column(DateTime, nullable=True)
+    last_image_fetch = Column(DateTime, nullable=True)  # When client last fetched image
+    websocket_connection_id = Column(String, nullable=True)
+    
+    # Current assignment
+    assigned_scene_id = Column(String, nullable=True)  # ForeignKey to scenes
+    current_image_path = Column(String, nullable=True)  # Path to current scene image
+    
+    # Configuration
+    settings = Column(JSON, nullable=True)  # Display-specific settings
+    tags = Column(JSON, nullable=True)  # ["lobby", "conference-room", "kiosk"]
+    
+    # Metadata
+    created_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -293,19 +328,65 @@ class ChannelDiscovery:
 # Global channel discovery instance
 channel_discovery = ChannelDiscovery()
 
-# WebSocket Connection Manager
+# WebSocket Connection Manager with Multi-Display Support
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.display_connections: Dict[str, WebSocket] = {}  # display_client_id -> websocket
+        self.connection_metadata: Dict[WebSocket, Dict] = {}  # websocket -> metadata
         self.sequence_id = 0
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.connection_metadata[websocket] = {"type": "dashboard", "connected_at": datetime.datetime.now()}
+
+    async def connect_display_client(self, websocket: WebSocket, display_client_id: str):
+        """Connect a specific display client"""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        self.display_connections[display_client_id] = websocket
+        self.connection_metadata[websocket] = {
+            "type": "display", 
+            "display_id": display_client_id,
+            "connected_at": datetime.datetime.now()
+        }
+        
+        # Update database status
+        db = SessionLocal()
+        try:
+            client = db.query(DisplayClient).filter(DisplayClient.id == display_client_id).first()
+            if client:
+                client.is_online = True
+                client.last_seen = datetime.datetime.now()
+                db.commit()
+        finally:
+            db.close()
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+            
+        # Handle display client disconnection
+        metadata = self.connection_metadata.get(websocket, {})
+        if metadata.get("type") == "display":
+            display_id = metadata.get("display_id")
+            if display_id and display_id in self.display_connections:
+                del self.display_connections[display_id]
+                
+                # Update database status
+                db = SessionLocal()
+                try:
+                    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+                    if client:
+                        client.is_online = False
+                        db.commit()
+                finally:
+                    db.close()
+        
+        # Clean up metadata
+        if websocket in self.connection_metadata:
+            del self.connection_metadata[websocket]
 
     def get_next_sequence_id(self) -> int:
         self.sequence_id += 1
@@ -316,6 +397,60 @@ class ConnectionManager:
             await websocket.send_text(message)
         except:
             self.disconnect(websocket)
+
+    async def send_to_display_client(self, display_client_id: str, message: dict):
+        """Send message to specific display client"""
+        websocket = self.display_connections.get(display_client_id)
+        if websocket:
+            try:
+                await websocket.send_text(json.dumps(message))
+                return True
+            except:
+                self.disconnect(websocket)
+                return False
+        return False
+
+    async def broadcast_to_display_clients(self, message: dict, target_display_ids: Optional[List[str]] = None):
+        """Broadcast to display clients (all or specific ones)"""
+        message_str = json.dumps(message)
+        results = {}
+        
+        target_connections = {}
+        if target_display_ids:
+            # Send to specific display clients
+            for display_id in target_display_ids:
+                if display_id in self.display_connections:
+                    target_connections[display_id] = self.display_connections[display_id]
+        else:
+            # Send to all display clients
+            target_connections = self.display_connections.copy()
+        
+        for display_id, websocket in target_connections.items():
+            try:
+                await websocket.send_text(message_str)
+                results[display_id] = True
+            except:
+                self.disconnect(websocket)
+                results[display_id] = False
+                
+        return results
+
+    async def broadcast_to_dashboard_clients(self, message: dict):
+        """Broadcast to dashboard/admin clients only"""
+        message_str = json.dumps(message)
+        disconnected = []
+        
+        for connection in self.active_connections:
+            metadata = self.connection_metadata.get(connection, {})
+            if metadata.get("type") != "display":  # Send to non-display clients
+                try:
+                    await connection.send_text(message_str)
+                except:
+                    disconnected.append(connection)
+        
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.disconnect(connection)
 
     async def broadcast(self, message: dict):
         """Broadcast message to all connected clients"""
@@ -542,6 +677,47 @@ class PaginationMeta(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+# Multi-Display Client Models
+class DisplayClientCapabilities(BaseModel):
+    resolution: List[int]  # [width, height]
+    supported_formats: List[str]  # ["jpg", "png", "gif"]
+    orientation: str = "landscape"  # "landscape" | "portrait"
+    refresh_rate_hz: Optional[int] = 60  # Display refresh rate
+
+class DisplayClientRegistration(BaseModel):
+    name: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+    capabilities: DisplayClientCapabilities
+    tags: Optional[List[str]] = None
+    client_version: Optional[str] = "1.0.0"  # Client software version
+
+class DisplayClientUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    tags: Optional[List[str]] = None
+    settings: Optional[Dict[str, Any]] = None
+
+class DisplayClientResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str]
+    location: Optional[str]
+    is_online: bool
+    last_seen: Optional[str]
+    assigned_scene_id: Optional[str]
+    assigned_scene_name: Optional[str]
+    resolution: Optional[List[int]]
+    orientation: str
+    refresh_rate_hz: Optional[int]
+    tags: Optional[List[str]]
+    client_version: Optional[str]
+    current_image_url: Optional[str]  # URL to fetch latest image
+
+class SceneAssignment(BaseModel):
+    scene_id: Optional[str]  # None to unassign
 
 # Initialize FastAPI app
 app = FastAPI(title="Mimir Platform API", version="1.0")
@@ -1537,6 +1713,467 @@ async def websocket_status(request: Request):
     _websocket_status_cache["timestamp"] = current_time
     
     return status_data
+
+# =============================================================================
+# MULTI-DISPLAY CLIENT ENDPOINTS
+# =============================================================================
+
+@app.post("/api/displays/register", response_model=DisplayClientResponse)
+async def register_display_client(
+    registration: DisplayClientRegistration, 
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Register a new display client"""
+    
+    # Generate unique ID
+    display_id = str(uuid.uuid4())
+    
+    # Create display client record
+    display_client = DisplayClient(
+        id=display_id,
+        name=registration.name,
+        description=registration.description,
+        location=registration.location,
+        resolution=registration.capabilities.resolution,
+        supported_formats=registration.capabilities.supported_formats,
+        orientation=registration.capabilities.orientation,
+        refresh_rate_hz=registration.capabilities.refresh_rate_hz,
+        client_version=registration.client_version,
+        tags=registration.tags,
+        is_online=False,
+        created_at=datetime.datetime.now()
+    )
+    
+    db.add(display_client)
+    db.commit()
+    db.refresh(display_client)
+    
+    # Broadcast new display registration
+    await broadcast_event("display_client_registered", {
+        "displayId": display_id,
+        "name": registration.name,
+        "location": registration.location,
+        "capabilities": registration.capabilities.model_dump()
+    })
+    
+    return DisplayClientResponse(
+        id=display_client.id,
+        name=display_client.name,
+        description=display_client.description,
+        location=display_client.location,
+        is_online=display_client.is_online,
+        last_seen=display_client.last_seen.isoformat() if display_client.last_seen else None,
+        assigned_scene_id=display_client.assigned_scene_id,
+        assigned_scene_name=None,
+        resolution=display_client.resolution,
+        orientation=display_client.orientation,
+        refresh_rate_hz=display_client.refresh_rate_hz,
+        tags=display_client.tags,
+        client_version=display_client.client_version,
+        current_image_url=None
+    )
+
+@app.get("/api/displays", response_model=List[DisplayClientResponse])
+async def list_display_clients(
+    online_only: bool = False,
+    location: Optional[str] = None,
+    tag: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """List all display clients with optional filtering"""
+    
+    query = db.query(DisplayClient)
+    
+    if online_only:
+        query = query.filter(DisplayClient.is_online == True)
+    
+    if location:
+        query = query.filter(DisplayClient.location.ilike(f"%{location}%"))
+    
+    if tag and tag.strip():
+        # Simple tag filtering - check if tag exists in the tags JSON array
+        query = query.filter(DisplayClient.tags.contains([tag]))
+    
+    clients = query.all()
+    
+    # Get scene names for assigned scenes
+    scene_names = {}
+    if clients:
+        scene_ids = [c.assigned_scene_id for c in clients if c.assigned_scene_id]
+        if scene_ids:
+            scenes = db.query(Scene).filter(Scene.id.in_(scene_ids)).all()
+            scene_names = {s.id: s.name for s in scenes}
+    
+    return [
+        DisplayClientResponse(
+            id=client.id,
+            name=client.name,
+            description=client.description,
+            location=client.location,
+            is_online=client.is_online,
+            last_seen=client.last_seen.isoformat() if client.last_seen else None,
+            assigned_scene_id=client.assigned_scene_id,
+            assigned_scene_name=scene_names.get(client.assigned_scene_id),
+            resolution=client.resolution,
+            orientation=client.orientation,
+            refresh_rate_hz=client.refresh_rate_hz,
+            tags=client.tags,
+            client_version=client.client_version,
+            current_image_url=f"/api/displays/{client.id}/current_image" if client.assigned_scene_id else None
+        ) for client in clients
+    ]
+
+@app.post("/api/displays/{display_id}/assign_scene")
+async def assign_scene_to_display(
+    display_id: str,
+    assignment: SceneAssignment,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Assign a scene to a specific display client"""
+    
+    # Get display client
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Validate scene exists (if assigning)
+    scene = None
+    if assignment.scene_id:
+        scene = db.query(Scene).filter(Scene.id == assignment.scene_id).first()
+        if not scene:
+            raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # Update assignment
+    old_scene_id = display_client.assigned_scene_id
+    display_client.assigned_scene_id = assignment.scene_id
+    display_client.updated_at = datetime.datetime.now()
+    db.commit()
+    
+    # Send targeted WebSocket message to the specific display
+    scene_assignment_message = {
+        "event": "scene_assigned",
+        "data": {
+            "displayId": display_id,
+            "sceneId": assignment.scene_id,
+            "sceneName": scene.name if scene else None,
+            "previousSceneId": old_scene_id,
+            "timestamp": datetime.datetime.now().isoformat()
+        },
+        "timestamp": datetime.datetime.now().isoformat(),
+        "sequenceId": manager.get_next_sequence_id()
+    }
+    
+    # Send to specific display client
+    sent = await manager.send_to_display_client(display_id, scene_assignment_message)
+    
+    # Also broadcast to dashboard clients for monitoring
+    await manager.broadcast_to_dashboard_clients({
+        "event": "display_assignment_updated",
+        "data": {
+            "displayId": display_id,
+            "displayName": display_client.name,
+            "newSceneId": assignment.scene_id,
+            "newSceneName": scene.name if scene else None,
+            "previousSceneId": old_scene_id
+        },
+        "timestamp": datetime.datetime.now().isoformat()
+    })
+    
+    return {
+        "message": f"Scene assignment updated for display {display_client.name}",
+        "assigned_scene": scene.name if scene else None,
+        "message_sent": sent
+    }
+
+@app.websocket("/ws/display/{display_id}")
+async def display_websocket_endpoint(websocket: WebSocket, display_id: str):
+    """WebSocket endpoint for specific display clients"""
+    
+    # Verify display client exists
+    db = SessionLocal()
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    db.close()
+    
+    if not display_client:
+        await websocket.close(code=4004, reason="Display client not found")
+        return
+    
+    # Connect the display client
+    await manager.connect_display_client(websocket, display_id)
+    
+    try:
+        # Send initial state to display client
+        await send_display_initial_state(websocket, display_id)
+        
+        # Keep connection alive
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                
+                # Handle display client messages
+                try:
+                    message = json.loads(data)
+                    await handle_display_client_message(display_id, message, websocket)
+                except json.JSONDecodeError:
+                    await websocket.send_text(json.dumps({
+                        "event": "error",
+                        "data": {"message": "Invalid JSON format"},
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }))
+                    
+            except asyncio.TimeoutError:
+                # Send heartbeat
+                await websocket.send_text(json.dumps({
+                    "event": "ping",
+                    "data": {"timestamp": datetime.datetime.now().isoformat()},
+                    "timestamp": datetime.datetime.now().isoformat()
+                }))
+                
+    except Exception as e:
+        print(f"Display WebSocket error for {display_id}: {e}")
+    finally:
+        manager.disconnect(websocket)
+
+async def send_display_initial_state(websocket: WebSocket, display_id: str):
+    """Send initial state specific to a display client"""
+    db = SessionLocal()
+    try:
+        display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+        
+        assigned_scene = None
+        if display_client.assigned_scene_id:
+            assigned_scene = db.query(Scene).filter(Scene.id == display_client.assigned_scene_id).first()
+        
+        initial_state = {
+            "event": "display_connection_established",
+            "data": {
+                "displayId": display_id,
+                "displayName": display_client.name,
+                "assignedScene": {
+                    "id": assigned_scene.id if assigned_scene else None,
+                    "name": assigned_scene.name if assigned_scene else None,
+                    "channels": assigned_scene.channels if assigned_scene else []
+                } if assigned_scene else None,
+                "capabilities": {
+                    "resolution": display_client.resolution,
+                    "rotation": display_client.rotation,
+                    "supported_formats": display_client.supported_formats
+                },
+                "serverTime": datetime.datetime.now().isoformat()
+            },
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        await websocket.send_text(json.dumps(initial_state))
+        
+    finally:
+        db.close()
+
+async def handle_display_client_message(display_id: str, message: dict, websocket: WebSocket):
+    """Handle messages from display clients"""
+    
+    event_type = message.get("event")
+    
+    if event_type == "ping":
+        # Respond to ping
+        await websocket.send_text(json.dumps({
+            "event": "pong",
+            "data": {"timestamp": datetime.datetime.now().isoformat()},
+            "timestamp": datetime.datetime.now().isoformat()
+        }))
+        
+    elif event_type == "display_status_update":
+        # Update display status
+        data = message.get("data", {})
+        
+        # Broadcast status update to dashboard clients
+        await manager.broadcast_to_dashboard_clients({
+            "event": "display_status_updated",
+            "data": {
+                "displayId": display_id,
+                "status": data,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "timestamp": datetime.datetime.now().isoformat()
+        })
+        
+    elif event_type == "request_scene_refresh":
+        # Display client requesting scene refresh
+        await send_display_initial_state(websocket, display_id)
+
+@app.post("/api/scenes/{scene_id}/activate_on_displays")
+async def activate_scene_on_displays(
+    scene_id: str,
+    display_ids: Optional[List[str]] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Activate a scene on specific display clients or all assigned displays"""
+    
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # If no display IDs specified, get all displays assigned to this scene
+    if display_ids is None:
+        assigned_displays = db.query(DisplayClient).filter(
+            DisplayClient.assigned_scene_id == scene_id,
+            DisplayClient.is_online == True
+        ).all()
+        display_ids = [d.id for d in assigned_displays]
+    
+    # Send activation message to target displays
+    activation_message = {
+        "event": "scene_activated",
+        "data": {
+            "sceneId": scene_id,
+            "sceneName": scene.name,
+            "channels": scene.channels or [],
+            "overlay": scene.overlay,
+            "timestamp": datetime.datetime.now().isoformat()
+        },
+        "timestamp": datetime.datetime.now().isoformat(),
+        "sequenceId": manager.get_next_sequence_id()
+    }
+    
+    results = await manager.broadcast_to_display_clients(activation_message, display_ids)
+    
+    return {
+        "message": f"Scene {scene.name} activated on {len(display_ids)} displays",
+        "target_displays": display_ids,
+        "delivery_results": results
+    }
+
+@app.get("/api/displays/{display_id}/current_image")
+async def get_display_current_image(
+    display_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Get the current scene image for a specific display client"""
+    
+    # Get display client
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Update last image fetch time
+    display_client.last_image_fetch = datetime.datetime.now()
+    display_client.last_seen = datetime.datetime.now()
+    db.commit()
+    
+    # Check if display has assigned scene
+    if not display_client.assigned_scene_id:
+        raise HTTPException(status_code=404, detail="No scene assigned to this display")
+    
+    # Get assigned scene
+    scene = db.query(Scene).filter(Scene.id == display_client.assigned_scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Assigned scene not found")
+    
+    # Generate/get scene image based on display capabilities
+    try:
+        image_info = await generate_scene_image_for_display(scene, display_client)
+        
+        return {
+            "display_id": display_id,
+            "scene_id": scene.id,
+            "scene_name": scene.name,
+            "image_url": image_info["url"],
+            "image_path": image_info["path"],
+            "resolution": image_info["resolution"],
+            "generated_at": image_info["generated_at"],
+            "channels": scene.channels or [],
+            "cache_expires_in": image_info.get("cache_expires_in", 300)  # 5 minutes default
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate scene image: {str(e)}")
+
+@app.get("/api/displays/{display_id}/status")
+async def get_display_status(
+    display_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Get detailed status information for a display client"""
+    
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Get assigned scene info
+    assigned_scene = None
+    if display_client.assigned_scene_id:
+        assigned_scene = db.query(Scene).filter(Scene.id == display_client.assigned_scene_id).first()
+    
+    return {
+        "display_id": display_id,
+        "name": display_client.name,
+        "location": display_client.location,
+        "is_online": display_client.is_online,
+        "last_seen": display_client.last_seen.isoformat() if display_client.last_seen else None,
+        "last_image_fetch": display_client.last_image_fetch.isoformat() if display_client.last_image_fetch else None,
+        "capabilities": {
+            "resolution": display_client.resolution,
+            "orientation": display_client.orientation,
+            "refresh_rate_hz": display_client.refresh_rate_hz,
+            "supported_formats": display_client.supported_formats
+        },
+        "assigned_scene": {
+            "id": assigned_scene.id if assigned_scene else None,
+            "name": assigned_scene.name if assigned_scene else None,
+            "channels": assigned_scene.channels if assigned_scene else []
+        } if assigned_scene else None,
+        "current_image_url": f"/api/displays/{display_id}/current_image" if display_client.assigned_scene_id else None,
+        "settings": display_client.settings,
+        "tags": display_client.tags
+    }
+
+async def generate_scene_image_for_display(scene, display_client):
+    """Generate scene image optimized for specific display client"""
+    
+    # Get display resolution and orientation
+    resolution = display_client.resolution or [1920, 1080]
+    orientation = display_client.orientation or "landscape"
+    
+    # Create a unique filename for this display/scene combination
+    timestamp = int(datetime.datetime.now().timestamp())
+    filename = f"display_{display_client.id}_{scene.id}_{timestamp}.jpg"
+    
+    # For now, return mock image info
+    # In a real implementation, this would:
+    # 1. Get all channels in the scene
+    # 2. Generate images for each channel using their render_image() methods
+    # 3. Composite them according to scene layout
+    # 4. Apply any overlays
+    # 5. Optimize for display resolution and orientation
+    # 6. Save the final image
+    
+    mock_image_info = {
+        "url": f"/api/displays/{display_client.id}/current_image_file",
+        "path": f"/generated/displays/{filename}",
+        "resolution": resolution,
+        "generated_at": datetime.datetime.now().isoformat(),
+        "cache_expires_in": 300,  # 5 minutes
+        "channels_rendered": scene.channels or [],
+        "orientation": orientation
+    }
+    
+    # Update display client's current image path
+    db = SessionLocal()
+    try:
+        client = db.query(DisplayClient).filter(DisplayClient.id == display_client.id).first()
+        if client:
+            client.current_image_path = mock_image_info["path"]
+            db.commit()
+    finally:
+        db.close()
+    
+    return mock_image_info
 
 if __name__ == "__main__":
     import uvicorn

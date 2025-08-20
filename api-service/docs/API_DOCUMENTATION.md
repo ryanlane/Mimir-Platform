@@ -1,6 +1,6 @@
 # Mimir Platform API Documentation
 
-**Version:** 2.1  
+**Version:** 2.3  
 **Last Updated:** August 20, 2025  
 **Base URL:** `http://localhost:5000`  
 
@@ -823,7 +823,9 @@ function PluginSlot({ name, hostProps }) {
 
 ## Display Management
 
-### Display Status
+The Mimir Platform supports both legacy single-display management and modern multi-display client architecture. The multi-display system allows multiple display devices to register, receive scene assignments, and fetch content independently.
+
+### Legacy Display Management
 
 #### GET `/api/display/status`
 Get current display hardware status and active scene information.
@@ -848,8 +850,6 @@ Get current display hardware status and active scene information.
 }
 ```
 
-### Clear Display
-
 #### POST `/api/display/clear`
 Clear the display (remove current content).
 
@@ -857,6 +857,216 @@ Clear the display (remove current content).
 ```json
 {
   "success": true
+}
+```
+
+### Multi-Display Client System
+
+The multi-display system enables centralized management of multiple display devices through a registration-based architecture.
+
+#### Register Display Client
+
+#### POST `/api/displays/register`
+Register a new display client with the platform.
+
+**Request Body:**
+```json
+{
+  "name": "Conference Room Display",
+  "description": "Main display for conference room presentations",
+  "location": "Building A - Room 203",
+  "capabilities": {
+    "resolution": [1920, 1080],
+    "supported_formats": ["jpg", "png", "gif"],
+    "orientation": "landscape",
+    "refresh_rate_hz": 60
+  },
+  "tags": ["conference", "presentation"],
+  "client_version": "1.0.0"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+  "name": "Conference Room Display",
+  "description": "Main display for conference room presentations",
+  "location": "Building A - Room 203",
+  "is_online": false,
+  "last_seen": null,
+  "assigned_scene_id": null,
+  "assigned_scene_name": null,
+  "resolution": [1920, 1080],
+  "orientation": "landscape",
+  "refresh_rate_hz": 60,
+  "tags": ["conference", "presentation"],
+  "client_version": "1.0.0",
+  "current_image_url": null
+}
+```
+
+#### List Display Clients
+
+#### GET `/api/displays`
+List all registered display clients with optional filtering.
+
+**Query Parameters:**
+- `online_only` (boolean, optional): Only return online displays
+- `location` (string, optional): Filter by location
+- `tag` (string, optional): Filter by tag
+
+**Response:**
+```json
+[
+  {
+    "id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+    "name": "Conference Room Display",
+    "description": "Main display for conference room presentations",
+    "location": "Building A - Room 203",
+    "is_online": false,
+    "last_seen": "2025-08-20T11:35:10.152765",
+    "assigned_scene_id": "test-scene",
+    "assigned_scene_name": "Test Scene",
+    "resolution": [1920, 1080],
+    "orientation": "landscape",
+    "refresh_rate_hz": 60,
+    "tags": ["conference", "presentation"],
+    "client_version": "1.0.0",
+    "current_image_url": "/api/displays/f940535f-ad8e-459e-ba32-6e91380f2d69/current_image"
+  }
+]
+```
+
+#### Assign Scene to Display
+
+#### POST `/api/displays/{display_id}/assign_scene`
+Assign a scene to a specific display client.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Request Body:**
+```json
+{
+  "scene_id": "test-scene"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Scene assignment updated for display Conference Room Display",
+  "assigned_scene": "Test Scene",
+  "message_sent": false
+}
+```
+
+#### Unassign Scene from Display
+
+#### DELETE `/api/displays/{display_id}/assign_scene`
+Remove scene assignment from a display client.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Response:**
+```json
+{
+  "message": "Scene unassigned from display Conference Room Display",
+  "message_sent": false
+}
+```
+
+#### Get Current Image Metadata
+
+#### GET `/api/displays/{display_id}/current_image`
+Get metadata about the current image assigned to a display client.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Response:**
+```json
+{
+  "display_id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+  "scene_id": "test-scene",
+  "scene_name": "Test Scene",
+  "image_url": "/api/displays/f940535f-ad8e-459e-ba32-6e91380f2d69/current_image_file",
+  "image_path": "/generated/displays/display_f940535f-ad8e-459e-ba32-6e91380f2d69_test-scene_1755715061.jpg",
+  "resolution": [1920, 1080],
+  "generated_at": "2025-08-20T11:37:41.923305",
+  "channels": ["example_channel", "weather_channel"],
+  "cache_expires_in": 300
+}
+```
+
+**Error Response (No Scene Assigned):**
+```json
+{
+  "error": "No scene assigned to this display",
+  "display_id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+  "display_name": "Conference Room Display"
+}
+```
+
+#### Download Current Image
+
+#### GET `/api/displays/{display_id}/current_image_file`
+Download the actual image file for the display client.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Response:** Binary image data (JPEG/PNG)
+
+**Headers:**
+- `Content-Type: image/jpeg` or `image/png`
+- `Content-Length: {file_size}`
+- `Last-Modified: {timestamp}`
+
+#### Update Display Client
+
+#### PUT `/api/displays/{display_id}`
+Update display client information and settings.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Request Body:**
+```json
+{
+  "name": "Updated Conference Room Display",
+  "description": "Updated description",
+  "location": "Building A - Room 203B",
+  "tags": ["conference", "presentation", "updated"],
+  "settings": {
+    "brightness": 80,
+    "sleep_schedule": "22:00-06:00"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Display client updated successfully",
+  "display_id": "f940535f-ad8e-459e-ba32-6e91380f2d69"
+}
+```
+
+#### Delete Display Client
+
+#### DELETE `/api/displays/{display_id}`
+Remove a display client from the system.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Response:**
+```json
+{
+  "message": "Display client Conference Room Display deleted successfully"
 }
 ```
 
@@ -1158,31 +1368,168 @@ Real-time error notifications with recovery suggestions.
 }
 ```
 
-#### Display Events
+#### Display Client Events
 
-**`display_hardware_update`**
-Monitor display hardware status changes.
+**`display_client_registered`**
+Broadcast when a new display client registers with the system.
 ```json
 {
-  "event": "display_hardware_update",
+  "event": "display_client_registered",
   "data": {
-    "hardware": {
-      "type": "mock",
-      "available": true,
-      "resolution": [800, 600]
-    },
-    "action": "display_cleared",
-    "impact": {
-      "currentScene": null,
-      "displayActive": false
+    "displayId": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+    "name": "Conference Room Display",
+    "location": "Building A - Room 203",
+    "capabilities": {
+      "resolution": [1920, 1080],
+      "supported_formats": ["jpg", "png"],
+      "orientation": "landscape",
+      "refresh_rate_hz": 60
     },
     "triggeredBy": {
       "source": "api",
-      "timestamp": "2025-08-19T10:30:00.000Z"
+      "timestamp": "2025-08-20T11:30:00.000Z"
     }
   },
-  "timestamp": "2025-08-19T10:30:00.000Z",
-  "sequenceId": 12349
+  "timestamp": "2025-08-20T11:30:00.000Z",
+  "sequenceId": 12350
+}
+```
+
+**`display_scene_assigned`**
+Broadcast when a scene is assigned to a display client.
+```json
+{
+  "event": "display_scene_assigned",
+  "data": {
+    "displayId": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+    "displayName": "Conference Room Display",
+    "sceneId": "test-scene",
+    "sceneName": "Test Scene",
+    "previousSceneId": null,
+    "assignedChannels": ["example_channel", "weather_channel"],
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-20T11:30:00.000Z"
+    }
+  },
+  "timestamp": "2025-08-20T11:30:00.000Z",
+  "sequenceId": 12351
+}
+```
+
+**`display_scene_unassigned`**
+Broadcast when a scene assignment is removed from a display client.
+```json
+{
+  "event": "display_scene_unassigned",
+  "data": {
+    "displayId": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+    "displayName": "Conference Room Display",
+    "previousSceneId": "test-scene",
+    "previousSceneName": "Test Scene",
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-20T11:30:00.000Z"
+    }
+  },
+  "timestamp": "2025-08-20T11:30:00.000Z",
+  "sequenceId": 12352
+}
+```
+
+**`display_connection_established`**
+Sent to specific display client when WebSocket connection is established.
+```json
+{
+  "event": "display_connection_established",
+  "data": {
+    "displayId": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+    "displayName": "Conference Room Display",
+    "assignedScene": {
+      "id": "test-scene",
+      "name": "Test Scene",
+      "channels": ["example_channel", "weather_channel"]
+    }
+  },
+  "timestamp": "2025-08-20T11:30:00.000Z"
+}
+```
+
+**`display_image_updated`**
+Broadcast when a new image is generated for a display client.
+```json
+{
+  "event": "display_image_updated",
+  "data": {
+    "displayId": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+    "displayName": "Conference Room Display",
+    "sceneId": "test-scene",
+    "sceneName": "Test Scene",
+    "imageUrl": "/api/displays/f940535f-ad8e-459e-ba32-6e91380f2d69/current_image_file",
+    "resolution": [1920, 1080],
+    "generatedAt": "2025-08-20T11:37:41.923305",
+    "channels": ["example_channel", "weather_channel"],
+    "triggeredBy": {
+      "source": "api",
+      "timestamp": "2025-08-20T11:30:00.000Z"
+    }
+  },
+  "timestamp": "2025-08-20T11:30:00.000Z",
+  "sequenceId": 12353
+}
+```
+
+### Display-Specific WebSocket Connections
+
+#### WS `/ws/display/{display_id}`
+Establish a WebSocket connection for a specific display client to receive targeted events.
+
+**Connection URL:** `ws://localhost:5000/ws/display/{display_id}`
+
+**Purpose:** Display clients can connect to receive events specific to their display, such as scene assignments and image updates.
+
+**Connection Example (JavaScript):**
+```javascript
+const displayId = 'f940535f-ad8e-459e-ba32-6e91380f2d69';
+const ws = new WebSocket(`ws://localhost:5000/ws/display/${displayId}`);
+
+ws.onopen = function(event) {
+    console.log(`Display ${displayId} WebSocket connected`);
+};
+
+ws.onmessage = function(event) {
+    const message = JSON.parse(event.data);
+    
+    switch(message.event) {
+        case 'display_connection_established':
+            console.log('Display connection established:', message.data);
+            if (message.data.assignedScene) {
+                fetchAndDisplayImage();
+            }
+            break;
+        case 'scene_assigned':
+            console.log('New scene assigned:', message.data.sceneName);
+            fetchAndDisplayImage();
+            break;
+        case 'scene_unassigned':
+            console.log('Scene unassigned');
+            showDefaultContent();
+            break;
+        case 'image_updated':
+            console.log('New image available');
+            fetchAndDisplayImage();
+            break;
+    }
+};
+
+function fetchAndDisplayImage() {
+    fetch(`/api/displays/${displayId}/current_image`)
+        .then(response => response.json())
+        .then(metadata => {
+            if (metadata.image_url) {
+                displayImage(metadata.image_url);
+            }
+        });
 }
 ```
 
@@ -1378,27 +1725,235 @@ curl -X POST http://localhost:5000/api/scenes/morning-gallery/activate
 ```
 
 
+### Multi-Display Client Workflow Examples
+
+#### Complete Display Client Setup
+
+1. **Register a new display client:**
+```bash
+curl -X POST http://localhost:5000/api/displays/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Lobby Display",
+    "description": "Main entrance display",
+    "location": "Building A - Main Entrance",
+    "capabilities": {
+      "resolution": [1920, 1080],
+      "supported_formats": ["jpg", "png"],
+      "orientation": "landscape",
+      "refresh_rate_hz": 60
+    },
+    "tags": ["lobby", "entrance"],
+    "client_version": "1.0.0"
+  }'
+```
+
+2. **List all registered displays:**
+```bash
+curl -X GET "http://localhost:5000/api/displays"
+```
+
+3. **Create a scene for the display:**
+```bash
+curl -X POST http://localhost:5000/api/scenes \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Lobby Information",
+    "description": "Information display for lobby visitors",
+    "channels": ["weather_channel", "example_channel"],
+    "layout": {
+      "grid": {"rows": 2, "cols": 1},
+      "regions": [
+        {"id": "top", "channel": "weather_channel", "position": [0, 0, 1, 1]},
+        {"id": "bottom", "channel": "example_channel", "position": [0, 1, 1, 1]}
+      ]
+    }
+  }'
+```
+
+4. **Assign scene to display:**
+```bash
+curl -X POST http://localhost:5000/api/displays/{display_id}/assign_scene \
+  -H "Content-Type: application/json" \
+  -d '{"scene_id": "lobby-information"}'
+```
+
+5. **Fetch current image metadata:**
+```bash
+curl -X GET "http://localhost:5000/api/displays/{display_id}/current_image"
+```
+
+6. **Download current image:**
+```bash
+curl -X GET "http://localhost:5000/api/displays/{display_id}/current_image_file" \
+  --output current_display_image.jpg
+```
+
+#### Display Client Management
+
+1. **Filter displays by location:**
+```bash
+curl -X GET "http://localhost:5000/api/displays?location=Building%20A"
+```
+
+2. **Show only online displays:**
+```bash
+curl -X GET "http://localhost:5000/api/displays?online_only=true"
+```
+
+3. **Filter by tag:**
+```bash
+curl -X GET "http://localhost:5000/api/displays?tag=conference"
+```
+
+4. **Update display information:**
+```bash
+curl -X PUT http://localhost:5000/api/displays/{display_id} \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Lobby Display",
+    "settings": {
+      "brightness": 75,
+      "sleep_schedule": "22:00-06:00"
+    }
+  }'
+```
+
+5. **Unassign scene from display:**
+```bash
+curl -X DELETE "http://localhost:5000/api/displays/{display_id}/assign_scene"
+```
+
+6. **Remove display client:**
+```bash
+curl -X DELETE "http://localhost:5000/api/displays/{display_id}"
+```
+
+#### Display Client Polling Pattern
+
+**Simple polling implementation:**
+```bash
+#!/bin/bash
+DISPLAY_ID="f940535f-ad8e-459e-ba32-6e91380f2d69"
+POLL_INTERVAL=30
+
+while true; do
+  echo "Checking for updates..."
+  
+  # Get current image metadata
+  RESPONSE=$(curl -s "http://localhost:5000/api/displays/${DISPLAY_ID}/current_image")
+  
+  if echo "$RESPONSE" | grep -q "image_url"; then
+    # Extract image URL and download
+    IMAGE_URL=$(echo "$RESPONSE" | jq -r '.image_url')
+    curl -s "http://localhost:5000${IMAGE_URL}" --output current_image.jpg
+    echo "Image updated: current_image.jpg"
+  else
+    echo "No scene assigned or image available"
+  fi
+  
+  sleep $POLL_INTERVAL
+done
+```
+
 ### Display Management
 
-1. **Check display status:**
+1. **Check legacy display status:**
 ```bash
 curl -X GET http://localhost:5000/api/display/status
 ```
 
-2. **Display scene immediately:**
+2. **Display scene immediately (legacy):**
 ```bash
 curl -X POST http://localhost:5000/api/scenes/morning-gallery/display
 ```
 
-3. **Clear display:**
+3. **Clear display (legacy):**
 ```bash
 curl -X POST http://localhost:5000/api/display/clear
 ```
 
 ---
 
+## Rate Limiting
+
+The API implements rate limiting to prevent abuse and ensure fair usage across all clients.
+
+### Rate Limit Configuration
+
+- **Limit:** 120 requests per minute per IP address
+- **Window:** 60 seconds (sliding window)
+- **Scope:** Per IP address
+- **Method:** All API endpoints except static file serving
+
+### Rate Limit Headers
+
+All API responses include rate limiting information in headers:
+
+```
+X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 119
+X-RateLimit-Reset: 1692451860
+```
+
+### Rate Limit Exceeded Response
+
+When rate limits are exceeded, the API returns a 429 status code:
+
+```json
+{
+  "detail": "Rate limit exceeded. Maximum 120 requests per minute allowed."
+}
+```
+
+### Best Practices for Display Clients
+
+- **Implement exponential backoff** when receiving 429 responses
+- **Cache images locally** to reduce API calls
+- **Use appropriate polling intervals** (recommended: 30-60 seconds for image checks)
+- **Monitor rate limit headers** to avoid hitting limits
+- **Batch operations** when possible
+
+### Rate Limit Bypass
+
+Static file serving endpoints (UI assets, images) are not subject to rate limiting:
+- `/api/channels/{id}/ui/`
+- `/api/channels/{id}/assets/`
+- `/api/displays/{id}/current_image_file`
+
+---
+
 
 ## Changelog
+
+### v2.2 (August 2025)
+- **🖥️ Multi-Display Client System** - Complete multi-display architecture implementation
+- **📋 Display Client Registration** - Registration system with capabilities tracking
+- **🎯 Scene Assignment** - Assign specific scenes to individual displays  
+- **🖼️ Display Image Generation** - On-demand image generation per display
+- **📡 Display-Specific WebSockets** - Targeted WebSocket connections at `/ws/display/{id}`
+- **🛡️ Rate Limiting** - 120 requests/minute protection against abuse
+- **📊 New v2.2 Endpoints:**
+  - `POST /api/displays/register` - Register display clients
+  - `GET /api/displays` - List all display clients with filtering
+  - `POST /api/displays/{id}/assign_scene` - Assign scenes to displays
+  - `DELETE /api/displays/{id}/assign_scene` - Unassign scenes from displays
+  - `GET /api/displays/{id}/current_image` - Get image metadata for display
+  - `GET /api/displays/{id}/current_image_file` - Download image for display
+  - `PUT /api/displays/{id}` - Update display client information
+  - `DELETE /api/displays/{id}` - Remove display client
+- **🔄 Enhanced WebSocket Events:**
+  - `display_client_registered` - New display registration notifications
+  - `display_scene_assigned` - Scene assignment notifications
+  - `display_scene_unassigned` - Scene unassignment notifications
+  - `display_connection_established` - Display-specific connection events
+  - `display_image_updated` - Image generation notifications
+- **🏗️ Production Ready Features:**
+  - Rate limiting with configurable thresholds
+  - Display client filtering and management
+  - Image caching and generation pipeline
+  - Comprehensive error handling
+  - WebSocket connection management for displays
 
 ### v2.1 (August 2025)
 - **🚀 Channel Architecture v2.1** - Complete overhaul of plugin system
