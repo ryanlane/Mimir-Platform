@@ -50,18 +50,27 @@ const ChannelSettings = ({ channel, onClose }) => {
 
   const renderSettingField = (key, setting) => {
     // Use value, default, or empty string
-    const value = settings[key] !== undefined ? settings[key] : (setting.value !== undefined ? setting.value : (setting.default || ''));
+    let value = settings[key] !== undefined ? settings[key] : (setting.value !== undefined ? setting.value : (setting.default || ''));
 
     // If enum is present, render dropdown regardless of type
     if (Array.isArray(setting.enum)) {
+      // Always use string for dropdown value
+      const stringValue = value !== undefined && value !== null ? String(value) : '';
       return (
         <select
           className="form-select"
-          value={value}
-          onChange={(e) => handleSettingChange(key, e.target.value)}
+          value={stringValue}
+          onChange={(e) => {
+            let selected = e.target.value;
+            // If original type is number, convert back
+            if (setting.type === 'number') {
+              selected = selected === '' ? '' : Number(selected);
+            }
+            handleSettingChange(key, selected);
+          }}
         >
           {setting.enum.map(opt => (
-            <option key={opt} value={opt}>{opt}</option>
+            <option key={opt} value={String(opt)}>{opt}</option>
           ))}
         </select>
       );
@@ -92,7 +101,10 @@ const ChannelSettings = ({ channel, onClose }) => {
             type="number"
             className="form-input"
             value={value}
-            onChange={(e) => handleSettingChange(key, parseFloat(e.target.value))}
+            onChange={(e) => {
+              const val = e.target.value;
+              handleSettingChange(key, val === '' ? '' : parseFloat(val));
+            }}
             placeholder={setting.label || key}
           />
         );
@@ -115,15 +127,23 @@ const ChannelSettings = ({ channel, onClose }) => {
         if (Array.isArray(options) && typeof options[0] === 'string') {
           options = options.map(opt => ({ value: opt, label: opt }));
         }
+        const selectValue = value !== undefined && value !== null ? String(value) : '';
         return (
           <select
             className="form-select"
-            value={value}
-            onChange={(e) => handleSettingChange(key, e.target.value)}
+            value={selectValue}
+            onChange={(e) => {
+              let selected = e.target.value;
+              // If original type is number, convert back
+              if (setting.value !== undefined && typeof setting.value === 'number') {
+                selected = selected === '' ? '' : Number(selected);
+              }
+              handleSettingChange(key, selected);
+            }}
           >
             <option value="">Select {setting.label || key}</option>
             {options?.map((option) => (
-              <option key={option.value} value={option.value}>
+              <option key={option.value} value={String(option.value)}>
                 {option.label}
               </option>
             ))}
