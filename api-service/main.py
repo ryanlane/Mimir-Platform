@@ -2153,21 +2153,20 @@ async def get_display_current_image(
     # Generate/get scene image based on display capabilities
     try:
         image_info = await generate_scene_image_for_display(scene, display_client)
-        
-        return {
-            "display_id": display_id,
-            "scene_id": scene.id,
-            "scene_name": scene.name,
-            "image_url": image_info["url"],
-            "image_path": image_info["path"],
-            "resolution": image_info["resolution"],
-            "generated_at": image_info["generated_at"],
-            "channels": scene.channels or [],
-            "cache_expires_in": image_info.get("cache_expires_in", 300)  # 5 minutes default
-        }
-        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate scene image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
+
+    return {
+        "display_id": display_id,
+        "scene_id": scene.id,
+        "scene_name": scene.name,
+        "image_url": image_info["url"],
+        "image_path": image_info["path"],
+        "resolution": image_info["resolution"],
+        "generated_at": image_info["generated_at"],
+        "channels": image_info["channels_rendered"],
+        "cache_expires_in": image_info["cache_expires_in"]
+    }
 
 @app.get("/api/displays/{display_id}/current_image_file")
 async def get_display_current_image_file(
@@ -2353,68 +2352,29 @@ async def generate_scene_image_for_display(scene, display_client):
     # Get display resolution and orientation
     resolution = display_client.resolution or [1920, 1080]
     orientation = display_client.orientation or "landscape"
-    
-    # Create a unique filename for this display/scene combination
-    timestamp = int(datetime.datetime.now().timestamp())
-    filename = f"display_{display_client.id}_{scene.id}_{timestamp}.jpg"
-    
-    # For now, return mock image info
-    # In a real implementation, this would:
-    # 1. Get all channels in the scene
-    # 2. Generate images for each channel using their render_image() methods
-    # 3. Composite them according to scene layout
-    # 4. Apply any overlays
-    # 5. Optimize for display resolution and orientation
-    # 6. Save the final image
-    
-    mock_image_info = {
-        "url": f"/api/displays/{display_client.id}/current_image_file",
-        "path": f"/generated/displays/{filename}",
+
+    # For this implementation, use the example_channel's generated image
+    # Assume the first channel in the scene is the one to use
+    channel_id = scene.channels[0] if scene.channels else "example_channel"
+    image_url = f"/api/channels/{channel_id}/assets/current.jpg"
+    image_path = f"channels/{channel_id}/assets/current.jpg"
+
+    image_info = {
+        "url": image_url,
+        "path": image_path,
         "resolution": resolution,
         "generated_at": datetime.datetime.now().isoformat(),
-        "cache_expires_in": 300,  # 5 minutes
+        "cache_expires_in": 300,
         "channels_rendered": scene.channels or [],
         "orientation": orientation
     }
-    
+
     # Update display client's current image path
     db = SessionLocal()
     try:
-        client = db.query(DisplayClient).filter(DisplayClient.id == display_client.id).first()
-        if client:
-            client.current_image_path = mock_image_info["path"]
-            db.commit()
+        display_client.current_image_path = image_path
+        db.commit()
     finally:
         db.close()
-    
-    return mock_image_info
 
-# Global health check endpoint
-@app.get("/api/health")
-async def health_check():
-    """Global health check endpoint"""
-    return {"status": "ok", "message": "Mimir API service is healthy"}
-
-@app.get("/api/displays/{display_id}")
-async def get_display_client(display_id: str, db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
-    """Get details for a specific display client by ID"""
-    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not display_client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    # Return as dict (or use a response model if available)
-    return {
-        "id": display_client.id,
-        "name": display_client.name,
-        "description": display_client.description,
-        "location": display_client.location,
-        "is_online": display_client.is_online,
-        "last_seen": display_client.last_seen.isoformat() if display_client.last_seen else None,
-        "assigned_scene_id": display_client.assigned_scene_id,
-        "assigned_scene_name": display_client.assigned_scene_name,
-        "resolution": display_client.resolution,
-        "orientation": display_client.orientation,
-        "refresh_rate_hz": display_client.refresh_rate_hz,
-        "tags": display_client.tags,
-        "client_version": display_client.client_version,
-        "current_image_url": display_client.current_image_url
-    }
+    return image_info
