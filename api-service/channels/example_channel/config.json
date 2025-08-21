@@ -12,13 +12,13 @@
   "settings_type": "simple",
   "settings": {
     "image_choice": {
-      "type": "string",
+      "type": "select",
       "enum": ["image1", "image2"],
       "label": "Image to Display",
       "default": "image1"
     },
     "update_interval_unit": {
-      "type": "string",
+      "type": "select",
       "enum": ["days", "hours", "minutes", "seconds"],
       "label": "Update Interval Unit",
       "default": "minutes"
