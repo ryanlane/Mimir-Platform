@@ -2380,6 +2380,26 @@ async def health_check():
     """Global health check endpoint"""
     return {"status": "ok", "message": "Mimir API service is healthy"}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+@app.get("/api/displays/{display_id}")
+async def get_display_client(display_id: str, db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
+    """Get details for a specific display client by ID"""
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    # Return as dict (or use a response model if available)
+    return {
+        "id": display_client.id,
+        "name": display_client.name,
+        "description": display_client.description,
+        "location": display_client.location,
+        "is_online": display_client.is_online,
+        "last_seen": display_client.last_seen.isoformat() if display_client.last_seen else None,
+        "assigned_scene_id": display_client.assigned_scene_id,
+        "assigned_scene_name": display_client.assigned_scene_name,
+        "resolution": display_client.resolution,
+        "orientation": display_client.orientation,
+        "refresh_rate_hz": display_client.refresh_rate_hz,
+        "tags": display_client.tags,
+        "client_version": display_client.client_version,
+        "current_image_url": display_client.current_image_url
+    }
