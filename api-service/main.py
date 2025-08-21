@@ -1103,7 +1103,6 @@ async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _
     channel_path = Path("channels") / channel_id / "config.json"
     if not channel_path.exists():
         raise HTTPException(status_code=404, detail="Channel config not found")
-    import json
     with open(channel_path, "r", encoding="utf-8") as f:
         config = json.load(f)
     settings = config.get("settings", {})
@@ -1124,6 +1123,13 @@ async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _
     active_value = value_setting.get("default", default_value)
     value_label = value_setting.get("label", "Update Interval Value")
     minimum = value_setting.get("minimum", 1)
+
+    # Merge in current_settings if present
+    current_settings = channel.current_settings or {}
+    if "update_interval_unit" in current_settings:
+        active_unit = current_settings["update_interval_unit"]
+    if "update_interval_value" in current_settings:
+        active_value = current_settings["update_interval_value"]
 
     # Compose settings response
     response = {
@@ -1146,15 +1152,13 @@ async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _
     for k, v in settings.items():
         if k not in response:
             response[k] = v
+    # Also merge any other current_settings values
+    for k, v in current_settings.items():
+        if k in response and isinstance(response[k], dict):
+            response[k]["value"] = v
+        elif k not in response:
+            response[k] = v
     return response
-    # Return current settings or defaults from schema
-    settings = channel.current_settings or {}
-    if not settings and channel.config_schema and "settings" in channel.config_schema:
-        for key, value in channel.config_schema["settings"].items():
-            if "default" in value:
-                settings[key] = value["default"]
-    
-    return {"settings": settings}
 
 @app.post("/api/channels/{channel_id}/settings")
 async def update_channel_settings(
