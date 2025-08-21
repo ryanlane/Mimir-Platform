@@ -2260,27 +2260,21 @@ async def get_display_current_image_file(
         raise HTTPException(status_code=404, detail="Assigned scene not found")
     
     try:
-        # Generate or get the current image for this display        image_info = await generate_scene_image_for_display(scene, display_client)
-        
-        # For now, we'll return a mock image since we don't have actual image generation
-        # In a real implementation, this would serve the actual image file from image_info["path"]
-        from fastapi.responses import Response
-        
-        # Mock image content (1x1 pixel transparent PNG)
-        mock_image_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x00\x01\x00\x18\xdd\x8d\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
-        
-        return Response(
-            content=mock_image_data,
-            media_type="image/png",
+        image_info = await generate_scene_image_for_display(scene, display_client)
+        image_file_path = Path(image_info["path"])
+        if not image_file_path.exists():
+            raise HTTPException(status_code=404, detail=f"Image file not found: {image_file_path}")
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=str(image_file_path),
+            media_type="image/jpeg",
             headers={
-                "Content-Length": str(len(mock_image_data)),
                 "Last-Modified": image_info["generated_at"],
                 "Cache-Control": f"max-age={image_info.get('cache_expires_in', 300)}",
                 "X-Display-ID": display_id,
                 "X-Scene-ID": scene.id
             }
         )
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to serve display image: {str(e)}")
 
