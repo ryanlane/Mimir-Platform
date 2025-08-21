@@ -1197,6 +1197,10 @@ async def update_channel_settings(
     # Merge new settings into existing current_settings
     current = channel.current_settings or {}
     current.update(processed_settings)
+    
+    # Force SQLAlchemy to detect the JSON change by reassigning
+    channel.current_settings = None
+    db.flush()
     channel.current_settings = current
     
     print(f"New settings after merge: {channel.current_settings}")
