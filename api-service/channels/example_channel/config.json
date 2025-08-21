@@ -11,16 +11,23 @@
   "permissions": ["read:photos"],
   "settings_type": "simple",
   "settings": {
-    "photo_source": {
-      "type": "select",
-      "options": ["local", "unsplash", "custom"],
-      "default": "local",
-      "label": "Photo Source"
-    },
-    "category": {
+    "image_choice": {
       "type": "string",
-      "default": "nature",
-      "label": "Photo Category"
+      "enum": ["image1", "image2"],
+      "label": "Image to Display",
+      "default": "image1"
+    },
+    "update_interval_unit": {
+      "type": "string",
+      "enum": ["days", "hours", "minutes", "seconds"],
+      "label": "Update Interval Unit",
+      "default": "minutes"
+    },
+    "update_interval_value": {
+      "type": "integer",
+      "minimum": 1,
+      "label": "Update Interval Value",
+      "default": 5
     }
   }
 }
