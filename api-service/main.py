@@ -2276,27 +2276,34 @@ async def get_display_status(
     display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
     if not display_client:
         raise HTTPException(status_code=404, detail="Display client not found")
-    
+
     # Get assigned scene info
     assigned_scene = None
-    poll_interval = None
+    poll_interval = 60  # default to 60 seconds
     if display_client.assigned_scene_id:
         assigned_scene = db.query(Scene).filter(Scene.id == display_client.assigned_scene_id).first()
         # Get first channel in the scene
         if assigned_scene and assigned_scene.channels:
             channel_id = assigned_scene.channels[0]
-            channel_instance = channel_discovery.get_channel_instance(channel_id)
-            if channel_instance:
-                config = channel_instance.config
-                unit = str(config.get('update_interval_unit', 'seconds')).strip().lower()
-                value = config.get('update_interval_value', 60)
+            # Load channel config from filesystem
+            channel_config_path = Path("channels") / channel_id / "config.json"
+            if channel_config_path.exists():
+                import json
+                with open(channel_config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                settings = config.get("settings", {})
+                unit_setting = settings.get("update_interval_unit", {})
+                value_setting = settings.get("update_interval_value", {})
+                unit = unit_setting.get("value", unit_setting.get("default", "minutes"))
+                value = value_setting.get("value", value_setting.get("default", 30))
+                unit = str(unit).strip().lower()
                 multipliers = {
                     'seconds': 1,
                     'minutes': 60,
                     'hours': 3600,
                     'days': 86400
                 }
-                poll_interval = value * multipliers.get(unit, 1)
+                poll_interval = int(value) * multipliers.get(unit, 60)
 
     return {
         "display_id": display_client.id,
