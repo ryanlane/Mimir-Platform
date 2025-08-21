@@ -33,17 +33,26 @@ class ExampleChannel:
 
 
     async def render_image(self, resolution: Tuple[int, int], orientation: str, settings: dict) -> str:
-        """Generate and save example image to assets/"""
+        """Generate and save selected image to assets/current.jpg"""
         assets_dir = self.channel_dir / "assets"
         assets_dir.mkdir(exist_ok=True)
-        filename = "current.jpg"
-        output_path = assets_dir / filename
-
-        # Create a blank image (or load/copy an existing one)
-        img = Image.new("RGB", resolution, color=(200, 200, 200))
-        img.save(output_path)
-
-        return f"assets/{filename}"
+        image_choice = settings.get("image_choice", "image1")
+        output_path = assets_dir / "current.jpg"
+        found = False
+        for ext in [".jpg", ".png"]:
+            source_path = assets_dir / f"{image_choice}{ext}"
+            if source_path.exists():
+                img = Image.open(source_path)
+                img = img.convert("RGB")
+                img = img.resize(resolution)
+                img.save(output_path)
+                found = True
+                break
+        if not found:
+            # Fallback: create blank image
+            img = Image.new("RGB", resolution, color=(200, 200, 200))
+            img.save(output_path)
+        return f"assets/current.jpg"
     
     async def validate_settings(self, settings: dict) -> Dict[str, str]:
         """Validate settings"""
