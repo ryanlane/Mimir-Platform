@@ -1,3 +1,21 @@
+# Channel status endpoint
+@app.get("/api/channels/{channel_id}/status")
+async def get_channel_status(channel_id: str, db: Session = Depends(get_db)):
+    channel = db.query(Channel).filter(Channel.id == channel_id).first()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    status = channel.status or {
+        "active": True,
+        "lastUpdate": None,
+        "lastError": None,
+        "usingFallback": False
+    }
+    return {
+        "id": channel.id,
+        "name": channel.name,
+        "version": channel.version,
+        "status": status
+    }
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
