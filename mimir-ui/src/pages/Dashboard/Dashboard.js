@@ -157,6 +157,20 @@ const Dashboard = () => {
     }
   };
 
+  // Helper to get update interval for the display's channel
+  const getDisplayUpdateInterval = () => {
+    if (!displayStatus?.currentScene || !channels.length) return null;
+    // Find the channel for the current scene (assumes scene.channels[0] is used)
+    const scene = scenes.find(s => s.id === displayStatus.currentScene);
+    const channelId = scene?.channels?.[0];
+    const channel = channels.find(c => c.id === channelId);
+    const settings = channel?.settings;
+    if (settings && settings.update_interval_value && settings.update_interval_unit) {
+      return `${settings.update_interval_value.value} ${settings.update_interval_unit.value}`;
+    }
+    return null;
+  };
+
   if (loading) {
     return (
       <div className="loading">
@@ -177,7 +191,7 @@ const Dashboard = () => {
       </div>
 
       {/* WebSocket Status Component */}
-      <WebSocketStatus />
+      {/* <WebSocketStatus /> */}
 
       <div className="dashboard-grid">
         {/* Display Status */}
@@ -211,6 +225,10 @@ const Dashboard = () => {
                     <span>{new Date(displayStatus.currentImage.uploadedAt).toLocaleString()}</span>
                   </div>
                 )}
+                <div className="status-row">
+                  <span>Update Interval:</span>
+                  <span>{getDisplayUpdateInterval() || 'Unknown'}</span>
+                </div>
               </div>
             )}
           </div>

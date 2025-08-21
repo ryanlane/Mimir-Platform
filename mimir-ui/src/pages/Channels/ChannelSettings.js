@@ -94,6 +94,11 @@ const ChannelSettings = ({ channel, onClose }) => {
         );
 
       case 'select':
+        // Support both array of objects and array of strings for options
+        let options = setting.options;
+        if (Array.isArray(options) && typeof options[0] === 'string') {
+          options = options.map(opt => ({ value: opt, label: opt }));
+        }
         return (
           <select
             className="form-select"
@@ -101,7 +106,7 @@ const ChannelSettings = ({ channel, onClose }) => {
             onChange={(e) => handleSettingChange(key, e.target.value)}
           >
             <option value="">Select {setting.label || key}</option>
-            {setting.options?.map((option) => (
+            {options?.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

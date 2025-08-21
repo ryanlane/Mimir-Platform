@@ -15,7 +15,8 @@ class WebSocketService {
     this.connectionId = null;
   }
 
-  connect(baseUrl = 'ws://172.31.79.107:5000') {
+  // Connect to the enhanced WebSocket API
+  connect(baseUrl = 'ws://oak:5000') {
     // Prevent multiple connections
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
       console.log('🔄 WebSocket already connected or connecting, skipping...');
