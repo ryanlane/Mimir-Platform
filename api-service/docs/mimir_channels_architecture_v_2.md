@@ -1,6 +1,13 @@
-# Mimir Channels Architecture v2.1 — Self‑Contained UI + Zip Upload
+# Mimir ChThis d## 1. What's new since v2.0
 
-**Version:** 2.1\
+- **UI‑capable Channels**: A Channel may ship a web UI bundle (Web Component by default; iframe as a stricter sandbox option).
+- **Manifest Extension**: `config.json` gains a `ui` section (declarative elements, routes, slots, assets, integrity, and render mode).
+- **Host Plugin Runtime**: A small, framework‑agnostic loader in React dynamically fetches manifests and mounts Channel UI.
+- **Settings Persistence**: Robust JSON column storage with proper SQLAlchemy change detection and type conversion.
+- **Zip Upload Pipeline**: Admins can upload a Channel as a zip from the Console → FastAPI validates, extracts, optionally installs deps, and hot‑registers it.
+- **Security Hardening**: CSP, SRI, per‑Channel token scopes, safe extraction, dependency policy, error isolation. updates the v2.0 Channel architecture to enable **optional, self‑contained UI** for Channels ("plugins") while keeping the core guarantee: **a Channel works when its folder is copied into **``** on the API service.** It also introduces **robust settings persistence** and a **secure zip‑upload flow** so Channels can be installed from the React Console without SSH or filesystem access.nnels Architecture v2.4 — Self‑Contained UI + Settings Persistence
+
+**Version:** 2.4\
 **Date:** August 20, 2025\
 **Status:** Architecture Specification
 
@@ -42,7 +49,7 @@ Backwards compatibility: Pure server‑side Channels (no UI) continue to work un
 ```
 channels/
 └── weather_channel/
-    ├── config.json              # Manifest (extended in v2.1)
+    ├── config.json              # Manifest (extended in v2.4)
     ├── channel.py               # Channel implementation (server‑side)
     ├── placeholder.jpg          # Fallback media (optional)
     ├── current.jpg              # Example generated media (optional)
@@ -59,7 +66,7 @@ channels/
 
 ---
 
-## 4. Manifest (config.json) — v2.1 extension
+## 4. Manifest (config.json) — v2.4 extension
 
 ### 4.1 Base (from v2.0)
 
@@ -69,7 +76,7 @@ Retain existing fields (`name`, `description`, `version`, `update_schedule`, `se
 
 ```jsonc
 {
-  "schemaVersion": "2.1",
+  "schemaVersion": "2.4",
   "id": "com.example.weather",           // optional if folder name is canonical id
   "permissions": ["read:weather"],      // server-enforced scopes
   "ui": [
@@ -93,7 +100,20 @@ Retain existing fields (`name`, `description`, `version`, `update_schedule`, `se
       "renderMode": "element"
     }
   ],
-  "assets": [ { "name": "logo", "url": "/api/channels/com.example.weather/assets/logo.svg" } ]
+  "assets": [ { "name": "logo", "url": "/api/channels/com.example.weather/assets/logo.svg" } ],
+  "settings": {
+    "defaults": {
+      "poll_interval": 900,
+      "location": "Seattle"
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "poll_interval": { "type": "integer", "minimum": 300 },
+        "location": { "type": "string" }
+      }
+    }
+  }
 }
 ```
 
@@ -122,8 +142,8 @@ Retain existing fields (`name`, `description`, `version`, `update_schedule`, `se
 GET  /api/channels                          # list discovered channels (metadata + status)
 GET  /api/channels/manifest                 # array of UI-aware manifests for the React loader
 GET  /api/channels/{id}/config              # raw manifest/config
-GET  /api/channels/{id}/settings            # current settings (per-tenant)
-POST /api/channels/{id}/settings            # validate + persist settings
+GET  /api/channels/{id}/settings            # current settings (per-tenant) with default merging
+POST /api/channels/{id}/settings            # validate + persist settings with type conversion
 POST /api/channels/{id}/test                # run a safe test action (e.g., generate sample)
 POST /api/channels/upload                   # zip upload (see §10)
 ```
@@ -308,7 +328,7 @@ for m in z.infolist():
 
 - **Starter kits**: Python (FastAPI) + UI (Web Component template) + example manifest.
 - **Local dev**: dev server that serves a synthetic `/api/channels/manifest` and hot‑reloads `ui/*.esm.js`.
-- **Schema validation**: publish JSON Schemas for `config.json` v2.1 and host‑provided props.
+- **Schema validation**: publish JSON Schemas for `config.json` v2.4 and host‑provided props.
 - **Testing**: CLI to run compatibility checks (API version, permissions, schema).
 
 ---
@@ -329,7 +349,7 @@ for m in z.infolist():
 
 ```json
 {
-  "schemaVersion": "2.1",
+  "schemaVersion": "2.4",
   "name": "Weather Display",
   "description": "Shows current weather conditions with forecast",
   "version": "1.2.0",
@@ -389,5 +409,5 @@ class WeatherChannel:
 
 ## 19. Summary
 
-v2.1 preserves the simple installation story (copy a folder into `channels/`) while adding a safe, modern path for **rich, self‑contained Channel UIs** and a **zero‑touch zip upload**. The host remains stable; Channels declare what they need, and the platform discovers, validates, and mounts them at runtime.
+v2.4 preserves the simple installation story (copy a folder into `channels/`) while adding a safe, modern path for **rich, self‑contained Channel UIs**, **robust settings persistence**, and a **zero‑touch zip upload**. The host remains stable; Channels declare what they need, and the platform discovers, validates, and mounts them at runtime.
 

@@ -1,7 +1,7 @@
 # Mimir Platform API Documentation
 
-**Version:** 2.3  
-**Last Updated:** August 20, 2025  
+**Version:** 2.4  
+**Last Updated:** August 21, 2025  
 **Base URL:** `http://localhost:5000`  
 
 ---
@@ -15,9 +15,10 @@
 5. [Overlay System](#overlay-system)
 6. [Display Management](#display-management)
 7. [WebSocket Real-time Updates](#websocket-real-time-updates)
-8. [Error Handling](#error-handling)
-9. [Response Formats](#response-formats)
-10. [Examples](#examples)
+8. [Rate Limiting](#rate-limiting)
+9. [Error Handling](#error-handling)
+10. [Response Formats](#response-formats)
+11. [Examples](#examples)
 
 ---
 
@@ -64,6 +65,77 @@ The API uses **camelCase** for property names to be React/JavaScript-friendly:
 - `backgroundColor` instead of `background_color`
 
 ---
+
+## Rate Limiting
+
+The API implements comprehensive rate limiting to prevent abuse and ensure fair usage across all clients.
+
+### Global Rate Limiting
+
+- **Limit:** 120 requests per minute per IP address
+- **Window:** 60 seconds (sliding window)
+- **Scope:** Per IP address
+- **Applied to:** All API endpoints except static file serving
+
+### Endpoint-Specific Rate Limiting
+
+Some endpoints have additional rate limiting for optimal performance:
+
+#### WebSocket Status Endpoint
+- **Endpoint:** `GET /api/websocket/status`
+- **Limit:** 50 requests per minute per IP
+- **Purpose:** Prevent excessive polling of WebSocket status
+
+#### Channel Manifest Endpoint
+- **Endpoint:** `GET /api/channels/manifest`
+- **Limit:** 100 requests per minute per IP
+- **Cache Duration:** 10 seconds
+- **Purpose:** Reduce load on manifest generation
+
+### Rate Limit Response Headers
+
+All API responses include rate limiting information:
+
+```
+X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 119
+X-RateLimit-Reset: 1692451860
+X-RateLimit-Window: 60
+```
+
+### Rate Limit Exceeded Response
+
+When rate limits are exceeded, the API returns a 429 status code with detailed information:
+
+```json
+{
+  "detail": {
+    "error": "Rate limit exceeded",
+    "message": "Too many requests from 192.168.1.100",
+    "limit": 120,
+    "window_seconds": 60,
+    "retry_after": 45,
+    "current_requests": 121,
+    "suggestion": "Please reduce request frequency or implement client-side caching",
+    "endpoint": "/api/channels/example_channel/settings"
+  }
+}
+```
+
+### Rate Limit Bypass
+
+Static file serving endpoints are not subject to rate limiting:
+- `/api/channels/{id}/ui/`
+- `/api/channels/{id}/assets/`
+- Health check endpoints
+
+### Best Practices
+
+- **Implement exponential backoff** when receiving 429 responses
+- **Cache responses locally** when appropriate
+- **Monitor rate limit headers** to avoid hitting limits
+- **Use WebSocket connections** for real-time updates instead of polling
+- **Batch operations** when possible
 
 
 ## Core API Endpoints
@@ -147,15 +219,34 @@ Get current settings values for a channel.
 **Response:**
 ```json
 {
-  "settings": {
-    "api_key": "***hidden***",
-    "location": "San Francisco"
+  "update_interval_unit": {
+    "type": "string",
+    "enum": ["days", "hours", "minutes", "seconds"],
+    "label": "Update Interval Unit",
+    "default": "minutes",
+    "value": "minutes"
+  },
+  "update_interval_value": {
+    "type": "integer",
+    "minimum": 1,
+    "label": "Update Interval Value",
+    "default": 30,
+    "value": 15
+  },
+  "image_choice": {
+    "type": "select",
+    "enum": ["image1", "image2"],
+    "label": "Image to Display",
+    "default": "image1",
+    "value": "image2"
   }
 }
 ```
 
+**Note:** The response includes both schema information (type, enum, label, default) and current values. The `value` field contains the actual current setting, while `default` shows the fallback value from the channel configuration.
+
 #### POST `/api/channels/{channel_id}/settings`
-Update channel settings.
+Update channel settings with automatic type conversion and merging.
 
 **Parameters:**
 - `channel_id` (string): Channel identifier
@@ -163,8 +254,8 @@ Update channel settings.
 **Request Body:**
 ```json
 {
-  "api_key": "your_api_key_here",
-  "location": "London"
+  "update_interval_value": "15",
+  "image_choice": "image2"
 }
 ```
 
@@ -174,6 +265,12 @@ Update channel settings.
   "message": "Settings updated successfully"
 }
 ```
+
+**Features:**
+- **Partial Updates**: Only specified settings are updated, others remain unchanged
+- **Type Conversion**: String numbers are automatically converted to integers for numeric fields
+- **Persistence**: Settings are merged with existing values and persist across server restarts
+- **Real-time Broadcasting**: Changes trigger WebSocket events to all connected clients
 
 #### POST `/api/channels/{channel_id}/image_request`
 Request a new image from channel
@@ -1024,6 +1121,62 @@ Download the actual image file for the display client.
 - `Content-Type: image/jpeg` or `image/png`
 - `Content-Length: {file_size}`
 - `Last-Modified: {timestamp}`
+
+#### Get Display Status
+
+#### GET `/api/displays/{display_id}/status`
+Get comprehensive status information for a specific display client, including poll interval calculation.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Response:**
+```json
+{
+  "display_id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+  "name": "Conference Room Display",
+  "location": "Building A - Room 203",
+  "is_online": true,
+  "last_seen": "2025-08-21T16:11:27.234567",
+  "last_image_fetch": "2025-08-21T16:10:15.123456",
+  "assigned_scene_id": "example-scene",
+  "assigned_scene_name": "Example Scene",
+  "current_image_url": "/api/displays/f940535f-ad8e-459e-ba32-6e91380f2d69/current_image_file",
+  "resolution": [1920, 1080],
+  "orientation": "landscape",
+  "capabilities": {
+    "supported_formats": ["jpg", "png"],
+    "refresh_rate_hz": 60
+  },
+  "poll_interval": 900,
+  "next_update_estimated": "2025-08-21T16:26:27.234567",
+  "settings": {
+    "brightness": 80,
+    "sleep_schedule": "22:00-06:00"
+  }
+}
+```
+
+**Poll Interval Calculation:**
+- **With Scene Assignment**: Calculated from the assigned scene's channel settings (`update_interval_unit` and `update_interval_value`)
+- **Without Scene Assignment**: Returns default value of 300 seconds (5 minutes)
+- **Dynamic Updates**: Poll interval recalculates whenever channel settings change
+
+**No Scene Assigned Response:**
+```json
+{
+  "display_id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+  "name": "Conference Room Display",
+  "location": "Building A - Room 203",
+  "is_online": true,
+  "last_seen": "2025-08-21T16:11:27.234567",
+  "assigned_scene_id": null,
+  "assigned_scene_name": null,
+  "current_image_url": null,
+  "poll_interval": 300,
+  "message": "No scene assigned to this display"
+}
+```
 
 #### Update Display Client
 
@@ -1926,20 +2079,41 @@ Static file serving endpoints (UI assets, images) are not subject to rate limiti
 
 ## Changelog
 
-### v2.2 (August 2025)
+### v2.4 (August 21, 2025)
+- **🔧 Enhanced Settings Management** - Complete overhaul of channel settings persistence
+- **🔄 Dynamic Settings Merging** - Partial updates with automatic type conversion
+- **📊 Poll Interval Calculation** - Dynamic poll intervals based on channel settings
+- **🛡️ Enhanced Rate Limiting** - Comprehensive rate limiting with detailed error responses
+- **📈 Settings Broadcasting** - Real-time WebSocket events for settings changes
+- **🔍 Improved Error Handling** - Better error messages and recovery suggestions
+- **📝 Updated Documentation** - Comprehensive documentation updates reflecting current implementation
+- **🆕 New Features:**
+  - Settings values now persist across server restarts
+  - String to integer conversion for numeric settings
+  - Display status includes calculated poll intervals
+  - Enhanced rate limiting with endpoint-specific limits
+  - Real-time settings change broadcasting via WebSocket
+- **🐛 Bug Fixes:**
+  - Fixed SQLAlchemy JSON column update detection
+  - Resolved settings persistence issues
+  - Corrected poll interval calculation logic
+  - Improved display status endpoint accuracy
+
+### v2.3 (August 20, 2025)
 - **🖥️ Multi-Display Client System** - Complete multi-display architecture implementation
 - **📋 Display Client Registration** - Registration system with capabilities tracking
 - **🎯 Scene Assignment** - Assign specific scenes to individual displays  
 - **🖼️ Display Image Generation** - On-demand image generation per display
 - **📡 Display-Specific WebSockets** - Targeted WebSocket connections at `/ws/display/{id}`
 - **🛡️ Rate Limiting** - 120 requests/minute protection against abuse
-- **📊 New v2.2 Endpoints:**
+- **📊 New v2.3 Endpoints:**
   - `POST /api/displays/register` - Register display clients
   - `GET /api/displays` - List all display clients with filtering
   - `POST /api/displays/{id}/assign_scene` - Assign scenes to displays
   - `DELETE /api/displays/{id}/assign_scene` - Unassign scenes from displays
   - `GET /api/displays/{id}/current_image` - Get image metadata for display
   - `GET /api/displays/{id}/current_image_file` - Download image for display
+  - `GET /api/displays/{id}/status` - Get comprehensive display status
   - `PUT /api/displays/{id}` - Update display client information
   - `DELETE /api/displays/{id}` - Remove display client
 - **🔄 Enhanced WebSocket Events:**

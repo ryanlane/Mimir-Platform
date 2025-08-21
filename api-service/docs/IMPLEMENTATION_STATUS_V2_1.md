@@ -1,14 +1,14 @@
-# Mimir Channel Architecture v2.1 - Implementation Status
+# Mimir Channel Architecture v2.4 - Implementation Status
 
 **Date:** August 20, 2025  
 **Status:** Phase 1 Complete ✅  
-**Version:** 2.1 Core Infrastructure Implemented
+**Version:** 2.4 Core Infrastructure Implemented
 
 ---
 
 ## 🚀 **Phase 1 Implementation Summary**
 
-Successfully implemented the core infrastructure for Mimir Channels Architecture v2.1, enabling filesystem-based channel discovery with UI capabilities.
+Successfully implemented the core infrastructure for Mimir Channels Architecture v2.4, enabling filesystem-based channel discovery with UI capabilities and robust settings persistence.
 
 ### ✅ **Completed Features**
 
@@ -20,13 +20,14 @@ Successfully implemented the core infrastructure for Mimir Channels Architecture
 - **SRI hash computation** for UI assets (SHA-384)
 
 #### 2. **Database Schema Updates**
-- **Extended Channel model** with v2.1 fields:
+- **Extended Channel model** with v2.4 fields:
   - `schema_version` - Track schema compatibility
   - `permissions` - Channel-scoped permissions
   - `ui_config` - UI element definitions
   - `assets_config` - Asset manifest
   - `integrity_hashes` - SRI validation data
   - `channel_dir` - Filesystem path reference
+  - `current_settings` - JSON column with proper persistence
 
 #### 3. **Static File Serving**
 - **UI serving** at `/api/channels/{id}/ui/*` (ESM, CSS)
@@ -34,32 +35,37 @@ Successfully implemented the core infrastructure for Mimir Channels Architecture
 - **Automatic mounting** during channel discovery
 - **Content integrity** validation with SRI hashes
 
-#### 4. **New v2.1 API Endpoints**
+#### 4. **New v2.4 API Endpoints**
 ```
 GET  /api/channels/manifest         ✅ UI-aware manifests for React loader
 POST /api/channels/{id}/test        ✅ Safe test actions
 GET  /api/channels/{id}/health      ✅ Health checks  
 GET  /api/channels/{id}/token       ✅ Channel-scoped tokens (mock)
+GET  /api/channels/{id}/settings    ✅ Channel settings with merge support
+POST /api/channels/{id}/settings    ✅ Settings persistence with type conversion
 ```
 
 #### 5. **Enhanced Channel Response**
-- **v2.1 fields** in channel listings:
+- **v2.4 fields** in channel listings:
   - `schemaVersion`, `permissions`, `hasUI`, `hasAssets`, `channelDir`
+  - `current_settings` with proper JSON persistence and type conversion
 - **UI capability detection** - automatically detects channels with UI
 - **Asset availability** - shows which channels have static assets
+- **Settings persistence** - reliable storage and retrieval of channel settings
 
 ---
 
 ## 🧪 **Working Example Channels**
 
-### Weather Channel (Full v2.1 Implementation)
+### Weather Channel (Full v2.4 Implementation)
 - **Location:** `channels/weather_channel/`
-- **Features:** ✅ UI Components, ✅ Assets, ✅ API Router, ✅ Web Components
+- **Features:** ✅ UI Components, ✅ Assets, ✅ API Router, ✅ Web Components, ✅ Settings Persistence
 - **UI Elements:**
   - `x-weather-card` - Dashboard widget with Shadow DOM
   - `x-weather-page` - Full page weather interface
-- **API Endpoints:** `/forecast`, `/test`
+- **API Endpoints:** `/forecast`, `/test`, `/settings`
 - **Assets:** SVG logo with proper serving
+- **Settings:** Persistent configuration with type conversion
 
 ### Example Channel (Basic Implementation)  
 - **Location:** `channels/example_channel/`
@@ -74,7 +80,7 @@ All core functionality verified working:
 
 ```bash
 # ✅ Channel discovery and listing
-GET /api/channels → Returns 2 channels with v2.1 fields
+GET /api/channels → Returns 2 channels with v2.4 fields
 
 # ✅ UI manifest for React loader  
 GET /api/channels/manifest → Weather channel with computed SRI hashes
@@ -86,10 +92,12 @@ GET /api/channels/weather_channel/assets/logo.svg → SVG asset
 # ✅ Channel-specific APIs
 GET /api/channels/weather_channel/forecast → Weather data
 
-# ✅ v2.1 Management endpoints
+# ✅ v2.4 Management endpoints
 POST /api/channels/weather_channel/test → Channel test successful
 GET /api/channels/weather_channel/health → Health check passed
 GET /api/channels/weather_channel/token → Mock token generated
+GET /api/channels/weather_channel/settings → Current settings with defaults merged
+POST /api/channels/weather_channel/settings → Settings persist with type conversion
 
 # ✅ WebSocket integration maintained
 GET /api/websocket/status → All features active
@@ -118,12 +126,12 @@ GET /api/scenes → Empty but functional
 
 ### Channel Discovery Pipeline
 1. **Scan** `channels/` directory for subdirectories
-2. **Validate** `config.json` against v2.1 schema
+2. **Validate** `config.json` against v2.4 schema
 3. **Load** `channel.py` and instantiate `ChannelClass`
 4. **Mount** static files for UI and assets
 5. **Register** channel-specific API routers
 6. **Compute** SRI hashes for integrity validation
-7. **Sync** to database with v2.1 schema
+7. **Sync** to database with v2.4 schema including settings persistence
 
 ### Web Component Support
 - **ES Modules** served with proper MIME types
@@ -161,7 +169,7 @@ GET /api/scenes → Empty but functional
 
 ## 🎯 **React Frontend Integration Ready**
 
-The v2.1 implementation provides everything needed for React frontend integration:
+The v2.4 implementation provides everything needed for React frontend integration:
 
 ```javascript
 // React Plugin Loader Integration
@@ -177,7 +185,11 @@ manifests[0] = {
       "slots": ["dashboard.topRight"],
       "integrity": { "module": "sha384-..." }
     }
-  ]
+  ],
+  "settings": {
+    "poll_interval": 900,
+    "location": "Seattle"
+  }
 }
 
 // Dynamic loading with integrity validation
@@ -204,6 +216,6 @@ await import(manifest.ui[0].moduleUrl);
 
 ---
 
-The v2.1 core infrastructure is now **production-ready** and provides a solid foundation for building rich, self-contained channel plugins with modern web UI capabilities. The filesystem-based approach combined with database persistence offers the best of both worlds: simple deployment and robust management.
+The v2.4 core infrastructure is now **production-ready** and provides a solid foundation for building rich, self-contained channel plugins with modern web UI capabilities and robust settings management. The filesystem-based approach combined with database persistence offers the best of both worlds: simple deployment and robust management.
 
 **Next:** Ready to proceed with Phase 2 implementation (Zip Upload & Security) or begin React frontend integration.
