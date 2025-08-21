@@ -1099,7 +1099,54 @@ async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
-    
+    # Load channel config from filesystem
+    channel_path = Path("channels") / channel_id / "config.json"
+    if not channel_path.exists():
+        raise HTTPException(status_code=404, detail="Channel config not found")
+    import json
+    with open(channel_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    settings = config.get("settings", {})
+
+    # Defaults
+    default_unit = "minutes"
+    default_value = 30
+    unit_enum = ["days", "hours", "minutes", "seconds"]
+
+    # Get update_interval_unit
+    unit_setting = settings.get("update_interval_unit", {})
+    active_unit = unit_setting.get("default", default_unit)
+    enum = unit_setting.get("enum", unit_enum)
+    unit_label = unit_setting.get("label", "Update Interval Unit")
+
+    # Get update_interval_value
+    value_setting = settings.get("update_interval_value", {})
+    active_value = value_setting.get("default", default_value)
+    value_label = value_setting.get("label", "Update Interval Value")
+    minimum = value_setting.get("minimum", 1)
+
+    # Compose settings response
+    response = {
+        "update_interval_unit": {
+            "type": "string",
+            "enum": enum,
+            "label": unit_label,
+            "default": default_unit,
+            "value": active_unit
+        },
+        "update_interval_value": {
+            "type": "integer",
+            "minimum": minimum,
+            "label": value_label,
+            "default": default_value,
+            "value": active_value
+        }
+    }
+    # Add any other settings from config
+    for k, v in settings.items():
+        if k not in response:
+            response[k] = v
+    return response
     # Return current settings or defaults from schema
     settings = channel.current_settings or {}
     if not settings and channel.config_schema and "settings" in channel.config_schema:
@@ -2241,7 +2288,7 @@ async def get_display_status(
             channel_instance = channel_discovery.get_channel_instance(channel_id)
             if channel_instance:
                 config = channel_instance.config
-                unit = config.get('update_interval_unit', 'seconds')
+                unit = str(config.get('update_interval_unit', 'seconds')).strip().lower()
                 value = config.get('update_interval_value', 60)
                 multipliers = {
                     'seconds': 1,
