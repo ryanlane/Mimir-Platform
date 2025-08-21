@@ -1,9 +1,9 @@
 {
-  "schemaVersion": "2.1",
+  "schemaVersion": "2.4",
   "id": "example_channel",
   "name": "Example Channel",
-  "description": "Sample photo display channel for testing",
-  "version": "1.0.0",
+  "description": "Enhanced photo display channel with dynamic asset discovery",
+  "version": "2.0.0",
   "update_schedule": {
     "unit": "hours",
     "duration": 1
@@ -13,9 +13,10 @@
   "settings": {
     "image_choice": {
       "type": "select",
-      "enum": ["image1", "image2"],
+      "enum": ["image1", "image2", "image3"],
       "label": "Image to Display",
-      "default": "image1"
+      "default": "image1",
+      "description": "Select which image to display from assets"
     },
     "update_interval_unit": {
       "type": "select",
@@ -27,7 +28,8 @@
       "type": "integer",
       "minimum": 1,
       "label": "Update Interval Value",
-      "default": 5
+      "default": 5,
+      "description": "How often to check for updates"
     }
   }
 }

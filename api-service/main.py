@@ -1197,6 +1197,17 @@ async def update_channel_settings(
     
     db.commit()
     
+    # If this is the example_channel and image_choice was updated, create current.jpg
+    if channel_id == "example_channel" and "image_choice" in processed_settings:
+        try:
+            # Get the channel instance to call create_current_image
+            channel_instance = channel_discovery.get_channel_instance(channel_id)
+            if channel_instance and hasattr(channel_instance, 'create_current_image'):
+                await channel_instance.create_current_image(current)
+                print(f"Created current.jpg for {channel_id} with image choice: {processed_settings['image_choice']}")
+        except Exception as e:
+            print(f"Error creating current.jpg for {channel_id}: {e}")
+    
     # Broadcast channel status update
     await broadcast_event("channel_status_update", {
         "channelId": channel_id,
