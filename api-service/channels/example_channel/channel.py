@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, Tuple
 import json
 import datetime
 from pathlib import Path
+from PIL import Image
 
 class ExampleChannel:
     """Simple example channel for testing the v2.1 system"""
@@ -29,10 +30,19 @@ class ExampleChannel:
                 self._config = {}
         return self._config
     
+
+
     async def render_image(self, resolution: Tuple[int, int], orientation: str, settings: dict) -> str:
-        """Generate example image"""
-        # Mock implementation
-        filename = f"example_{int(datetime.datetime.now().timestamp())}.jpg"
+        """Generate and save example image to assets/"""
+        assets_dir = self.channel_dir / "assets"
+        assets_dir.mkdir(exist_ok=True)
+        filename = "current.jpg"
+        output_path = assets_dir / filename
+
+        # Create a blank image (or load/copy an existing one)
+        img = Image.new("RGB", resolution, color=(200, 200, 200))
+        img.save(output_path)
+
         return f"assets/{filename}"
     
     async def validate_settings(self, settings: dict) -> Dict[str, str]:
