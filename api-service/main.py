@@ -1097,12 +1097,9 @@ async def get_channel_config(channel_id: str, db: Session = Depends(get_db), _: 
 
 @app.get("/api/channels/{channel_id}/settings")
 async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
-    print(f"GET /api/channels/{channel_id}/settings called")
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
-    
-    print(f"Channel current_settings from DB: {channel.current_settings}")
     
     # Load channel config from filesystem
     channel_path = Path("channels") / channel_id / "config.json"
@@ -1129,16 +1126,12 @@ async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _
     value_label = value_setting.get("label", "Update Interval Value")
     minimum = value_setting.get("minimum", 1)
 
-    print(f"Defaults - unit: {active_unit}, value: {active_value}")
-
     # Merge in current_settings if present
     current_settings = channel.current_settings or {}
     if "update_interval_unit" in current_settings:
         active_unit = current_settings["update_interval_unit"]
-        print(f"Override unit from current_settings: {active_unit}")
     if "update_interval_value" in current_settings:
         active_value = current_settings["update_interval_value"]
-        print(f"Override value from current_settings: {active_value}")
 
     # Compose settings response
     response = {
@@ -1168,7 +1161,6 @@ async def get_channel_settings(channel_id: str, db: Session = Depends(get_db), _
         elif k not in response:
             response[k] = v
     
-    print(f"Final response: {response}")
     return response
 
 @app.post("/api/channels/{channel_id}/settings")
@@ -1177,12 +1169,9 @@ async def update_channel_settings(
     settings: Dict[str, Any], 
     db: Session = Depends(get_db)
 ):
-    print(f"POST /api/channels/{channel_id}/settings called with: {settings}")
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
-    
-    print(f"Current settings before update: {channel.current_settings}")
     
     # Convert string numbers to integers for specific fields
     processed_settings = {}
@@ -1191,8 +1180,6 @@ async def update_channel_settings(
             processed_settings[key] = int(value)
         else:
             processed_settings[key] = value
-    
-    print(f"Processed settings: {processed_settings}")
     
     # Merge new settings into existing current_settings
     current = channel.current_settings or {}
@@ -1203,15 +1190,12 @@ async def update_channel_settings(
     db.flush()
     channel.current_settings = current
     
-    print(f"New settings after merge: {channel.current_settings}")
-    
     # Update status to reflect settings change
     current_status = channel.status or {}
     current_status["lastSettingsUpdate"] = datetime.datetime.now().isoformat()
     channel.status = current_status
     
     db.commit()
-    print(f"Settings committed to database")
     
     # Broadcast channel status update
     await broadcast_event("channel_status_update", {
