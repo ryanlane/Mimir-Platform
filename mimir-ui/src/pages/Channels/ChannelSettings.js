@@ -19,21 +19,17 @@ const ChannelSettings = ({ channel, onClose }) => {
 
         setConfig(configResponse.data);
         
-        // Initialize settings state with current values from config
+        // Initialize settings state with current values from settings response
         const currentSettings = {};
-        if (configResponse.data?.settings) {
-          Object.entries(configResponse.data.settings).forEach(([key, setting]) => {
+        if (settingsResponse.data) {
+          Object.entries(settingsResponse.data).forEach(([key, setting]) => {
             if (setting.value !== undefined) {
               currentSettings[key] = setting.value;
             }
           });
         }
         
-        // Merge with any additional settings from the settings endpoint
-        setSettings({
-          ...currentSettings,
-          ...(settingsResponse.data.settings || {})
-        });
+        setSettings(currentSettings);
       } catch (error) {
         console.error('Error loading channel data:', error);
       } finally {
