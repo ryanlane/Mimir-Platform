@@ -49,7 +49,23 @@ const ChannelSettings = ({ channel, onClose }) => {
   };
 
   const renderSettingField = (key, setting) => {
-    const value = settings[key] || setting.default || '';
+    // Use value, default, or empty string
+    const value = settings[key] !== undefined ? settings[key] : (setting.value !== undefined ? setting.value : (setting.default || ''));
+
+    // If enum is present, render dropdown regardless of type
+    if (Array.isArray(setting.enum)) {
+      return (
+        <select
+          className="form-select"
+          value={value}
+          onChange={(e) => handleSettingChange(key, e.target.value)}
+        >
+          {setting.enum.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      );
+    }
 
     switch (setting.type) {
       case 'string':

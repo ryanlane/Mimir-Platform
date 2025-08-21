@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Monitor, Layers, Settings, Activity } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
-import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
+// import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import './Dashboard.css';
 
 const Dashboard = () => {
