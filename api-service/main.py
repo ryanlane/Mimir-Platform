@@ -1169,7 +1169,6 @@ async def request_channel_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
 
-    return {"image_path": image_path}
     # Update channel status
     current_status = channel.status or {}
     current_status["lastImageRequest"] = datetime.datetime.now().isoformat()
@@ -1190,12 +1189,11 @@ async def request_channel_image(
         },
         "imageGenerated": True
     })
-    
-    # Mock image generation
+
     return {
         "success": True,
-        "imagePath": f"/channels/{channel_id}/current.jpg",
-        "message": "Test image generated successfully"
+        "image_path": image_path,
+        "message": "Image generated successfully"
     }
 
 # v2.1 Channel Endpoints
