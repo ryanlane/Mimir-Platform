@@ -1154,7 +1154,22 @@ async def request_channel_image(
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
-    
+    # Get channel instance
+    channel_instance = channel_discovery.get_channel_instance(channel_id)
+    if not channel_instance:
+        raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
+
+    # Call render_image
+    try:
+        image_path = await channel_instance.render_image(
+            resolution=tuple(request_body.resolution),
+            orientation=request_body.orientation,
+            settings={}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
+
+    return {"image_path": image_path}
     # Update channel status
     current_status = channel.status or {}
     current_status["lastImageRequest"] = datetime.datetime.now().isoformat()
