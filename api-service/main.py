@@ -2232,30 +2232,40 @@ async def get_display_status(
     
     # Get assigned scene info
     assigned_scene = None
+    poll_interval = None
     if display_client.assigned_scene_id:
         assigned_scene = db.query(Scene).filter(Scene.id == display_client.assigned_scene_id).first()
-    
+        # Get first channel in the scene
+        if assigned_scene and assigned_scene.channels:
+            channel_id = assigned_scene.channels[0]
+            channel_instance = channel_discovery.get_channel_instance(channel_id)
+            if channel_instance:
+                config = channel_instance.config
+                unit = config.get('update_interval_unit', 'seconds')
+                value = config.get('update_interval_value', 60)
+                multipliers = {
+                    'seconds': 1,
+                    'minutes': 60,
+                    'hours': 3600,
+                    'days': 86400
+                }
+                poll_interval = value * multipliers.get(unit, 1)
+
     return {
-        "display_id": display_id,
+        "display_id": display_client.id,
         "name": display_client.name,
         "location": display_client.location,
         "is_online": display_client.is_online,
         "last_seen": display_client.last_seen.isoformat() if display_client.last_seen else None,
-        "last_image_fetch": display_client.last_image_fetch.isoformat() if display_client.last_image_fetch else None,
-        "capabilities": {
-            "resolution": display_client.resolution,
-            "orientation": display_client.orientation,
-            "refresh_rate_hz": display_client.refresh_rate_hz,
-            "supported_formats": display_client.supported_formats
-        },
-        "assigned_scene": {
-            "id": assigned_scene.id if assigned_scene else None,
-            "name": assigned_scene.name if assigned_scene else None,
-            "channels": assigned_scene.channels if assigned_scene else []
-        } if assigned_scene else None,
-        "current_image_url": f"/api/displays/{display_id}/current_image" if display_client.assigned_scene_id else None,
-        "settings": display_client.settings,
-        "tags": display_client.tags
+        "assigned_scene_id": display_client.assigned_scene_id,
+        "assigned_scene_name": assigned_scene.name if assigned_scene else None,
+        "resolution": display_client.resolution,
+        "orientation": display_client.orientation,
+        "refresh_rate_hz": display_client.refresh_rate_hz,
+        "tags": display_client.tags,
+        "client_version": display_client.client_version,
+        "current_image_url": f"/api/displays/{display_client.id}/current_image" if display_client.assigned_scene_id else None,
+        "poll_interval": poll_interval
     }
 
 @app.put("/api/displays/{display_id}")
