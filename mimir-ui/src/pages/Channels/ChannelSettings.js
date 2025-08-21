@@ -18,7 +18,22 @@ const ChannelSettings = ({ channel, onClose }) => {
         ]);
 
         setConfig(configResponse.data);
-        setSettings(settingsResponse.data.settings || {});
+        
+        // Initialize settings state with current values from config
+        const currentSettings = {};
+        if (configResponse.data?.settings) {
+          Object.entries(configResponse.data.settings).forEach(([key, setting]) => {
+            if (setting.value !== undefined) {
+              currentSettings[key] = setting.value;
+            }
+          });
+        }
+        
+        // Merge with any additional settings from the settings endpoint
+        setSettings({
+          ...currentSettings,
+          ...(settingsResponse.data.settings || {})
+        });
       } catch (error) {
         console.error('Error loading channel data:', error);
       } finally {
@@ -49,8 +64,8 @@ const ChannelSettings = ({ channel, onClose }) => {
   };
 
   const renderSettingField = (key, setting) => {
-    // Use value, default, or empty string
-    let value = settings[key] !== undefined ? settings[key] : (setting.value !== undefined ? setting.value : (setting.default || ''));
+    // Use current value from settings state, fallback to default
+    let value = settings[key] !== undefined ? settings[key] : (setting.default || '');
 
     // If enum is present, render dropdown regardless of type
     if (Array.isArray(setting.enum)) {
