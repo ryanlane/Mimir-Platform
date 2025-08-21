@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -1166,12 +1167,19 @@ async def update_channel_settings(
     settings: Dict[str, Any], 
     db: Session = Depends(get_db)
 ):
+    print(f"POST /api/channels/{channel_id}/settings called with: {settings}")
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
     
-    # Update settings
-    channel.current_settings = settings
+    print(f"Current settings before update: {channel.current_settings}")
+    
+    # Merge new settings into existing current_settings
+    current = channel.current_settings or {}
+    current.update(settings)
+    channel.current_settings = current
+    
+    print(f"New settings after merge: {channel.current_settings}")
     
     # Update status to reflect settings change
     current_status = channel.status or {}
@@ -1179,6 +1187,7 @@ async def update_channel_settings(
     channel.status = current_status
     
     db.commit()
+    print(f"Settings committed to database")
     
     # Broadcast channel status update
     await broadcast_event("channel_status_update", {
@@ -2268,7 +2277,7 @@ async def get_display_current_image_file(
         image_file_path = Path(image_info["path"])
         if not image_file_path.exists():
             raise HTTPException(status_code=404, detail=f"Image file not found: {image_file_path}")
-        from fastapi.responses import FileResponse
+        
         return FileResponse(
             path=str(image_file_path),
             media_type="image/jpeg",
