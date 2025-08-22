@@ -189,6 +189,7 @@ class ChannelDiscovery:
         """Dynamically load channel implementation class"""
         channel_file = channel_path / "channel.py"
         if not channel_file.exists():
+            print(f"⚠️  No channel.py found for {channel_path.name}")
             return None
             
         try:
@@ -198,6 +199,7 @@ class ChannelDiscovery:
                 channel_file
             )
             if spec is None or spec.loader is None:
+                print(f"❌ Failed to create module spec for {channel_path.name}")
                 return None
                 
             # Import the module
@@ -205,16 +207,50 @@ class ChannelDiscovery:
             sys.modules[f"channel_{channel_path.name}"] = module
             spec.loader.exec_module(module)
             
-            # Get the channel class
+            # Look for channel class in multiple ways
+            channel_class = None
+            
+            # 1. Look for ChannelClass export (preferred)
             if hasattr(module, 'ChannelClass'):
-                ChannelClass = getattr(module, 'ChannelClass')
-                return ChannelClass(str(channel_path))
+                channel_class = getattr(module, 'ChannelClass')
+                print(f"✅ Found ChannelClass in {channel_path.name}")
+                
+            # 2. Look for class with "Channel" in the name
+            elif hasattr(module, f'{channel_path.name.title().replace("_", "")}Channel'):
+                class_name = f'{channel_path.name.title().replace("_", "")}Channel'
+                channel_class = getattr(module, class_name)
+                print(f"✅ Found {class_name} in {channel_path.name}")
+                
+            # 3. Look for any class ending with "Channel"
             else:
-                print(f"Warning: Channel {channel_path.name} has no ChannelClass export")
+                for attr_name in dir(module):
+                    attr = getattr(module, attr_name)
+                    if (isinstance(attr, type) and 
+                        attr_name.endswith('Channel') and 
+                        attr.__module__ == module.__name__):
+                        channel_class = attr
+                        print(f"✅ Found channel class {attr_name} in {channel_path.name}")
+                        break
+            
+            if channel_class:
+                try:
+                    return channel_class(str(channel_path))
+                except Exception as e:
+                    print(f"❌ Failed to instantiate channel class for {channel_path.name}: {e}")
+                    return None
+            else:
+                print(f"❌ No suitable channel class found in {channel_path.name}")
+                # List available classes for debugging
+                classes = [name for name in dir(module) 
+                          if isinstance(getattr(module, name), type) 
+                          and getattr(module, name).__module__ == module.__name__]
+                print(f"   Available classes: {classes}")
                 return None
                 
         except Exception as e:
-            print(f"Error loading channel class for {channel_path.name}: {e}")
+            print(f"❌ Error loading channel class for {channel_path.name}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def setup_static_mounts(self, app: FastAPI, channel_id: str, channel_path: Path):
@@ -1480,6 +1516,66 @@ async def debug_loaded_channels():
         "loaded_channels": loaded,
         "channels_directory": str(channel_discovery.channels_dir)
     }
+
+# Debug endpoint to test loading a specific channel
+@app.post("/api/admin/channels/{channel_id}/reload")
+async def reload_specific_channel(channel_id: str):
+    """Debug endpoint to reload a specific channel and see detailed error messages"""
+    try:
+        # Find the channel directory
+        channels_dir = Path("channels")
+        channel_found = None
+        
+        for channel_path in channels_dir.iterdir():
+            if channel_path.is_dir():
+                config = channel_discovery.load_channel_config(channel_path)
+                if config:
+                    resolved_id = config.get('id', channel_path.name)
+                    if resolved_id == channel_id:
+                        channel_found = channel_path
+                        break
+        
+        if not channel_found:
+            return {
+                "success": False,
+                "error": f"Channel directory not found for ID: {channel_id}",
+                "available_directories": [p.name for p in channels_dir.iterdir() if p.is_dir()]
+            }
+        
+        # Try to load the channel
+        print(f"🔄 Attempting to reload channel: {channel_id} from {channel_found}")
+        config = channel_discovery.load_channel_config(channel_found)
+        instance = channel_discovery.load_channel_class(channel_found)
+        
+        # Update loaded channels
+        channel_discovery.loaded_channels[channel_id] = {
+            'config': config,
+            'instance': instance,
+            'path': channel_found
+        }
+        
+        return {
+            "success": True,
+            "channel_id": channel_id,
+            "directory_path": str(channel_found),
+            "config_loaded": config is not None,
+            "instance_loaded": instance is not None,
+            "instance_type": type(instance).__name__ if instance else None,
+            "has_get_status": hasattr(instance, 'get_status') if instance else False,
+            "config_summary": {
+                "name": config.get('name', 'Unknown') if config else None,
+                "version": config.get('version', 'Unknown') if config else None,
+                "id": config.get('id', 'Not specified') if config else None
+            }
+        }
+        
+    except Exception as e:
+        import traceback
+        return {
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 @app.get("/api/channels/{channel_id}/token")
 async def get_channel_token(channel_id: str):
