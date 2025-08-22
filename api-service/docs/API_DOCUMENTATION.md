@@ -922,6 +922,99 @@ function PluginSlot({ name, hostProps }) {
 
 ---
 
+## Admin Operations
+
+Administrative endpoints for channel management and system maintenance.
+
+### Channel Database Management
+
+#### POST `/api/admin/reload-channels`
+Reload all channels from filesystem and sync with database. Useful when channel IDs change or after filesystem modifications.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully reloaded 3 channels",
+  "channels": ["example_channel", "com.epaperframe.photoframe", "weather_channel"]
+}
+```
+
+**Error Response:**
+```json
+{
+  "detail": "Failed to reload channels: Configuration error in channel 'broken_channel'"
+}
+```
+
+#### DELETE `/api/admin/channels/{channel_id}`
+Remove a channel from the database without touching filesystem files. Useful for cleaning up orphaned database entries when channels are renamed or removed.
+
+**Parameters:**
+- `channel_id` (string): Channel identifier to remove from database
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully removed channel 'old_channel_id' (Old Channel Name) from database",
+  "channelId": "old_channel_id",
+  "channelName": "Old Channel Name"
+}
+```
+
+**Response with Warning:**
+```json
+{
+  "success": true,
+  "message": "Successfully removed channel 'photo_frame' (Photo Frame) from database",
+  "channelId": "photo_frame", 
+  "channelName": "Photo Frame",
+  "warning": "Warning: 2 scene(s) are using this channel: Living Room Display, Kitchen Display"
+}
+```
+
+**Error Responses:**
+- `404 Not Found`: Channel not found in database
+- `500 Internal Server Error`: Database operation failed
+
+#### GET `/api/admin/channels/orphaned`
+List channels that exist in the database but not on the filesystem. Helps identify cleanup candidates.
+
+**Response:**
+```json
+{
+  "orphaned_channels": [
+    {
+      "id": "old_weather",
+      "name": "Old Weather Channel",
+      "version": "1.0.0",
+      "description": "Deprecated weather display",
+      "channel_dir": "/channels/old_weather",
+      "scenes_using": 1
+    },
+    {
+      "id": "photo_frame",
+      "name": "Photo Frame",
+      "version": "2.0.0", 
+      "description": "Photo display channel",
+      "channel_dir": "/channels/photo_frame",
+      "scenes_using": 0
+    }
+  ],
+  "count": 2,
+  "total_db_channels": 5,
+  "total_filesystem_channels": 3
+}
+```
+
+**Use Cases:**
+- **Channel ID Changes**: When you update the `id` field in a channel's `config.json`, the old database entry becomes orphaned
+- **Channel Removal**: When channels are deleted from filesystem but database entries remain
+- **Migration Cleanup**: After moving or reorganizing channel directories
+
+---
+
 
 ## Display Management
 

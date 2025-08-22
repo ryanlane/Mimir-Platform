@@ -1551,6 +1551,109 @@ async def reload_channels():
         print(f"❌ Channel reload failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reload channels: {str(e)}")
 
+# Admin endpoint to remove channel from database (filesystem untouched)
+@app.delete("/api/admin/channels/{channel_id}")
+async def remove_channel_from_database(channel_id: str, db: Session = Depends(get_db)):
+    """Remove channel from database without touching filesystem - useful for cleanup of orphaned entries"""
+    try:
+        # Check if channel exists in database
+        channel = db.query(Channel).filter(Channel.id == channel_id).first()
+        if not channel:
+            raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found in database")
+        
+        # Check if channel has any associated scenes that might be using it
+        # We'll allow deletion but warn about potential impacts
+        channel_name = channel.name
+        
+        # Check for any scenes using this channel (optional warning)
+        scenes_using_channel = db.query(Scene).filter(Scene.channel_id == channel_id).all()
+        warning_message = None
+        if scenes_using_channel:
+            scene_names = [scene.name for scene in scenes_using_channel]
+            warning_message = f"Warning: {len(scenes_using_channel)} scene(s) are using this channel: {', '.join(scene_names)}"
+        
+        # Remove the channel from database
+        db.delete(channel)
+        db.commit()
+        
+        # Also remove from loaded channels if present
+        if channel_id in channel_discovery.loaded_channels:
+            del channel_discovery.loaded_channels[channel_id]
+            print(f"🗑️  Removed channel from loaded channels: {channel_id}")
+        
+        print(f"🗑️  Removed channel from database: {channel_id} ({channel_name})")
+        
+        response = {
+            "success": True,
+            "message": f"Successfully removed channel '{channel_id}' ({channel_name}) from database",
+            "channelId": channel_id,
+            "channelName": channel_name
+        }
+        
+        if warning_message:
+            response["warning"] = warning_message
+            
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Failed to remove channel {channel_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to remove channel from database: {str(e)}")
+
+# Endpoint to list orphaned database channels (channels in DB but not on filesystem)
+@app.get("/api/admin/channels/orphaned")
+async def list_orphaned_channels(db: Session = Depends(get_db)):
+    """List channels that exist in database but not on filesystem"""
+    try:
+        # Get all channels from database
+        db_channels = db.query(Channel).all()
+        
+        # Get all channels from filesystem
+        filesystem_channels = set()
+        channels_dir = Path("channels")
+        if channels_dir.exists():
+            for channel_path in channels_dir.iterdir():
+                if channel_path.is_dir():
+                    config_file = channel_path / "config.json"
+                    if config_file.exists():
+                        try:
+                            with open(config_file, 'r') as f:
+                                config = json.load(f)
+                                # Use same logic as discovery: prefer config ID over directory name
+                                channel_id = config.get('id', channel_path.name)
+                                filesystem_channels.add(channel_id)
+                        except Exception as e:
+                            print(f"Error reading config for {channel_path.name}: {e}")
+        
+        # Find orphaned channels (in DB but not on filesystem)
+        orphaned = []
+        for db_channel in db_channels:
+            if db_channel.id not in filesystem_channels:
+                # Check if this channel has any scenes using it
+                scenes_count = db.query(Scene).filter(Scene.channel_id == db_channel.id).count()
+                
+                orphaned.append({
+                    "id": db_channel.id,
+                    "name": db_channel.name,
+                    "version": db_channel.version,
+                    "description": db_channel.description,
+                    "channel_dir": db_channel.channel_dir,
+                    "scenes_using": scenes_count
+                })
+        
+        return {
+            "orphaned_channels": orphaned,
+            "count": len(orphaned),
+            "total_db_channels": len(db_channels),
+            "total_filesystem_channels": len(filesystem_channels)
+        }
+        
+    except Exception as e:
+        print(f"❌ Failed to list orphaned channels: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list orphaned channels: {str(e)}")
+
 # Scenes
 @app.get("/api/scenes")
 async def list_scenes(
