@@ -134,23 +134,51 @@ class ExampleChannel:
             return False
 
     async def render_image(self, resolution: Tuple[int, int], orientation: str, settings: dict) -> str:
-        """Generate and save selected image to assets/current.jpg"""
-        # First create the current.jpg from selected image
+        """
+        Generate and save selected image with resolution-based folder structure.
+        Creates images in current/{width}x{height}/ subfolders for efficient sharing.
+        """
+        # First create the base current.jpg from selected image
         await self.create_current_image(settings)
         
-        # Then resize it to the requested resolution
+        # Create resolution-specific directory
+        width, height = resolution
+        resolution_folder = f"{width}x{height}"
+        resolution_dir = self.channel_dir / "current" / resolution_folder
+        resolution_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Set paths
         assets_dir = self.channel_dir / "assets"
-        current_path = assets_dir / "current.jpg"
+        source_path = assets_dir / "current.jpg"
+        output_path = resolution_dir / "current.jpg"
         
-        if current_path.exists():
+        print(f"🎯 Rendering example channel image for resolution {width}x{height}")
+        
+        if source_path.exists():
             try:
-                with Image.open(current_path) as img:
+                with Image.open(source_path) as img:
+                    # Resize to the requested resolution
                     img_resized = img.resize(resolution, Image.Resampling.LANCZOS)
-                    img_resized.save(current_path, 'JPEG', quality=95)
+                    img_resized.save(output_path, 'JPEG', quality=95)
+                    
+                    print(f"✅ Generated {resolution_folder}/current.jpg ({output_path.stat().st_size} bytes)")
+                    
+                    # Update the legacy current.jpg for backward compatibility
+                    legacy_current = self.channel_dir / "current.jpg"
+                    img_resized.save(legacy_current, 'JPEG', quality=95)
+                    print(f"📄 Updated legacy current.jpg for backward compatibility")
+                    
             except Exception as e:
-                print(f"Error resizing current.jpg: {e}")
+                print(f"❌ Error processing image for resolution {resolution}: {e}")
+                # Fall back to copying source without resize
+                import shutil
+                shutil.copy2(source_path, output_path)
+                print(f"🔄 Used unresized image as fallback")
+        else:
+            print(f"⚠️  Source image not found: {source_path}")
+            return f"current/{resolution_folder}/current.jpg"
         
-        return f"assets/current.jpg"
+        return f"current/{resolution_folder}/current.jpg"
     
     async def validate_settings(self, settings: dict) -> Dict[str, str]:
         """Validate settings"""

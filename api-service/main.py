@@ -1596,6 +1596,67 @@ async def get_channel_current_image_generic(channel_id: str):
         print(f"❌ Error serving current image for channel '{channel_id}': {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to serve current image: {str(e)}")
 
+@app.get("/api/channels/{channel_id}/current/{resolution}/{filename}")
+async def get_channel_current_image_by_resolution(channel_id: str, resolution: str, filename: str):
+    """Serve resolution-specific images from current/{resolution}/ subfolders"""
+    try:
+        # Get channel data
+        channel_data = channel_discovery.loaded_channels.get(channel_id)
+        if not channel_data:
+            raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
+        
+        channel_path = channel_data['path']
+        
+        # Validate resolution format (should be like "800x480")
+        if not resolution.count('x') == 1:
+            raise HTTPException(status_code=400, detail=f"Invalid resolution format: {resolution}")
+        
+        try:
+            width, height = resolution.split('x')
+            int(width), int(height)  # Validate they're numbers
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid resolution format: {resolution}")
+        
+        # Build path to resolution-specific image
+        current_image_path = channel_path / "current" / resolution / filename
+        
+        # Check if file exists
+        if not current_image_path.exists():
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Image not found: {filename} at resolution {resolution}"
+            )
+        
+        # Determine MIME type based on file extension
+        file_extension = current_image_path.suffix.lower()
+        if file_extension in ['.jpg', '.jpeg']:
+            media_type = "image/jpeg"
+        elif file_extension == '.png':
+            media_type = "image/png"
+        elif file_extension == '.gif':
+            media_type = "image/gif"
+        elif file_extension == '.webp':
+            media_type = "image/webp"
+        else:
+            media_type = "image/jpeg"  # Default fallback
+        
+        # Return the file with correct headers for inline display
+        return FileResponse(
+            path=str(current_image_path),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": "inline",
+                "Cache-Control": "public, max-age=300",  # Cache for 5 minutes
+                "X-Resolution": resolution,  # Header to indicate which resolution is served
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error serving resolution-specific image for channel '{channel_id}': {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to serve resolution-specific image: {str(e)}")
+
 # Debug endpoint to see loaded channels
 @app.get("/api/admin/channels/debug")
 async def debug_loaded_channels():
@@ -3132,21 +3193,23 @@ async def generate_scene_image_for_display(scene, display_client):
             print(f"⚠️  Failed to generate image for {channel_id}: {e}")
             # Continue with existing file lookup as fallback
     
-    # Get channel config for current image path
+    # Get channel config for resolution-specific image path
     if channel_instance and hasattr(channel_instance, 'config'):
         # Get the actual channel directory path from the discovery system
         channel_data = channel_discovery.loaded_channels.get(channel_id)
         if channel_data and 'path' in channel_data:
-            # Use the actual filesystem path for the file
+            # Use resolution-based subfolder structure: current/{width}x{height}/current.jpg
             channel_dir = channel_data['path']
             current_image_filename = channel_instance.config.get("current_image", "current.jpg")
-            image_path = str(channel_dir / current_image_filename)
-            # URL still uses the channel ID for the API endpoint
-            image_url = f"/api/channels/{channel_id}/{current_image_filename}"
+            resolution_folder = f"{resolution[0]}x{resolution[1]}"
+            image_path = str(channel_dir / "current" / resolution_folder / current_image_filename)
+            # URL uses resolution-specific path
+            image_url = f"/api/channels/{channel_id}/current/{resolution_folder}/{current_image_filename}"
         else:
-            # Fallback if path not found
-            image_path = f"channels/{channel_id}/current.jpg"
-            image_url = f"/api/channels/{channel_id}/current.jpg"
+            # Fallback with resolution folder
+            resolution_folder = f"{resolution[0]}x{resolution[1]}"
+            image_path = f"channels/{channel_id}/current/{resolution_folder}/current.jpg"
+            image_url = f"/api/channels/{channel_id}/current/{resolution_folder}/current.jpg"
     else:
         # Fallback to assets subdirectory for channels without config
         image_url = f"/api/channels/{channel_id}/assets/current.jpg"
