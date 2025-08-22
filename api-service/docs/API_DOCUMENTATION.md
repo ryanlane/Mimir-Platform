@@ -271,6 +271,8 @@ Update channel settings with automatic type conversion and merging.
 - **Type Conversion**: String numbers are automatically converted to integers for numeric fields
 - **Persistence**: Settings are merged with existing values and persist across server restarts
 - **Real-time Broadcasting**: Changes trigger WebSocket events to all connected clients
+- **Poll Interval Updates**: When `update_interval_*` settings change, all displays using scenes with this channel receive updated poll intervals via WebSocket
+- **Display Synchronization**: Display clients automatically get notified of polling frequency changes
 
 #### POST `/api/channels/{channel_id}/image_request`
 Request a new image from channel
@@ -1178,9 +1180,11 @@ Get comprehensive status information for a specific display client, including po
 ```
 
 **Poll Interval Calculation:**
-- **With Scene Assignment**: Calculated from the assigned scene's channel settings (`update_interval_unit` and `update_interval_value`)
-- **Without Scene Assignment**: Returns default value of 300 seconds (5 minutes)
-- **Dynamic Updates**: Poll interval recalculates whenever channel settings change
+- **With Scene Assignment**: Calculated from the assigned scene's channel settings (`update_interval_unit` and `update_interval_value`) stored in the database
+- **Without Scene Assignment**: Returns default value of 60 seconds (1 minute)  
+- **Dynamic Updates**: Poll interval automatically recalculates whenever channel settings change via `/api/channels/{id}/settings`
+- **Real-time Sync**: Changes propagate immediately to display clients via WebSocket events
+- **Database-driven**: Uses current settings stored in database, not config file defaults
 
 **No Scene Assigned Response:**
 ```json

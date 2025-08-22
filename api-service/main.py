@@ -1222,6 +1222,30 @@ async def update_channel_settings(
         "settingsUpdated": True
     })
     
+    # If update interval settings changed, notify displays using this channel
+    if "update_interval_value" in processed_settings or "update_interval_unit" in processed_settings:
+        print(f"Poll interval settings changed for channel {channel_id}, updating affected displays")
+        # Find displays that use scenes containing this channel
+        scenes_with_channel = db.query(Scene).filter(Scene.channels.contains([channel_id])).all()
+        for scene in scenes_with_channel:
+            displays_with_scene = db.query(DisplayClient).filter(DisplayClient.assigned_scene_id == scene.id).all()
+            for display in displays_with_scene:
+                # Calculate new poll interval
+                unit = current.get("update_interval_unit", "minutes")
+                value = current.get("update_interval_value", 30)
+                new_poll_interval = calculate_poll_interval(unit, value)
+                
+                # Broadcast display status update
+                await broadcast_event("display_status_update", {
+                    "displayId": display.id,
+                    "displayName": display.name,
+                    "sceneId": scene.id,
+                    "sceneName": scene.name,
+                    "newPollInterval": new_poll_interval,
+                    "pollIntervalChanged": True
+                })
+                print(f"Updated poll interval for display {display.id} to {new_poll_interval} seconds")
+    
     return {"message": "Settings updated successfully"}
 
 @app.post("/api/channels/{channel_id}/image_request")
@@ -2356,25 +2380,29 @@ async def get_display_status(
         # Get first channel in the scene
         if assigned_scene and assigned_scene.channels:
             channel_id = assigned_scene.channels[0]
-            # Load channel config from filesystem
-            channel_config_path = Path("channels") / channel_id / "config.json"
-            if channel_config_path.exists():
-                import json
-                with open(channel_config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                settings = config.get("settings", {})
-                unit_setting = settings.get("update_interval_unit", {})
-                value_setting = settings.get("update_interval_value", {})
-                unit = unit_setting.get("value", unit_setting.get("default", "minutes"))
-                value = value_setting.get("value", value_setting.get("default", 30))
-                unit = str(unit).strip().lower()
-                multipliers = {
-                    'seconds': 1,
-                    'minutes': 60,
-                    'hours': 3600,
-                    'days': 86400
-                }
-                poll_interval = int(value) * multipliers.get(unit, 60)
+            # Get channel from database to access current_settings
+            channel = db.query(Channel).filter(Channel.id == channel_id).first()
+            if channel:
+                # Use current_settings from database, fallback to config defaults
+                current_settings = channel.current_settings or {}
+                
+                # Load default values from config if not in current_settings
+                channel_config_path = Path("channels") / channel_id / "config.json"
+                defaults = {}
+                if channel_config_path.exists():
+                    import json
+                    with open(channel_config_path, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                    settings_schema = config.get("settings", {})
+                    for setting_key, setting_def in settings_schema.items():
+                        defaults[setting_key] = setting_def.get("default")
+                
+                # Get current values or fallback to defaults
+                unit = current_settings.get("update_interval_unit", defaults.get("update_interval_unit", "minutes"))
+                value = current_settings.get("update_interval_value", defaults.get("update_interval_value", 30))
+                
+                # Calculate poll interval
+                poll_interval = calculate_poll_interval(unit, value)
 
     return {
         "display_id": display_client.id,
@@ -2478,6 +2506,17 @@ async def delete_display_client(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete display client: {str(e)}")
+
+def calculate_poll_interval(update_interval_unit: str, update_interval_value: int) -> int:
+    """Calculate poll interval in seconds from unit and value"""
+    unit = str(update_interval_unit).strip().lower()
+    multipliers = {
+        'seconds': 1,
+        'minutes': 60,
+        'hours': 3600,
+        'days': 86400
+    }
+    return int(update_interval_value) * multipliers.get(unit, 60)
 
 async def get_file_metadata(file_path: str) -> dict:
     """Get file metadata for change detection"""
