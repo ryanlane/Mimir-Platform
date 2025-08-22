@@ -1518,11 +1518,27 @@ async def get_channel_current_image_file(channel_id: str):
         if not current_image_path.exists():
             raise HTTPException(status_code=404, detail=f"Current image not found: {current_image_filename}")
         
-        # Return the file
+        # Determine MIME type based on file extension
+        file_extension = current_image_path.suffix.lower()
+        if file_extension in ['.jpg', '.jpeg']:
+            media_type = "image/jpeg"
+        elif file_extension == '.png':
+            media_type = "image/png"
+        elif file_extension == '.gif':
+            media_type = "image/gif"
+        elif file_extension == '.webp':
+            media_type = "image/webp"
+        else:
+            media_type = "image/jpeg"  # Default fallback
+        
+        # Return the file with correct headers for inline display
         return FileResponse(
             path=str(current_image_path),
-            media_type="image/jpeg",
-            filename=current_image_filename
+            media_type=media_type,
+            headers={
+                "Content-Disposition": "inline",  # Display in browser, don't force download
+                "Cache-Control": "public, max-age=300",  # Cache for 5 minutes
+            }
         )
         
     except HTTPException:
@@ -3045,11 +3061,19 @@ async def generate_scene_image_for_display(scene, display_client):
     # Get channel instance to check its config for current image path
     channel_instance = channel_discovery.get_channel_instance(channel_id)
     if channel_instance and hasattr(channel_instance, 'config'):
-        # Use channel's configured current image path
-        current_image_filename = channel_instance.config.get("current_image", "current.jpg")
-        # For photo frame and other channels that place current.jpg in channel root
-        image_path = f"channels/{channel_id}/{current_image_filename}"
-        image_url = f"/api/channels/{channel_id}/{current_image_filename}"
+        # Get the actual channel directory path from the discovery system
+        channel_data = channel_discovery.loaded_channels.get(channel_id)
+        if channel_data and 'path' in channel_data:
+            # Use the actual filesystem path for the file
+            channel_dir = channel_data['path']
+            current_image_filename = channel_instance.config.get("current_image", "current.jpg")
+            image_path = str(channel_dir / current_image_filename)
+            # URL still uses the channel ID for the API endpoint
+            image_url = f"/api/channels/{channel_id}/{current_image_filename}"
+        else:
+            # Fallback if path not found
+            image_path = f"channels/{channel_id}/current.jpg"
+            image_url = f"/api/channels/{channel_id}/current.jpg"
     else:
         # Fallback to assets subdirectory for channels without config
         image_url = f"/api/channels/{channel_id}/assets/current.jpg"
