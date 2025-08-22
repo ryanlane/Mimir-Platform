@@ -153,6 +153,7 @@ const ChannelSettings = ({ channel, onClose }) => {
         if (!customElements.get(component.element)) {
           // Set global API configuration for the Web Component
           window.mimirApiBaseUrl = getApiBaseUrl();
+          window.mimirServerBaseUrl = getServerBaseUrl(); // Provide server base URL for Web Components
           
           // Store original fetch before overriding
           const originalFetch = window.fetch;
@@ -171,8 +172,9 @@ const ChannelSettings = ({ channel, onClose }) => {
               url = `${getServerBaseUrl()}${url}`;
               
               // Only include credentials for specific endpoints that require authentication
-              // Avoid credentials for read-only endpoints that might have CORS wildcard issues
-              const needsCredentials = url.includes('/upload') || url.includes('/settings') || url.includes('/delete') || (init.method && init.method !== 'GET');
+              // Asset URLs (like uploaded images) don't need credentials for CORS compatibility
+              const isAssetUrl = url.includes('/assets/') || url.includes('/uploads/');
+              const needsCredentials = !isAssetUrl && (url.includes('/upload') || url.includes('/settings') || url.includes('/delete') || (init.method && init.method !== 'GET'));
               
               init = {
                 ...init,
@@ -247,6 +249,7 @@ const ChannelSettings = ({ channel, onClose }) => {
         if (!customElements.get(managementComponent.element)) {
           // Set global API configuration for the Web Component
           window.mimirApiBaseUrl = getApiBaseUrl();
+          window.mimirServerBaseUrl = getServerBaseUrl(); // Provide server base URL for Web Components
           
           // Store original fetch before overriding
           const originalFetch = window.fetch;
@@ -264,10 +267,13 @@ const ChannelSettings = ({ channel, onClose }) => {
             if (typeof url === 'string' && url.startsWith('/api/')) {
               url = `${getServerBaseUrl()}${url}`;
               
-              // Ensure credentials are included for API calls
+              // Asset URLs (like uploaded images) don't need credentials for CORS compatibility
+              const isAssetUrl = url.includes('/assets/') || url.includes('/uploads/');
+              const needsCredentials = !isAssetUrl && (url.includes('/upload') || url.includes('/settings') || url.includes('/delete') || (init.method && init.method !== 'GET'));
+              
               init = {
                 ...init,
-                credentials: 'include',
+                ...(needsCredentials && { credentials: 'include' }),
                 headers: {
                   ...init.headers,
                 }
