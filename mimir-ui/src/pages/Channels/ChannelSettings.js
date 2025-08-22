@@ -8,30 +8,44 @@ const ChannelSettings = ({ channel, onClose }) => {
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [channelManifest, setChannelManifest] = useState(null);
+  const [webComponentLoaded, setWebComponentLoaded] = useState(false);
+  const [webComponentError, setWebComponentError] = useState(null);
 
   useEffect(() => {
     const loadChannelData = async () => {
       try {
-        const [configResponse, settingsResponse] = await Promise.all([
+        const [configResponse, settingsResponse, manifestsResponse] = await Promise.all([
           api.getChannelConfig(channel.id),
-          api.getChannelSettings(channel.id)
+          api.getChannelSettings(channel.id),
+          api.getChannelsManifest()
         ]);
 
         setConfig(configResponse.data);
         
         // Initialize settings state with current values from settings response
+        // Note: Settings endpoint returns simple key-value pairs, not detailed schema
         const currentSettings = {};
         if (settingsResponse.data) {
-          Object.entries(settingsResponse.data).forEach(([key, setting]) => {
-            if (setting.value !== undefined) {
-              currentSettings[key] = setting.value;
-            }
+          // Handle simple key-value response format
+          Object.entries(settingsResponse.data).forEach(([key, value]) => {
+            currentSettings[key] = value;
           });
         }
         
         setSettings(currentSettings);
+
+        // Find the manifest for this channel
+        const manifest = manifestsResponse.data.find(m => m.id === channel.id);
+        setChannelManifest(manifest);
+
+        // If channel has Web Components, try to load them
+        if (manifest?.ui && manifest.ui.length > 0) {
+          await loadWebComponents(manifest);
+        }
       } catch (error) {
         console.error('Error loading channel data:', error);
+        setWebComponentError('Failed to load channel components');
       } finally {
         setLoading(false);
       }
@@ -57,6 +71,74 @@ const ChannelSettings = ({ channel, onClose }) => {
       ...prev,
       [key]: value
     }));
+  };
+
+  const loadWebComponents = async (manifest) => {
+    try {
+      // For photo frame channel, we don't have settings-specific components
+      // The channel uses a separate management route (/photo-frame)
+      // So we'll skip Web Component loading for now and use the fallback
+      console.log(`Channel ${manifest.id} has UI components but no settings-specific components available`);
+      
+      // Look for any components that might be suitable for settings
+      const settingsComponents = manifest.ui.filter(ui => 
+        ui.slots?.includes('dashboard.settings') || 
+        ui.slots?.includes('channel.settings') ||
+        ui.element?.includes('config') ||
+        ui.element?.includes('settings')
+      );
+
+      if (settingsComponents.length > 0) {
+        // Load the first settings component if available
+        const component = settingsComponents[0];
+        console.log(`Loading Web Component: ${component.element} from ${component.moduleUrl}`);
+        
+        // Check if component is already loaded
+        if (!customElements.get(component.element)) {
+          await import(/* webpackIgnore: true */ component.moduleUrl);
+          console.log(`✅ Web Component ${component.element} loaded successfully`);
+        }
+        
+        setWebComponentLoaded(true);
+      } else {
+        // No settings components available, use fallback
+        console.log(`No settings-specific Web Components found for ${manifest.id}`);
+        setWebComponentError('No settings interface available - using fallback');
+      }
+    } catch (error) {
+      console.error('Error loading Web Components:', error);
+      setWebComponentError(`Failed to load component: ${error.message}`);
+    }
+  };
+
+  const renderWebComponent = () => {
+    if (!channelManifest?.ui) return null;
+
+    // Find settings-related components
+    const settingsComponents = channelManifest.ui.filter(ui => 
+      ui.slots?.includes('dashboard.settings') || 
+      ui.slots?.includes('channel.settings') ||
+      ui.element?.includes('config') ||
+      ui.element?.includes('settings')
+    );
+
+    if (settingsComponents.length === 0) return null;
+
+    const component = settingsComponents[0];
+    const hostProps = {
+      channel: channel,
+      settings: settings,
+      config: config,
+      onSettingsChange: handleSettingChange,
+      onSave: handleSave,
+      onClose: onClose
+    };
+
+    // Create the Web Component element
+    return React.createElement(component.element, {
+      'data-hostprops': JSON.stringify(hostProps),
+      key: `${channel.id}-${component.element}`
+    });
   };
 
   const renderSettingField = (key, setting) => {
@@ -201,21 +283,39 @@ const ChannelSettings = ({ channel, onClose }) => {
         </div>
 
         <div className="channel-settings-body">
-          {channel.hasUI ? (
+          {channel.hasUI && webComponentLoaded && !webComponentError ? (
+            <div className="web-component-container">
+              <div className="web-component-header">
+                <p className="text-tertiary">
+                  Using channel's custom configuration interface
+                </p>
+              </div>
+              {renderWebComponent()}
+            </div>
+          ) : channel.hasUI ? (
             <div className="custom-ui-info">
               <p className="text-tertiary">
-                This channel has a custom user interface for advanced configuration and management.
+                This channel has a custom management interface with advanced features.
               </p>
+              <div className="channel-features">
+                <ul className="feature-list">
+                  <li>📷 Image upload and management</li>
+                  <li>✂️ Intelligent crop editing</li>
+                  <li>🎬 Slideshow configuration</li>
+                  <li>⚙️ Hardware settings</li>
+                </ul>
+              </div>
               <div className="custom-ui-actions">
                 <button 
                   className="btn btn-primary"
                   onClick={() => {
-                    // For photo_frame channel, use the specific route from the specification
-                    // Handle both old and new channel IDs for backwards compatibility
-                    if (channel.id === 'photo_frame' || channel.id === 'com.epaperframe.photoframe') {
+                    // Use the route specified in the manifest
+                    const managementComponent = channelManifest?.ui?.find(ui => ui.route);
+                    if (managementComponent) {
+                      window.open(managementComponent.route, '_blank', 'noopener,noreferrer');
+                    } else if (channel.id === 'photo_frame' || channel.id === 'com.epaperframe.photoframe') {
                       window.open('/photo-frame', '_blank', 'noopener,noreferrer');
                     } else {
-                      // Generic pattern for other channels with custom UI
                       const uiUrl = `/api/channels/${channel.id}/ui/`;
                       window.open(uiUrl, '_blank', 'noopener,noreferrer');
                     }
@@ -224,13 +324,16 @@ const ChannelSettings = ({ channel, onClose }) => {
                   Open Management Interface
                 </button>
               </div>
-              <div className="custom-ui-note">
+              <div className="basic-settings-note">
                 <small className="text-tertiary">
-                  The management interface provides image upload, crop editing, slideshow settings, and hardware configuration.
+                  Basic settings can be configured below, or use the full management interface for advanced features.
                 </small>
               </div>
             </div>
-          ) : config?.settings ? (
+          ) : null}
+
+          {/* Always show basic settings if available, even for channels with custom UI */}
+          {config?.settings ? (
             <div className="settings-form">
               {Object.entries(config.settings).map(([key, setting]) => (
                 <div key={key} className="form-group">
@@ -257,10 +360,10 @@ const ChannelSettings = ({ channel, onClose }) => {
           )}
         </div>
 
-        {!channel.hasUI && config?.settings && (
+        {config?.settings && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
-              Cancel
+              {channel.hasUI ? 'Close' : 'Cancel'}
             </button>
             <button 
               className="btn btn-primary" 
@@ -269,6 +372,14 @@ const ChannelSettings = ({ channel, onClose }) => {
             >
               <Save size={16} />
               {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+        )}
+
+        {!config?.settings && (
+          <div className="channel-settings-footer">
+            <button className="btn" onClick={onClose}>
+              Close
             </button>
           </div>
         )}

@@ -110,6 +110,109 @@
   background-color: var(--color-surface);
 }
 
+/* Web Component Integration */
+.web-component-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.web-component-header p {
+  margin: 0;
+  font-style: italic;
+  color: var(--color-tertiary);
+  font-size: 0.875rem;
+}
+
+.web-component-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  text-align: center;
+}
+
+.loading-component {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border);
+  border-top: 3px solid var(--color-accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.web-component-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.text-error {
+  color: var(--color-error);
+  font-weight: 500;
+  margin: 0;
+}
+
+.fallback-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.custom-ui-info {
+  text-align: center;
+  padding: var(--spacing-xl);
+}
+
+.custom-ui-actions {
+  margin: var(--spacing-lg) 0;
+}
+
+.custom-ui-note {
+  margin-top: var(--spacing-md);
+}
+
+.channel-features {
+  margin: var(--spacing-lg) 0;
+}
+
+.feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.feature-list li {
+  padding: var(--spacing-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.basic-settings-note {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
 @media (max-width: 768px) {
   .channel-settings-overlay {
     padding: var(--spacing-md);
