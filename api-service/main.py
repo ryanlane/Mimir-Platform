@@ -12,6 +12,7 @@ import json
 import asyncio
 import importlib.util
 import sys
+import os
 from pathlib import Path
 import hashlib
 import base64
@@ -851,13 +852,18 @@ def cleanup_rate_limit_data():
     for client_ip in clients_to_remove:
         del GLOBAL_RATE_LIMITS[client_ip]
 
-# Add CORS middleware for React frontend
+# CORS Configuration - Environment-based origins for security
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://oak:3000,http://127.0.0.1:3000").split(",")
+print(f"🌐 CORS configured for origins: {CORS_ORIGINS}")
+
+# Add CORS middleware for React frontend - explicit origins for security
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    max_age=86400,  # Cache preflight for 24 hours
 )
 
 # Discover and load channels on startup
