@@ -64,6 +64,14 @@ const ChannelSettings = ({ channel, onClose }) => {
   useEffect(() => {
     const loadChannelData = async () => {
       try {
+        // Set global API configuration early for any Web Components
+        window.mimirApiBaseUrl = getApiBaseUrl();
+        window.mimirServerBaseUrl = getServerBaseUrl();
+        console.log('🔧 Set global API config:', {
+          mimirApiBaseUrl: window.mimirApiBaseUrl,
+          mimirServerBaseUrl: window.mimirServerBaseUrl
+        });
+
         const [configResponse, settingsResponse, manifestsResponse] = await Promise.all([
           api.getChannelConfig(channel.id),
           api.getChannelSettings(channel.id),
