@@ -3,16 +3,52 @@ import { X, Save } from 'lucide-react';
 import { api } from '../../services/api';
 import './ChannelSettings.css';
 
-// Get API base URL for constructing management interface URLs
+// Import the getApiBaseUrl function from api service
 const getApiBaseUrl = () => {
   const raw =
     (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
     localStorage.getItem('mimir-api-base-url');
+
+  // Fallback includes /api already
+  if (!raw) return 'http://oak:5000/api';
   
+  try {
+    // Handle absolute or relative bases
+    const u = new URL(raw, window.location.origin);
+    // Normalize trailing slashes
+    u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+    // If path doesn't already start with /api, append it
+    if (!/^\/api(\/|$)/i.test(u.pathname)) {
+      u.pathname = (u.pathname === '/' ? '' : u.pathname) + '/api';
+    }
+    return u.toString();
+  } catch {
+    // Fallback for unusual inputs
+    const t = String(raw).replace(/\/+$/, '');
+    return /\/api(\/|$)/i.test(t) ? t : `${t}/api`;
+  }
+};
+
+// Helper function to get server base URL (without /api suffix)
+const getServerBaseUrl = () => {
+  const raw =
+    (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
+    localStorage.getItem('mimir-api-base-url');
+
   // Fallback without /api suffix for UI routes
-  if (!raw) return 'http://172.31.79.107:5000';
-  // Remove /api suffix if present for UI routes
-  return raw.replace(/\/api$/, '');
+  if (!raw) return 'http://oak:5000';
+  
+  try {
+    // Handle absolute or relative bases
+    const u = new URL(raw, window.location.origin);
+    // Normalize trailing slashes and remove /api if present
+    u.pathname = u.pathname.replace(/\/+$/, '').replace(/\/api$/, '') || '/';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    // Fallback for unusual inputs
+    const t = String(raw).replace(/\/+$/, '').replace(/\/api$/, '');
+    return t || 'http://oak:5000';
+  }
 };
 
 const ChannelSettings = ({ channel, onClose }) => {
@@ -23,7 +59,6 @@ const ChannelSettings = ({ channel, onClose }) => {
   const [channelManifest, setChannelManifest] = useState(null);
   const [webComponentLoaded, setWebComponentLoaded] = useState(false);
   const [webComponentError, setWebComponentError] = useState(null);
-  const [managementComponentLoaded, setManagementComponentLoaded] = useState(false);
   const [showManagementInterface, setShowManagementInterface] = useState(false);
 
   useEffect(() => {
@@ -107,7 +142,7 @@ const ChannelSettings = ({ channel, onClose }) => {
         const component = settingsComponents[0];
         
         // Construct full URL for the module
-        const serverBaseUrl = 'http://oak:5000'; // Direct server URL
+        const serverBaseUrl = getServerBaseUrl(); // Use dynamic server URL
         const fullModuleUrl = component.moduleUrl.startsWith('http') 
           ? component.moduleUrl 
           : `${serverBaseUrl}${component.moduleUrl}`;
@@ -116,6 +151,66 @@ const ChannelSettings = ({ channel, onClose }) => {
         
         // Check if component is already loaded
         if (!customElements.get(component.element)) {
+          // Set global API configuration for the Web Component
+          window.mimirApiBaseUrl = getApiBaseUrl();
+          
+          // Store original fetch before overriding
+          const originalFetch = window.fetch;
+          
+          // Override global fetch to redirect API calls to the correct server
+          window.fetch = function(input, init = {}) {
+            let url = input;
+            
+            // Handle Request objects
+            if (input instanceof Request) {
+              url = input.url;
+            }
+            
+            // If it's a relative URL starting with /api, redirect to the server
+            if (typeof url === 'string' && url.startsWith('/api/')) {
+              url = `${getServerBaseUrl()}${url}`;
+              
+              // Only include credentials for specific endpoints that require authentication
+              // Avoid credentials for read-only endpoints that might have CORS wildcard issues
+              const needsCredentials = url.includes('/upload') || url.includes('/settings') || url.includes('/delete') || (init.method && init.method !== 'GET');
+              
+              init = {
+                ...init,
+                ...(needsCredentials && { credentials: 'include' }),
+                headers: {
+                  ...init.headers,
+                }
+              };
+            }
+            
+            return originalFetch.call(this, url, init);
+          };
+          
+          // Provide a global API client for Web Components to use
+          window.mimirAPI = {
+            baseUrl: getApiBaseUrl(),
+            async fetch(endpoint, options = {}) {
+              const url = endpoint.startsWith('http') ? endpoint : `${getServerBaseUrl()}${endpoint}`;
+              return fetch(url, {
+                ...options,
+                credentials: 'include', // As required by the integration guide
+                headers: {
+                  ...options.headers,
+                  // Add any additional required headers
+                }
+              });
+            },
+            // Channel-specific API helpers
+            uploadFiles: async (channelId, files) => {
+              const formData = new FormData();
+              files.forEach(file => formData.append('files', file));
+              return window.mimirAPI.fetch(`/api/channels/${channelId}/upload`, {
+                method: 'POST',
+                body: formData
+              });
+            }
+          };
+          
           await import(/* webpackIgnore: true */ fullModuleUrl);
           console.log(`✅ Web Component ${component.element} loaded successfully`);
         }
@@ -141,7 +236,7 @@ const ChannelSettings = ({ channel, onClose }) => {
         // Construct full URL for the module
         // The moduleUrl from manifest is relative like "/api/channels/..."
         // We need to prepend the server base URL
-        const serverBaseUrl = 'http://oak:5000'; // Direct server URL
+        const serverBaseUrl = getServerBaseUrl(); // Use dynamic server URL
         const fullModuleUrl = managementComponent.moduleUrl.startsWith('http') 
           ? managementComponent.moduleUrl 
           : `${serverBaseUrl}${managementComponent.moduleUrl}`;
@@ -150,11 +245,70 @@ const ChannelSettings = ({ channel, onClose }) => {
         
         // Check if component is already loaded
         if (!customElements.get(managementComponent.element)) {
+          // Set global API configuration for the Web Component
+          window.mimirApiBaseUrl = getApiBaseUrl();
+          
+          // Store original fetch before overriding
+          const originalFetch = window.fetch;
+          
+          // Override global fetch to redirect API calls to the correct server
+          window.fetch = function(input, init = {}) {
+            let url = input;
+            
+            // Handle Request objects
+            if (input instanceof Request) {
+              url = input.url;
+            }
+            
+            // If it's a relative URL starting with /api, redirect to the server
+            if (typeof url === 'string' && url.startsWith('/api/')) {
+              url = `${getServerBaseUrl()}${url}`;
+              
+              // Ensure credentials are included for API calls
+              init = {
+                ...init,
+                credentials: 'include',
+                headers: {
+                  ...init.headers,
+                }
+              };
+            }
+            
+            return originalFetch.call(this, url, init);
+          };
+          
+          // Provide a global API client for Web Components to use
+          window.mimirAPI = {
+            baseUrl: getApiBaseUrl(),
+            async fetch(endpoint, options = {}) {
+              const url = endpoint.startsWith('http') ? endpoint : `${getServerBaseUrl()}${endpoint}`;
+              return fetch(url, {
+                ...options,
+                credentials: 'include', // As required by the integration guide
+                headers: {
+                  ...options.headers,
+                  // Add any additional required headers
+                }
+              });
+            },
+            // Channel-specific API helpers
+            uploadFiles: async (channelId, files) => {
+              const formData = new FormData();
+              files.forEach(file => formData.append('files', file));
+              return window.mimirAPI.fetch(`/api/channels/${channelId}/upload`, {
+                method: 'POST',
+                body: formData
+              });
+            }
+          };
+          
           await import(/* webpackIgnore: true */ fullModuleUrl);
           console.log(`✅ Management Component ${managementComponent.element} loaded successfully`);
+          
+          // Restore original fetch after component is loaded (optional)
+          // window.fetch = originalFetch;
         }
         
-        setManagementComponentLoaded(true);
         return managementComponent;
       } else {
         console.log(`No management component found for ${manifest.id}`);
@@ -188,6 +342,22 @@ const ChannelSettings = ({ channel, onClose }) => {
       channel: channel,
       settings: settings,
       config: config,
+      apiBaseUrl: getApiBaseUrl(), // Use dynamic API base URL
+      // Provide API helper functions for the Web Component
+      api: {
+        uploadFiles: (files) => {
+          const formData = new FormData();
+          files.forEach(file => formData.append('files', file));
+          return api.callChannelAPI(channel.id, 'upload', 'POST', formData);
+        },
+        getImages: () => api.callChannelAPI(channel.id, 'images', 'GET'),
+        updateImage: (imageId, data) => api.callChannelAPI(channel.id, `images/${imageId}`, 'PUT', data),
+        toggleImage: (imageId) => api.callChannelAPI(channel.id, `images/${imageId}/toggle`, 'POST'),
+        deleteImage: (imageId) => api.callChannelAPI(channel.id, `images/${imageId}`, 'DELETE'),
+        getSettings: () => api.callChannelAPI(channel.id, 'settings', 'GET'),
+        updateSettings: (settingsData) => api.callChannelAPI(channel.id, 'settings', 'PUT', settingsData),
+        getHardwareStatus: () => api.callChannelAPI(channel.id, 'hardware', 'GET')
+      },
       onSettingsChange: handleSettingChange,
       onSave: handleSave,
       onClose: onClose
@@ -212,6 +382,22 @@ const ChannelSettings = ({ channel, onClose }) => {
       channel: channel,
       settings: settings,
       config: config,
+      apiBaseUrl: getApiBaseUrl(), // Use dynamic API base URL
+      // Provide API helper functions for the Web Component
+      api: {
+        uploadFiles: (files) => {
+          const formData = new FormData();
+          files.forEach(file => formData.append('files', file));
+          return api.callChannelAPI(channel.id, 'upload', 'POST', formData);
+        },
+        getImages: () => api.callChannelAPI(channel.id, 'images', 'GET'),
+        updateImage: (imageId, data) => api.callChannelAPI(channel.id, `images/${imageId}`, 'PUT', data),
+        toggleImage: (imageId) => api.callChannelAPI(channel.id, `images/${imageId}/toggle`, 'POST'),
+        deleteImage: (imageId) => api.callChannelAPI(channel.id, `images/${imageId}`, 'DELETE'),
+        getSettings: () => api.callChannelAPI(channel.id, 'settings', 'GET'),
+        updateSettings: (settingsData) => api.callChannelAPI(channel.id, 'settings', 'PUT', settingsData),
+        getHardwareStatus: () => api.callChannelAPI(channel.id, 'hardware', 'GET')
+      },
       onSettingsChange: handleSettingChange,
       onSave: handleSave,
       onClose: () => setShowManagementInterface(false)
