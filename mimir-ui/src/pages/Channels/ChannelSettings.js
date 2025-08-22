@@ -105,11 +105,18 @@ const ChannelSettings = ({ channel, onClose }) => {
       if (settingsComponents.length > 0) {
         // Load the first settings component if available
         const component = settingsComponents[0];
-        console.log(`Loading Web Component: ${component.element} from ${component.moduleUrl}`);
+        
+        // Construct full URL for the module
+        const serverBaseUrl = 'http://oak:5000'; // Direct server URL
+        const fullModuleUrl = component.moduleUrl.startsWith('http') 
+          ? component.moduleUrl 
+          : `${serverBaseUrl}${component.moduleUrl}`;
+        
+        console.log(`Loading Web Component: ${component.element} from ${fullModuleUrl}`);
         
         // Check if component is already loaded
         if (!customElements.get(component.element)) {
-          await import(/* webpackIgnore: true */ component.moduleUrl);
+          await import(/* webpackIgnore: true */ fullModuleUrl);
           console.log(`✅ Web Component ${component.element} loaded successfully`);
         }
         
@@ -131,11 +138,19 @@ const ChannelSettings = ({ channel, onClose }) => {
       const managementComponent = manifest.ui?.find(ui => ui.route);
       
       if (managementComponent) {
-        console.log(`Loading Management Component: ${managementComponent.element} from ${managementComponent.moduleUrl}`);
+        // Construct full URL for the module
+        // The moduleUrl from manifest is relative like "/api/channels/..."
+        // We need to prepend the server base URL
+        const serverBaseUrl = 'http://oak:5000'; // Direct server URL
+        const fullModuleUrl = managementComponent.moduleUrl.startsWith('http') 
+          ? managementComponent.moduleUrl 
+          : `${serverBaseUrl}${managementComponent.moduleUrl}`;
+        
+        console.log(`Loading Management Component: ${managementComponent.element} from ${fullModuleUrl}`);
         
         // Check if component is already loaded
         if (!customElements.get(managementComponent.element)) {
-          await import(/* webpackIgnore: true */ managementComponent.moduleUrl);
+          await import(/* webpackIgnore: true */ fullModuleUrl);
           console.log(`✅ Management Component ${managementComponent.element} loaded successfully`);
         }
         
@@ -149,6 +164,10 @@ const ChannelSettings = ({ channel, onClose }) => {
       console.error('Error loading Management Component:', error);
       return null;
     }
+  };
+
+  const hasManagementInterface = () => {
+    return channelManifest?.ui?.some(ui => ui.route) || false;
   };
 
   const renderWebComponent = () => {
@@ -403,14 +422,14 @@ const ChannelSettings = ({ channel, onClose }) => {
               </div>
               <div className="basic-settings-note">
                 <small className="text-tertiary">
-                  Basic settings can be configured below, or use the full management interface for advanced features.
+                  Use the management interface above for all channel configuration and advanced features.
                 </small>
               </div>
             </div>
           ) : null}
 
-          {/* Always show basic settings if available, even for channels with custom UI */}
-          {config?.settings ? (
+          {/* Show basic settings only if no management interface is available */}
+          {config?.settings && !hasManagementInterface() ? (
             <div className="settings-form">
               {Object.entries(config.settings).map(([key, setting]) => (
                 <div key={key} className="form-group">
@@ -424,6 +443,12 @@ const ChannelSettings = ({ channel, onClose }) => {
                   {renderSettingField(key, setting)}
                 </div>
               ))}
+            </div>
+          ) : config?.settings && hasManagementInterface() ? (
+            <div className="management-only-notice">
+              <p className="text-tertiary">
+                Settings for this channel are managed through the custom management interface above.
+              </p>
             </div>
           ) : (
             <div className="no-settings">
@@ -439,7 +464,7 @@ const ChannelSettings = ({ channel, onClose }) => {
           )}
         </div>
 
-        {config?.settings && (
+        {config?.settings && !hasManagementInterface() && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
               {channel.hasUI ? 'Close' : 'Cancel'}
@@ -455,7 +480,7 @@ const ChannelSettings = ({ channel, onClose }) => {
           </div>
         )}
 
-        {!config?.settings && (
+        {(!config?.settings || hasManagementInterface()) && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
               Close

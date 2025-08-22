@@ -71,6 +71,12 @@
   font-size: 0.875rem;
 }
 
+.channel-id {
+  font-family: var(--font-family-mono);
+  font-size: 0.875rem;
+  color: var(--color-tertiary);
+}
+
 .status-indicators {
   display: flex;
   flex-direction: column;

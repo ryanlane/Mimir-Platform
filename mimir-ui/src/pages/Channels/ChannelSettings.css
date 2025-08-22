@@ -239,6 +239,20 @@
   overflow: auto;
 }
 
+.management-only-notice {
+  padding: var(--spacing-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+  margin-top: var(--spacing-md);
+}
+
+.management-only-notice p {
+  margin: 0;
+  font-style: italic;
+}
+
 @media (max-width: 768px) {
   .channel-settings-overlay {
     padding: var(--spacing-md);

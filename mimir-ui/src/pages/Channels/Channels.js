@@ -268,6 +268,7 @@ const Channels = () => {
                         <span className="v21-badge">v2.1</span>
                       )}
                     </h3>
+                    <div className="channel-id">ID: {channel.id}</div>
                     <p className="text-tertiary">{channel.description}</p>
                   </div>
                   <div className="status-indicators">
