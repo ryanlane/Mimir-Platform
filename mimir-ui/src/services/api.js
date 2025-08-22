@@ -112,8 +112,8 @@ export const api = {
   // v2.3: Display Management API endpoints
   registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),
   getDisplays: (params = {}) => apiClient.get('/displays', { params }),
-  assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${displayId}/assign-scene`, { sceneId: sceneId }),
-  unassignSceneFromDisplay: (displayId) => apiClient.post(`/displays/${displayId}/unassign-scene`),
+  assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${displayId}/assign_scene`, { scene_id: sceneId }),
+  unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/assign_scene`),
   getDisplayImage: (displayId, headers = {}) => apiClient.get(`/displays/${displayId}/current-image`, { headers }),
   getDisplayImageFile: (displayId) => apiClient.get(`/displays/${displayId}/current_image_file`, { responseType: 'blob' }),
   // Enhanced display image polling with ETag support
