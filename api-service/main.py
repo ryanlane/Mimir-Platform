@@ -1710,7 +1710,8 @@ async def remove_channel_from_database(channel_id: str, db: Session = Depends(ge
         channel_name = channel.name
         
         # Check for any scenes using this channel (optional warning)
-        scenes_using_channel = db.query(Scene).filter(Scene.channel_id == channel_id).all()
+        # Use JSON contains query since channels is a JSON array
+        scenes_using_channel = db.query(Scene).filter(Scene.channels.contains([channel_id])).all()
         warning_message = None
         if scenes_using_channel:
             scene_names = [scene.name for scene in scenes_using_channel]
@@ -1776,7 +1777,8 @@ async def list_orphaned_channels(db: Session = Depends(get_db)):
         for db_channel in db_channels:
             if db_channel.id not in filesystem_channels:
                 # Check if this channel has any scenes using it
-                scenes_count = db.query(Scene).filter(Scene.channel_id == db_channel.id).count()
+                # Use JSON contains query since channels is a JSON array
+                scenes_count = db.query(Scene).filter(Scene.channels.contains([db_channel.id])).count()
                 
                 orphaned.append({
                     "id": db_channel.id,
@@ -1813,7 +1815,8 @@ async def reset_channels_database(db: Session = Depends(get_db)):
         # Check for scenes that will be affected
         affected_scenes = []
         for channel in current_channels:
-            scenes = db.query(Scene).filter(Scene.channel_id == channel.id).all()
+            # Use JSON contains query since channels is a JSON array
+            scenes = db.query(Scene).filter(Scene.channels.contains([channel.id])).all()
             for scene in scenes:
                 affected_scenes.append({
                     "scene_id": scene.id,
