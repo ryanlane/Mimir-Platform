@@ -201,7 +201,36 @@ const ChannelSettings = ({ channel, onClose }) => {
         </div>
 
         <div className="channel-settings-body">
-          {config?.settings ? (
+          {channel.hasUI ? (
+            <div className="custom-ui-info">
+              <p className="text-tertiary">
+                This channel has a custom user interface for advanced configuration and management.
+              </p>
+              <div className="custom-ui-actions">
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => {
+                    // For photo_frame channel, use the specific route from the specification
+                    // Handle both old and new channel IDs for backwards compatibility
+                    if (channel.id === 'photo_frame' || channel.id === 'com.epaperframe.photoframe') {
+                      window.open('/photo-frame', '_blank', 'noopener,noreferrer');
+                    } else {
+                      // Generic pattern for other channels with custom UI
+                      const uiUrl = `/api/channels/${channel.id}/ui/`;
+                      window.open(uiUrl, '_blank', 'noopener,noreferrer');
+                    }
+                  }}
+                >
+                  Open Management Interface
+                </button>
+              </div>
+              <div className="custom-ui-note">
+                <small className="text-tertiary">
+                  The management interface provides image upload, crop editing, slideshow settings, and hardware configuration.
+                </small>
+              </div>
+            </div>
+          ) : config?.settings ? (
             <div className="settings-form">
               {Object.entries(config.settings).map(([key, setting]) => (
                 <div key={key} className="form-group">
@@ -228,7 +257,7 @@ const ChannelSettings = ({ channel, onClose }) => {
           )}
         </div>
 
-        {config?.settings && (
+        {!channel.hasUI && config?.settings && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
               Cancel

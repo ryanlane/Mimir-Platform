@@ -112,15 +112,48 @@ export const api = {
   // v2.3: Display Management API endpoints
   registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),
   getDisplays: (params = {}) => apiClient.get('/displays', { params }),
-  assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${displayId}/assign_scene`, { scene_id: sceneId }),
-  unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/assign_scene`),
-  getDisplayImage: (displayId) => apiClient.get(`/displays/${displayId}/current_image`),
+  assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${displayId}/assign-scene`, { sceneId: sceneId }),
+  unassignSceneFromDisplay: (displayId) => apiClient.post(`/displays/${displayId}/unassign-scene`),
+  getDisplayImage: (displayId, headers = {}) => apiClient.get(`/displays/${displayId}/current-image`, { headers }),
   getDisplayImageFile: (displayId) => apiClient.get(`/displays/${displayId}/current_image_file`, { responseType: 'blob' }),
+  // Enhanced display image polling with ETag support
+  pollDisplayImage: async (displayId, currentETag = null) => {
+    const headers = {};
+    if (currentETag) {
+      headers['If-None-Match'] = currentETag;
+    }
+    
+    try {
+      const response = await apiClient.get(`/displays/${displayId}/current-image`, { headers });
+      return {
+        changed: true,
+        data: response.data,
+        etag: response.headers['etag'] || response.headers['ETag'],
+        status: response.status
+      };
+    } catch (error) {
+      if (error.response?.status === 304) {
+        return {
+          changed: false,
+          etag: currentETag,
+          status: 304
+        };
+      }
+      throw error;
+    }
+  },
+  generateDisplayImage: (displayId) => apiClient.post(`/displays/${displayId}/generate-image`),
   updateDisplay: (displayId, updates) => apiClient.put(`/displays/${displayId}`, updates),
   deleteDisplay: (displayId) => apiClient.delete(`/displays/${displayId}`),
 
   // Helper function for display image URLs
   getDisplayImageUrl: (displayId) => `${getApiBaseUrl()}/displays/${displayId}/current_image_file`,
+
+  // v2.4: Admin Operations
+  reloadChannels: () => apiClient.post('/admin/reload-channels'),
+  getOrphanedChannels: () => apiClient.get('/admin/channels/orphaned'),
+  removeChannelFromDatabase: (channelId) => apiClient.delete(`/admin/channels/${channelId}`),
+  resetChannelsDatabase: () => apiClient.post('/admin/channels/reset'),
 };
 
 // Request interceptor for logging

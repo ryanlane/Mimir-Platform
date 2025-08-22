@@ -1,7 +1,7 @@
 # Mimir Platform API Documentation
 
-**Version:** 2.3  
-**Last Updated:** August 20, 2025  
+**Version:** 2.4  
+**Last Updated:** August 21, 2025  
 **Base URL:** `http://localhost:5000`  
 
 ---
@@ -15,9 +15,10 @@
 5. [Overlay System](#overlay-system)
 6. [Display Management](#display-management)
 7. [WebSocket Real-time Updates](#websocket-real-time-updates)
-8. [Error Handling](#error-handling)
-9. [Response Formats](#response-formats)
-10. [Examples](#examples)
+8. [Rate Limiting](#rate-limiting)
+9. [Error Handling](#error-handling)
+10. [Response Formats](#response-formats)
+11. [Examples](#examples)
 
 ---
 
@@ -64,6 +65,77 @@ The API uses **camelCase** for property names to be React/JavaScript-friendly:
 - `backgroundColor` instead of `background_color`
 
 ---
+
+## Rate Limiting
+
+The API implements comprehensive rate limiting to prevent abuse and ensure fair usage across all clients.
+
+### Global Rate Limiting
+
+- **Limit:** 120 requests per minute per IP address
+- **Window:** 60 seconds (sliding window)
+- **Scope:** Per IP address
+- **Applied to:** All API endpoints except static file serving
+
+### Endpoint-Specific Rate Limiting
+
+Some endpoints have additional rate limiting for optimal performance:
+
+#### WebSocket Status Endpoint
+- **Endpoint:** `GET /api/websocket/status`
+- **Limit:** 50 requests per minute per IP
+- **Purpose:** Prevent excessive polling of WebSocket status
+
+#### Channel Manifest Endpoint
+- **Endpoint:** `GET /api/channels/manifest`
+- **Limit:** 100 requests per minute per IP
+- **Cache Duration:** 10 seconds
+- **Purpose:** Reduce load on manifest generation
+
+### Rate Limit Response Headers
+
+All API responses include rate limiting information:
+
+```
+X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 119
+X-RateLimit-Reset: 1692451860
+X-RateLimit-Window: 60
+```
+
+### Rate Limit Exceeded Response
+
+When rate limits are exceeded, the API returns a 429 status code with detailed information:
+
+```json
+{
+  "detail": {
+    "error": "Rate limit exceeded",
+    "message": "Too many requests from 192.168.1.100",
+    "limit": 120,
+    "window_seconds": 60,
+    "retry_after": 45,
+    "current_requests": 121,
+    "suggestion": "Please reduce request frequency or implement client-side caching",
+    "endpoint": "/api/channels/example_channel/settings"
+  }
+}
+```
+
+### Rate Limit Bypass
+
+Static file serving endpoints are not subject to rate limiting:
+- `/api/channels/{id}/ui/`
+- `/api/channels/{id}/assets/`
+- Health check endpoints
+
+### Best Practices
+
+- **Implement exponential backoff** when receiving 429 responses
+- **Cache responses locally** when appropriate
+- **Monitor rate limit headers** to avoid hitting limits
+- **Use WebSocket connections** for real-time updates instead of polling
+- **Batch operations** when possible
 
 
 ## Core API Endpoints
@@ -147,15 +219,34 @@ Get current settings values for a channel.
 **Response:**
 ```json
 {
-  "settings": {
-    "api_key": "***hidden***",
-    "location": "San Francisco"
+  "update_interval_unit": {
+    "type": "string",
+    "enum": ["days", "hours", "minutes", "seconds"],
+    "label": "Update Interval Unit",
+    "default": "minutes",
+    "value": "minutes"
+  },
+  "update_interval_value": {
+    "type": "integer",
+    "minimum": 1,
+    "label": "Update Interval Value",
+    "default": 30,
+    "value": 15
+  },
+  "image_choice": {
+    "type": "select",
+    "enum": ["image1", "image2"],
+    "label": "Image to Display",
+    "default": "image1",
+    "value": "image2"
   }
 }
 ```
 
+**Note:** The response includes both schema information (type, enum, label, default) and current values. The `value` field contains the actual current setting, while `default` shows the fallback value from the channel configuration.
+
 #### POST `/api/channels/{channel_id}/settings`
-Update channel settings.
+Update channel settings with automatic type conversion and merging.
 
 **Parameters:**
 - `channel_id` (string): Channel identifier
@@ -163,8 +254,8 @@ Update channel settings.
 **Request Body:**
 ```json
 {
-  "api_key": "your_api_key_here",
-  "location": "London"
+  "update_interval_value": "15",
+  "image_choice": "image2"
 }
 ```
 
@@ -174,6 +265,14 @@ Update channel settings.
   "message": "Settings updated successfully"
 }
 ```
+
+**Features:**
+- **Partial Updates**: Only specified settings are updated, others remain unchanged
+- **Type Conversion**: String numbers are automatically converted to integers for numeric fields
+- **Persistence**: Settings are merged with existing values and persist across server restarts
+- **Real-time Broadcasting**: Changes trigger WebSocket events to all connected clients
+- **Poll Interval Updates**: When `update_interval_*` settings change, all displays using scenes with this channel receive updated poll intervals via WebSocket
+- **Display Synchronization**: Display clients automatically get notified of polling frequency changes
 
 #### POST `/api/channels/{channel_id}/image_request`
 Request a new image from channel
@@ -981,10 +1080,13 @@ Remove scene assignment from a display client.
 #### Get Current Image Metadata
 
 #### GET `/api/displays/{display_id}/current_image`
-Get metadata about the current image assigned to a display client.
+Get metadata about the current image assigned to a display client with change detection support.
 
 **Parameters:**
 - `display_id` (string): Display client identifier
+
+**Headers (Optional):**
+- `If-None-Match` (string): Change token from previous request for conditional fetching
 
 **Response:**
 ```json
@@ -995,11 +1097,28 @@ Get metadata about the current image assigned to a display client.
   "image_url": "/api/displays/f940535f-ad8e-459e-ba32-6e91380f2d69/current_image_file",
   "image_path": "/generated/displays/display_f940535f-ad8e-459e-ba32-6e91380f2d69_test-scene_1755715061.jpg",
   "resolution": [1920, 1080],
-  "generated_at": "2025-08-20T11:37:41.923305",
+  "generated_at": "2025-08-21T11:37:41.923305",
   "channels": ["example_channel", "weather_channel"],
-  "cache_expires_in": 300
+  "cache_expires_in": 300,
+  "last_modified": "2025-08-21T11:35:20.451000",
+  "content_hash": "a1b2c3d4e5f67890abcdef1234567890",
+  "change_token": "f7e8d9c6b5a4",
+  "file_size": 245760,
+  "file_exists": true
 }
 ```
+
+**Change Detection Fields:**
+- `last_modified`: ISO timestamp when the image file was last modified
+- `content_hash`: MD5 hash of the image file contents  
+- `change_token`: Short hash that changes when image content changes
+- `file_size`: Size of the image file in bytes
+- `file_exists`: Boolean indicating if the image file exists
+
+**Conditional Requests:**
+- Returns `304 Not Modified` if `If-None-Match` header matches current `change_token`
+- Sets `ETag` header with current change token for future conditional requests
+- Includes `Cache-Control: private, must-revalidate` header
 
 **Error Response (No Scene Assigned):**
 ```json
@@ -1024,6 +1143,64 @@ Download the actual image file for the display client.
 - `Content-Type: image/jpeg` or `image/png`
 - `Content-Length: {file_size}`
 - `Last-Modified: {timestamp}`
+
+#### Get Display Status
+
+#### GET `/api/displays/{display_id}/status`
+Get comprehensive status information for a specific display client, including poll interval calculation.
+
+**Parameters:**
+- `display_id` (string): Display client identifier
+
+**Response:**
+```json
+{
+  "display_id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+  "name": "Conference Room Display",
+  "location": "Building A - Room 203",
+  "is_online": true,
+  "last_seen": "2025-08-21T16:11:27.234567",
+  "last_image_fetch": "2025-08-21T16:10:15.123456",
+  "assigned_scene_id": "example-scene",
+  "assigned_scene_name": "Example Scene",
+  "current_image_url": "/api/displays/f940535f-ad8e-459e-ba32-6e91380f2d69/current_image_file",
+  "resolution": [1920, 1080],
+  "orientation": "landscape",
+  "capabilities": {
+    "supported_formats": ["jpg", "png"],
+    "refresh_rate_hz": 60
+  },
+  "poll_interval": 900,
+  "next_update_estimated": "2025-08-21T16:26:27.234567",
+  "settings": {
+    "brightness": 80,
+    "sleep_schedule": "22:00-06:00"
+  }
+}
+```
+
+**Poll Interval Calculation:**
+- **With Scene Assignment**: Calculated from the assigned scene's channel settings (`update_interval_unit` and `update_interval_value`) stored in the database
+- **Without Scene Assignment**: Returns default value of 60 seconds (1 minute)  
+- **Dynamic Updates**: Poll interval automatically recalculates whenever channel settings change via `/api/channels/{id}/settings`
+- **Real-time Sync**: Changes propagate immediately to display clients via WebSocket events
+- **Database-driven**: Uses current settings stored in database, not config file defaults
+
+**No Scene Assigned Response:**
+```json
+{
+  "display_id": "f940535f-ad8e-459e-ba32-6e91380f2d69",
+  "name": "Conference Room Display",
+  "location": "Building A - Room 203",
+  "is_online": true,
+  "last_seen": "2025-08-21T16:11:27.234567",
+  "assigned_scene_id": null,
+  "assigned_scene_name": null,
+  "current_image_url": null,
+  "poll_interval": 300,
+  "message": "No scene assigned to this display"
+}
+```
 
 #### Update Display Client
 
@@ -1655,6 +1832,319 @@ Get current WebSocket connection information.
 
 ---
 
+## Photo Frame Channel API
+
+The Photo Frame Channel (`com.epaperframe.photoframe`) provides digital photo frame functionality with intelligent image management, slideshow capabilities, and a comprehensive web-based management interface.
+
+### Channel-Specific Endpoints
+
+All Photo Frame Channel endpoints are prefixed with `/api/channels/com.epaperframe.photoframe/`
+
+#### Image Management
+
+##### GET `/images`
+List all uploaded images with metadata including crop settings and display statistics.
+
+**Response:**
+```json
+[
+  {
+    "id": 123,
+    "filename": "image_abc123.jpg",
+    "original_name": "sunset.jpg",
+    "title": "Beautiful Sunset",
+    "description": "Taken at the beach",
+    "width": 1920,
+    "height": 1080,
+    "enabled": true,
+    "times_shown": 5,
+    "last_shown_at": "2025-08-21T09:15:00Z",
+    "created_at": "2025-08-20T15:30:00Z",
+    "crop_x": 0,
+    "crop_y": 0,
+    "crop_width": 100,
+    "crop_height": 100,
+    "preserve_aspect_ratio": false
+  }
+]
+```
+
+##### POST `/upload`
+Upload new images to the photo frame collection with automatic processing.
+
+**Request:** `multipart/form-data` with `files` field containing image files
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "filename": "sunset.jpg",
+      "success": true,
+      "image_id": 124
+    },
+    {
+      "filename": "invalid.txt",
+      "success": false,
+      "error": "Unsupported file type"
+    }
+  ]
+}
+```
+
+##### PUT `/images/{image_id}`
+Update image metadata and intelligent crop settings for optimal display.
+
+**Request Body** (form data):
+- `title`: string - Image title for organization
+- `description`: string - Image description  
+- `crop_x`: float - Crop X position (0-100%)
+- `crop_y`: float - Crop Y position (0-100%)
+- `crop_width`: float - Crop width (0-100%)
+- `crop_height`: float - Crop height (0-100%)
+- `preserve_aspect_ratio`: boolean - Maintain original aspect ratio
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+##### POST `/images/{image_id}/toggle`
+Enable or disable an image in the slideshow rotation.
+
+**Response:**
+```json
+{
+  "success": true,
+  "enabled": false
+}
+```
+
+##### DELETE `/images/{image_id}`
+Permanently remove an image from the collection.
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+#### Settings Management
+
+##### GET `/settings`
+Get current photo frame configuration with slideshow and display preferences.
+
+**Response:**
+```json
+{
+  "slideshow_enabled": true,
+  "order_mode": "added",
+  "crop_mode": "smart_crop"
+}
+```
+
+##### PUT `/settings`
+Update photo frame configuration with automatic validation.
+
+**Request Body:**
+```json
+{
+  "slideshow_enabled": true,
+  "order_mode": "random",
+  "crop_mode": "letterbox"
+}
+```
+
+**Available Settings:**
+- `slideshow_enabled` (boolean): Enable automatic image rotation
+- `order_mode` (string): Image order - "added", "random", or "custom"  
+- `crop_mode` (string): Display mode - "smart_crop", "letterbox", or "stretch"
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+#### Hardware and Status
+
+##### GET `/hardware`
+Get display hardware information and capabilities.
+
+**Response:**
+```json
+{
+  "display": "Inky",
+  "resolution": [800, 600],
+  "orientation": "landscape"
+}
+```
+
+### Photo Frame Web Components
+
+The Photo Frame Channel includes two Web Components for rich UI integration:
+
+#### Dashboard Card: `x-photo-frame-card`
+Compact display widget showing current image and basic statistics.
+
+**Slots:** `dashboard.gallery`, `dashboard.sidebar`
+**Element:** `<x-photo-frame-card>`
+**Props:** Passed via `data-hostprops` attribute
+- `user`: User context object
+- `settings`: Current photo frame settings
+- `stats`: Statistics including image count and last update
+
+**Features:**
+- Live image preview with automatic refresh
+- Statistics display (total images, enabled images)
+- Manual refresh button for testing
+- Responsive design with error handling
+
+#### Management Interface: `x-photo-frame-manager`
+Full-featured management interface for photo frame administration.
+
+**Route:** `/photo-frame`
+**Element:** `<x-photo-frame-manager>`
+**Navigation:** Appears in main navigation as "Photo Frame"
+
+**Features:**
+- **Drag & Drop Upload:** Multi-file image upload with progress
+- **Image Grid:** Visual gallery with thumbnails and metadata
+- **Smart Settings Panel:** Live configuration with instant preview
+- **Individual Image Controls:** Enable/disable and delete actions
+- **Responsive Layout:** Adapts to different screen sizes
+- **Real-time Updates:** Automatic refresh of data and UI
+
+### Integration Examples
+
+#### React Dashboard Integration
+```jsx
+import { useState, useEffect } from 'react';
+
+function PhotoFrameDashboard() {
+  const [stats, setStats] = useState({});
+  
+  useEffect(() => {
+    // Load photo frame status
+    fetch('/api/channels/com.epaperframe.photoframe/status')
+      .then(res => res.json())
+      .then(setStats);
+  }, []);
+
+  return (
+    <div className="dashboard-grid">
+      <x-photo-frame-card 
+        data-hostprops={JSON.stringify({
+          user: { name: 'Current User' },
+          settings: { slideshow_enabled: true },
+          stats: stats
+        })}
+      />
+    </div>
+  );
+}
+```
+
+#### Display Client Implementation
+```javascript
+// Photo Frame display client polling
+class PhotoFrameDisplay {
+  constructor(displayId) {
+    this.displayId = displayId;
+    this.pollInterval = 15 * 60 * 1000; // 15 minutes default
+  }
+  
+  async checkForUpdates() {
+    try {
+      const response = await fetch(
+        `/api/displays/${this.displayId}/current_image`,
+        {
+          headers: {
+            'If-None-Match': this.lastChangeToken
+          }
+        }
+      );
+      
+      if (response.status === 304) {
+        console.log('No image changes');
+        return;
+      }
+      
+      const metadata = await response.json();
+      this.lastChangeToken = metadata.change_token;
+      
+      // Download and display new image
+      if (metadata.image_url) {
+        await this.displayImage(metadata.image_url);
+      }
+      
+    } catch (error) {
+      console.error('Update check failed:', error);
+    }
+  }
+  
+  async displayImage(imageUrl) {
+    const response = await fetch(imageUrl);
+    const blob = await response.blob();
+    const imageElement = document.getElementById('display-image');
+    imageElement.src = URL.createObjectURL(blob);
+  }
+  
+  start() {
+    // Initial check
+    this.checkForUpdates();
+    
+    // Set up polling
+    setInterval(() => {
+      this.checkForUpdates();
+    }, this.pollInterval);
+  }
+}
+```
+
+### Error Handling
+
+Photo Frame Channel API uses standard HTTP status codes with descriptive error messages:
+
+**Validation Errors (400):**
+```json
+{
+  "success": false,
+  "errors": {
+    "order_mode": "Must be one of: added, random, custom",
+    "crop_mode": "Must be one of: smart_crop, letterbox, stretch"
+  }
+}
+```
+
+**Not Found Errors (404):**
+```json
+{
+  "success": false,
+  "error": "Image not found",
+  "details": "No image with ID 999 exists"
+}
+```
+
+**File Upload Errors:**
+```json
+{
+  "results": [
+    {
+      "filename": "large_image.jpg",
+      "success": false,
+      "error": "File size exceeds 10MB limit"
+    }
+  ]
+}
+```
+
+---
+
 ## Examples
 
 ### v2.1 Channel Development Workflow
@@ -1856,6 +2346,103 @@ while true; do
 done
 ```
 
+#### Optimized Polling with Change Detection
+
+**Efficient polling using conditional requests:**
+```bash
+#!/bin/bash
+DISPLAY_ID="f940535f-ad8e-459e-ba32-6e91380f2d69"
+POLL_INTERVAL=30
+CHANGE_TOKEN=""
+
+while true; do
+  echo "Checking for updates..."
+  
+  # Build conditional request headers
+  HEADERS=""
+  if [ ! -z "$CHANGE_TOKEN" ]; then
+    HEADERS="-H \"If-None-Match: $CHANGE_TOKEN\""
+  fi
+  
+  # Check for image changes
+  RESPONSE=$(eval "curl -s -w '%{http_code}' $HEADERS \"http://localhost:5000/api/displays/${DISPLAY_ID}/current_image\"")
+  HTTP_CODE=$(echo "$RESPONSE" | tail -c 4)
+  BODY=$(echo "$RESPONSE" | head -c -4)
+  
+  if [ "$HTTP_CODE" = "304" ]; then
+    echo "Image unchanged, skipping download"
+  elif [ "$HTTP_CODE" = "200" ]; then
+    echo "Image changed, downloading..."
+    
+    # Extract new change token and image URL
+    NEW_TOKEN=$(echo "$BODY" | jq -r '.change_token')
+    IMAGE_URL=$(echo "$BODY" | jq -r '.image_url')
+    
+    # Download new image
+    curl -s "http://localhost:5000${IMAGE_URL}" --output current_image.jpg
+    echo "Image updated: current_image.jpg (token: $NEW_TOKEN)"
+    
+    CHANGE_TOKEN="$NEW_TOKEN"
+  else
+    echo "Error or no scene assigned"
+  fi
+  
+  sleep $POLL_INTERVAL
+done
+```
+
+**Python example with change detection:**
+```python
+import requests
+import time
+
+class DisplayClient:
+    def __init__(self, display_id, base_url):
+        self.display_id = display_id
+        self.base_url = base_url
+        self.last_change_token = None
+        
+    def check_for_updates(self):
+        headers = {}
+        if self.last_change_token:
+            headers['If-None-Match'] = self.last_change_token
+            
+        response = requests.get(
+            f"{self.base_url}/api/displays/{self.display_id}/current_image",
+            headers=headers
+        )
+        
+        if response.status_code == 304:
+            print("Image unchanged, skipping download")
+            return False
+            
+        if response.status_code == 200:
+            metadata = response.json()
+            print(f"Image changed: {metadata['change_token']}")
+            
+            # Download new image
+            self.download_image(metadata['image_url'])
+            self.last_change_token = metadata['change_token']
+            return True
+            
+    def download_image(self, image_url):
+        response = requests.get(f"{self.base_url}{image_url}")
+        with open("current_display.jpg", "wb") as f:
+            f.write(response.content)
+            
+    def run_polling_loop(self, interval=30):
+        while True:
+            try:
+                self.check_for_updates()
+            except Exception as e:
+                print(f"Error checking for updates: {e}")
+            time.sleep(interval)
+
+# Usage
+client = DisplayClient("your-display-id", "http://localhost:5000")
+client.run_polling_loop()
+```
+
 ### Display Management
 
 1. **Check legacy display status:**
@@ -1926,20 +2513,59 @@ Static file serving endpoints (UI assets, images) are not subject to rate limiti
 
 ## Changelog
 
-### v2.2 (August 2025)
+### v2.4.1 (August 21, 2025)
+- **🔍 Image Change Detection** - Complete change detection system for display clients
+- **⚡ Performance Optimization** - Conditional requests to reduce bandwidth usage
+- **📱 Enhanced Display Clients** - Better polling patterns with change detection
+- **🖼️ Smart Image Management** - File metadata tracking and content hashing
+- **🆕 New Features:**
+  - Added `last_modified`, `content_hash`, `change_token`, `file_size`, and `file_exists` fields to current image endpoint
+  - Support for `If-None-Match` conditional headers 
+  - Returns `304 Not Modified` when images haven't changed
+  - Enhanced example channel with dynamic asset discovery
+  - Automatic `current.jpg` creation when settings change
+  - New example channel endpoints: `/assets` and `/refresh_assets`
+- **📈 Performance Benefits:**
+  - Display clients can skip unnecessary downloads
+  - Reduced server load with 304 responses
+  - Lower bandwidth usage for unchanged content
+  - Better battery life for mobile/embedded displays
+
+### v2.4 (August 21, 2025)
+- **🔧 Enhanced Settings Management** - Complete overhaul of channel settings persistence
+- **🔄 Dynamic Settings Merging** - Partial updates with automatic type conversion
+- **📊 Poll Interval Calculation** - Dynamic poll intervals based on channel settings
+- **🛡️ Enhanced Rate Limiting** - Comprehensive rate limiting with detailed error responses
+- **📈 Settings Broadcasting** - Real-time WebSocket events for settings changes
+- **🔍 Improved Error Handling** - Better error messages and recovery suggestions
+- **📝 Updated Documentation** - Comprehensive documentation updates reflecting current implementation
+- **🆕 New Features:**
+  - Settings values now persist across server restarts
+  - String to integer conversion for numeric settings
+  - Display status includes calculated poll intervals
+  - Enhanced rate limiting with endpoint-specific limits
+  - Real-time settings change broadcasting via WebSocket
+- **🐛 Bug Fixes:**
+  - Fixed SQLAlchemy JSON column update detection
+  - Resolved settings persistence issues
+  - Corrected poll interval calculation logic
+  - Improved display status endpoint accuracy
+
+### v2.3 (August 20, 2025)
 - **🖥️ Multi-Display Client System** - Complete multi-display architecture implementation
 - **📋 Display Client Registration** - Registration system with capabilities tracking
 - **🎯 Scene Assignment** - Assign specific scenes to individual displays  
 - **🖼️ Display Image Generation** - On-demand image generation per display
 - **📡 Display-Specific WebSockets** - Targeted WebSocket connections at `/ws/display/{id}`
 - **🛡️ Rate Limiting** - 120 requests/minute protection against abuse
-- **📊 New v2.2 Endpoints:**
+- **📊 New v2.3 Endpoints:**
   - `POST /api/displays/register` - Register display clients
   - `GET /api/displays` - List all display clients with filtering
   - `POST /api/displays/{id}/assign_scene` - Assign scenes to displays
   - `DELETE /api/displays/{id}/assign_scene` - Unassign scenes from displays
   - `GET /api/displays/{id}/current_image` - Get image metadata for display
   - `GET /api/displays/{id}/current_image_file` - Download image for display
+  - `GET /api/displays/{id}/status` - Get comprehensive display status
   - `PUT /api/displays/{id}` - Update display client information
   - `DELETE /api/displays/{id}` - Remove display client
 - **🔄 Enhanced WebSocket Events:**
