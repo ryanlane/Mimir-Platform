@@ -1547,6 +1547,55 @@ async def get_channel_current_image_file(channel_id: str):
         print(f"❌ Error serving current image for channel '{channel_id}': {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to serve current image: {str(e)}")
 
+@app.get("/api/channels/{channel_id}/current")
+async def get_channel_current_image_generic(channel_id: str):
+    """Generic endpoint to serve the channel's current image (auto-detects file type)"""
+    try:
+        # Get channel data
+        channel_data = channel_discovery.loaded_channels.get(channel_id)
+        if not channel_data:
+            raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
+        
+        channel_path = channel_data['path']
+        config = channel_data['config']
+        
+        # Get current image filename from config (defaults to current.jpg)
+        current_image_filename = config.get("current_image", "current.jpg")
+        current_image_path = channel_path / current_image_filename
+        
+        # Check if file exists
+        if not current_image_path.exists():
+            raise HTTPException(status_code=404, detail=f"Current image not found: {current_image_filename}")
+        
+        # Determine MIME type based on file extension
+        file_extension = current_image_path.suffix.lower()
+        if file_extension in ['.jpg', '.jpeg']:
+            media_type = "image/jpeg"
+        elif file_extension == '.png':
+            media_type = "image/png"
+        elif file_extension == '.gif':
+            media_type = "image/gif"
+        elif file_extension == '.webp':
+            media_type = "image/webp"
+        else:
+            media_type = "image/jpeg"  # Default fallback
+        
+        # Return the file with correct headers for inline display
+        return FileResponse(
+            path=str(current_image_path),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": "inline",  # Display in browser, don't force download
+                "Cache-Control": "public, max-age=300",  # Cache for 5 minutes
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error serving current image for channel '{channel_id}': {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to serve current image: {str(e)}")
+
 # Debug endpoint to see loaded channels
 @app.get("/api/admin/channels/debug")
 async def debug_loaded_channels():
