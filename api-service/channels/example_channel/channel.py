@@ -41,41 +41,45 @@ class ExampleChannel:
     
     def update_config_with_assets(self) -> bool:
         """Update config.json with discovered assets if changed"""
-        current_assets = self.discover_assets()
-        
-        # Get current enum values from config
-        current_enum = self.config.get("settings", {}).get("image_choice", {}).get("enum", [])
-        
-        # Check if assets have changed
-        if set(current_assets) != set(current_enum) and current_assets:
-            # Update config with new assets
-            if "settings" not in self.config:
-                self.config["settings"] = {}
-            if "image_choice" not in self.config["settings"]:
-                self.config["settings"]["image_choice"] = {
-                    "type": "select",
-                    "label": "Image to Display",
-                    "default": current_assets[0] if current_assets else "image1"
-                }
+        try:
+            current_assets = self.discover_assets()
             
-            self.config["settings"]["image_choice"]["enum"] = current_assets
+            # Get current enum values from config
+            current_enum = self.config.get("settings", {}).get("image_choice", {}).get("enum", [])
             
-            # Update default if current default is not in new list
-            current_default = self.config["settings"]["image_choice"].get("default")
-            if current_default not in current_assets and current_assets:
-                self.config["settings"]["image_choice"]["default"] = current_assets[0]
+            # Check if assets have changed
+            if set(current_assets) != set(current_enum) and current_assets:
+                # Update config with new assets
+                if "settings" not in self.config:
+                    self.config["settings"] = {}
+                if "image_choice" not in self.config["settings"]:
+                    self.config["settings"]["image_choice"] = {
+                        "type": "select",
+                        "label": "Image to Display",
+                        "default": current_assets[0] if current_assets else "image1"
+                    }
+                
+                self.config["settings"]["image_choice"]["enum"] = current_assets
+                
+                # Update default if current default is not in new list
+                current_default = self.config["settings"]["image_choice"].get("default")
+                if current_default not in current_assets and current_assets:
+                    self.config["settings"]["image_choice"]["default"] = current_assets[0]
+                
+                # Save updated config
+                try:
+                    with open(self.config_path, 'w') as f:
+                        json.dump(self.config, f, indent=2)
+                    self._last_assets_scan = datetime.datetime.now()
+                    return True
+                except Exception as e:
+                    print(f"❌ Error updating config for example_channel: {e}")
+                    return False
             
-            # Save updated config
-            try:
-                with open(self.config_path, 'w') as f:
-                    json.dump(self.config, f, indent=2)
-                self._last_assets_scan = datetime.datetime.now()
-                return True
-            except Exception as e:
-                print(f"Error updating config: {e}")
-                return False
-        
-        return False
+            return False
+        except Exception as e:
+            print(f"❌ Error in update_config_with_assets for example_channel: {e}")
+            return False
         
     @property
     def config(self) -> dict:
@@ -172,20 +176,33 @@ class ExampleChannel:
         return errors
     
     def get_status(self) -> dict:
-        available_images = self.discover_assets()
-        assets_dir = self.channel_dir / "assets"
-        current_exists = (assets_dir / "current.jpg").exists()
-        
-        return {
-            "active": True,
-            "lastUpdate": datetime.datetime.now().isoformat(),
-            "lastError": None,
-            "usingFallback": False,
-            "version": self.config.get("version", "1.0.0"),
-            "availableImages": available_images,
-            "currentImageExists": current_exists,
-            "assetsCount": len(available_images)
-        }
+        try:
+            available_images = self.discover_assets()
+            assets_dir = self.channel_dir / "assets"
+            current_exists = (assets_dir / "current.jpg").exists()
+            
+            return {
+                "active": True,
+                "lastUpdate": datetime.datetime.now().isoformat(),
+                "lastError": None,
+                "usingFallback": False,
+                "version": self.config.get("version", "1.0.0"),
+                "availableImages": available_images,
+                "currentImageExists": current_exists,
+                "assetsCount": len(available_images)
+            }
+        except Exception as e:
+            print(f"❌ Error in example_channel get_status(): {str(e)}")
+            return {
+                "active": False,
+                "lastUpdate": datetime.datetime.now().isoformat(),
+                "lastError": f"Status check failed: {str(e)}",
+                "usingFallback": True,
+                "version": "unknown",
+                "availableImages": [],
+                "currentImageExists": False,
+                "assetsCount": 0
+            }
     
     def get_router(self) -> Optional[APIRouter]:
         """Get API router for channel-specific endpoints"""

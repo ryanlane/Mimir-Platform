@@ -1013,6 +1013,58 @@ List channels that exist in the database but not on the filesystem. Helps identi
 - **Channel Removal**: When channels are deleted from filesystem but database entries remain
 - **Migration Cleanup**: After moving or reorganizing channel directories
 
+#### POST `/api/admin/channels/reset`
+Reset the entire channels database by clearing all entries and rebuilding from filesystem only. This is a destructive operation that provides a clean slate.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully reset channels database from filesystem",
+  "summary": {
+    "before": {
+      "total_channels": 5,
+      "channel_ids": ["old_weather", "photo_frame", "example_channel", "broken_channel", "weather_channel"]
+    },
+    "after": {
+      "total_channels": 3,
+      "channel_ids": ["com.epaperframe.photoframe", "example_channel", "weather_channel"]
+    },
+    "changes": {
+      "removed_count": 3,
+      "removed_ids": ["old_weather", "photo_frame", "broken_channel"],
+      "added_count": 1,
+      "added_ids": ["com.epaperframe.photoframe"],
+      "kept_count": 2,
+      "kept_ids": ["example_channel", "weather_channel"]
+    }
+  },
+  "affected_scenes": [
+    {
+      "scene_id": 1,
+      "scene_name": "Living Room Display",
+      "channel_id": "photo_frame",
+      "channel_name": "Photo Frame"
+    }
+  ],
+  "warnings": [
+    "1 scene(s) may need channel reassignment"
+  ]
+}
+```
+
+**⚠️ Warning:** This operation:
+- Completely clears the channels table in the database
+- Rebuilds from current filesystem state only
+- May break existing scene assignments if channel IDs have changed
+- Cannot be undone - consider using `GET /api/admin/channels/orphaned` first
+
+**Use Cases:**
+- Complete cleanup after major channel reorganization
+- Resolve severe database/filesystem inconsistencies
+- Fresh start after multiple channel ID changes
+- Remove all orphaned entries in one operation
+
 ---
 
 

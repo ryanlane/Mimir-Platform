@@ -1414,11 +1414,33 @@ async def get_channel_health(channel_id: str):
     """Get channel health status"""
     channel_instance = channel_discovery.get_channel_instance(channel_id)
     if not channel_instance:
-        raise HTTPException(status_code=404, detail="Channel not found")
+        # Enhanced error message for debugging
+        available_channels = list(channel_discovery.loaded_channels.keys())
+        print(f"🔍 Channel '{channel_id}' not found. Available channels: {available_channels}")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Channel '{channel_id}' not found. Available: {available_channels}"
+        )
     
     try:
+        # Check if channel instance has get_status method
+        if not hasattr(channel_instance, 'get_status'):
+            print(f"⚠️  Channel '{channel_id}' instance missing get_status() method")
+            # Fallback status
+            config = getattr(channel_instance, 'config', {})
+            health = {
+                "channelId": channel_id,
+                "name": config.get("name", channel_id),
+                "version": config.get("version", "unknown"),
+                "status": {"active": True, "lastUpdate": None, "lastError": "get_status() method not implemented"},
+                "healthy": False,
+                "lastCheck": datetime.datetime.now().isoformat(),
+                "warning": "Channel instance missing get_status() method"
+            }
+            return health
+        
         status = channel_instance.get_status()
-        config = channel_instance.config
+        config = getattr(channel_instance, 'config', {})
         
         health = {
             "channelId": channel_id,
@@ -1431,7 +1453,33 @@ async def get_channel_health(channel_id: str):
         
         return health
     except Exception as e:
+        print(f"❌ Health check failed for channel '{channel_id}': {str(e)}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+# Debug endpoint to see loaded channels
+@app.get("/api/admin/channels/debug")
+async def debug_loaded_channels():
+    """Debug endpoint to see what channels are currently loaded in memory"""
+    loaded = {}
+    for channel_id, channel_data in channel_discovery.loaded_channels.items():
+        instance = channel_data.get('instance')
+        config = channel_data.get('config', {})
+        
+        loaded[channel_id] = {
+            "has_instance": instance is not None,
+            "instance_type": type(instance).__name__ if instance else None,
+            "has_get_status": hasattr(instance, 'get_status') if instance else False,
+            "config_name": config.get('name', 'Unknown'),
+            "config_version": config.get('version', 'Unknown'),
+            "config_id": config.get('id', 'Not specified'),
+            "directory_path": str(channel_data.get('path', 'Unknown'))
+        }
+    
+    return {
+        "loaded_channels_count": len(channel_discovery.loaded_channels),
+        "loaded_channels": loaded,
+        "channels_directory": str(channel_discovery.channels_dir)
+    }
 
 @app.get("/api/channels/{channel_id}/token")
 async def get_channel_token(channel_id: str):
@@ -1653,6 +1701,112 @@ async def list_orphaned_channels(db: Session = Depends(get_db)):
     except Exception as e:
         print(f"❌ Failed to list orphaned channels: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list orphaned channels: {str(e)}")
+
+# Admin endpoint to reset channels database from filesystem
+@app.post("/api/admin/channels/reset")
+async def reset_channels_database(db: Session = Depends(get_db)):
+    """Reset channels database: remove all channel entries and rebuild from filesystem only"""
+    try:
+        print("🔄 Starting channels database reset...")
+        
+        # Get current database state for reporting
+        current_channels = db.query(Channel).all()
+        current_count = len(current_channels)
+        current_ids = [ch.id for ch in current_channels]
+        
+        # Check for scenes that will be affected
+        affected_scenes = []
+        for channel in current_channels:
+            scenes = db.query(Scene).filter(Scene.channel_id == channel.id).all()
+            for scene in scenes:
+                affected_scenes.append({
+                    "scene_id": scene.id,
+                    "scene_name": scene.name,
+                    "channel_id": channel.id,
+                    "channel_name": channel.name
+                })
+        
+        # Clear ALL channels from database
+        db.query(Channel).delete()
+        db.commit()
+        print(f"🗑️  Removed {current_count} channels from database")
+        
+        # Clear loaded channels from memory
+        channel_discovery.loaded_channels.clear()
+        print("🧹 Cleared loaded channels from memory")
+        
+        # Re-discover channels from filesystem only
+        print("🔍 Re-discovering channels from filesystem...")
+        discovered_channels = channel_discovery.discover_channels(app)
+        filesystem_count = len(discovered_channels)
+        filesystem_ids = [ch['id'] for ch in discovered_channels]
+        
+        # Rebuild database from discovered channels
+        added_channels = []
+        for channel_data in discovered_channels:
+            channel_id = channel_data['id']
+            config = channel_data['config']
+            
+            new_channel = Channel(
+                id=channel_id,
+                name=config.get('name', channel_id),
+                description=config.get('description', ''),
+                version=config.get('version', '1.0.0'),
+                schema_version=config.get('schemaVersion', '2.1'),
+                settings_type=config.get('settings_type', 'simple'),
+                config_schema=config,
+                permissions=config.get('permissions', []),
+                ui_config=config.get('ui', []),
+                assets_config=config.get('assets', []),
+                channel_dir=channel_data['channel_dir']
+            )
+            db.add(new_channel)
+            added_channels.append({
+                "id": channel_id,
+                "name": config.get('name', channel_id),
+                "version": config.get('version', '1.0.0')
+            })
+            print(f"➕ Added channel to DB: {channel_id}")
+        
+        db.commit()
+        print("💾 Database rebuild completed")
+        
+        # Calculate changes
+        removed_ids = set(current_ids) - set(filesystem_ids)
+        added_ids = set(filesystem_ids) - set(current_ids)
+        kept_ids = set(current_ids) & set(filesystem_ids)
+        
+        return {
+            "success": True,
+            "message": f"Successfully reset channels database from filesystem",
+            "summary": {
+                "before": {
+                    "total_channels": current_count,
+                    "channel_ids": current_ids
+                },
+                "after": {
+                    "total_channels": filesystem_count,
+                    "channel_ids": filesystem_ids
+                },
+                "changes": {
+                    "removed_count": len(removed_ids),
+                    "removed_ids": list(removed_ids),
+                    "added_count": len(added_ids), 
+                    "added_ids": list(added_ids),
+                    "kept_count": len(kept_ids),
+                    "kept_ids": list(kept_ids)
+                }
+            },
+            "affected_scenes": affected_scenes,
+            "warnings": [
+                f"{len(affected_scenes)} scene(s) may need channel reassignment" if affected_scenes else None
+            ]
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Channel database reset failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset channels database: {str(e)}")
 
 # Scenes
 @app.get("/api/scenes")
