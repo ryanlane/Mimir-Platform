@@ -181,3 +181,5 @@ cython_debug/
 .cursorindexingignore
 api-service/app.db
 /api-service/app.db
+
+/api-service/channels/photo_frame/
