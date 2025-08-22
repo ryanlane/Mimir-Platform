@@ -182,4 +182,5 @@ cython_debug/
 api-service/app.db
 /api-service/app.db
 
-/api-service/channels/photo_frame/
+api-service/channels/photo_frame/
+api-service/channels/example_channel/assets/current.jpg
