@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -2222,6 +2222,7 @@ async def activate_scene_on_displays(
 @app.get("/api/displays/{display_id}/current_image")
 async def get_display_current_image(
     display_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     _: dict = Depends(check_rate_limit)
 ):
@@ -2252,7 +2253,15 @@ async def get_display_current_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
 
-    return {
+    # Check for conditional request using If-None-Match header
+    if_none_match = request.headers.get("if-none-match")
+    current_change_token = image_info.get("change_token")
+    
+    # If client has the same change token, return 304 Not Modified
+    if if_none_match and current_change_token and if_none_match == current_change_token:
+        return Response(status_code=304)
+
+    response_data = {
         "display_id": display_id,
         "scene_id": scene.id,
         "scene_name": scene.name,
@@ -2261,8 +2270,25 @@ async def get_display_current_image(
         "resolution": image_info["resolution"],
         "generated_at": image_info["generated_at"],
         "channels": image_info["channels_rendered"],
-        "cache_expires_in": image_info["cache_expires_in"]
+        "cache_expires_in": image_info["cache_expires_in"],
+        # New change detection fields
+        "last_modified": image_info["last_modified"],
+        "content_hash": image_info["content_hash"], 
+        "change_token": image_info["change_token"],
+        "file_size": image_info["file_size"],
+        "file_exists": image_info["file_exists"]
     }
+    
+    # Set ETag header for future conditional requests
+    response = Response(
+        content=json.dumps(response_data),
+        media_type="application/json"
+    )
+    if current_change_token:
+        response.headers["ETag"] = current_change_token
+        response.headers["Cache-Control"] = "private, must-revalidate"
+    
+    return response
 
 @app.get("/api/displays/{display_id}/current_image_file")
 async def get_display_current_image_file(
@@ -2453,6 +2479,46 @@ async def delete_display_client(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete display client: {str(e)}")
 
+async def get_file_metadata(file_path: str) -> dict:
+    """Get file metadata for change detection"""
+    try:
+        full_path = Path(file_path)
+        if not full_path.exists():
+            return {
+                "exists": False,
+                "last_modified": None,
+                "content_hash": None,
+                "size": 0
+            }
+        
+        # Get file stats
+        stat = full_path.stat()
+        last_modified = datetime.datetime.fromtimestamp(stat.st_mtime)
+        file_size = stat.st_size
+        
+        # Calculate content hash
+        content_hash = hashlib.md5()
+        with open(full_path, 'rb') as f:
+            # Read in chunks to handle large files
+            for chunk in iter(lambda: f.read(4096), b""):
+                content_hash.update(chunk)
+        
+        return {
+            "exists": True,
+            "last_modified": last_modified.isoformat(),
+            "content_hash": content_hash.hexdigest(),
+            "size": file_size
+        }
+    except Exception as e:
+        print(f"Error getting file metadata for {file_path}: {e}")
+        return {
+            "exists": False,
+            "last_modified": None,
+            "content_hash": None,
+            "size": 0,
+            "error": str(e)
+        }
+
 async def generate_scene_image_for_display(scene, display_client):
     """Generate scene image optimized for specific display client"""
     
@@ -2466,6 +2532,16 @@ async def generate_scene_image_for_display(scene, display_client):
     image_url = f"/api/channels/{channel_id}/assets/current.jpg"
     image_path = f"channels/{channel_id}/assets/current.jpg"
 
+    # Get file metadata for change detection
+    file_metadata = await get_file_metadata(image_path)
+    
+    # Generate a change detection token based on file content and metadata
+    change_token = None
+    if file_metadata["exists"]:
+        # Create a unique token based on file hash and last modified time
+        token_source = f"{file_metadata['content_hash']}:{file_metadata['last_modified']}:{file_metadata['size']}"
+        change_token = hashlib.sha256(token_source.encode()).hexdigest()[:16]
+
     image_info = {
         "url": image_url,
         "path": image_path,
@@ -2473,7 +2549,13 @@ async def generate_scene_image_for_display(scene, display_client):
         "generated_at": datetime.datetime.now().isoformat(),
         "cache_expires_in": 300,
         "channels_rendered": scene.channels or [],
-        "orientation": orientation
+        "orientation": orientation,
+        # New change detection fields
+        "last_modified": file_metadata["last_modified"],
+        "content_hash": file_metadata["content_hash"],
+        "change_token": change_token,
+        "file_size": file_metadata["size"],
+        "file_exists": file_metadata["exists"]
     }
 
     # Update display client's current image path

@@ -1078,10 +1078,13 @@ Remove scene assignment from a display client.
 #### Get Current Image Metadata
 
 #### GET `/api/displays/{display_id}/current_image`
-Get metadata about the current image assigned to a display client.
+Get metadata about the current image assigned to a display client with change detection support.
 
 **Parameters:**
 - `display_id` (string): Display client identifier
+
+**Headers (Optional):**
+- `If-None-Match` (string): Change token from previous request for conditional fetching
 
 **Response:**
 ```json
@@ -1092,11 +1095,28 @@ Get metadata about the current image assigned to a display client.
   "image_url": "/api/displays/f940535f-ad8e-459e-ba32-6e91380f2d69/current_image_file",
   "image_path": "/generated/displays/display_f940535f-ad8e-459e-ba32-6e91380f2d69_test-scene_1755715061.jpg",
   "resolution": [1920, 1080],
-  "generated_at": "2025-08-20T11:37:41.923305",
+  "generated_at": "2025-08-21T11:37:41.923305",
   "channels": ["example_channel", "weather_channel"],
-  "cache_expires_in": 300
+  "cache_expires_in": 300,
+  "last_modified": "2025-08-21T11:35:20.451000",
+  "content_hash": "a1b2c3d4e5f67890abcdef1234567890",
+  "change_token": "f7e8d9c6b5a4",
+  "file_size": 245760,
+  "file_exists": true
 }
 ```
+
+**Change Detection Fields:**
+- `last_modified`: ISO timestamp when the image file was last modified
+- `content_hash`: MD5 hash of the image file contents  
+- `change_token`: Short hash that changes when image content changes
+- `file_size`: Size of the image file in bytes
+- `file_exists`: Boolean indicating if the image file exists
+
+**Conditional Requests:**
+- Returns `304 Not Modified` if `If-None-Match` header matches current `change_token`
+- Sets `ETag` header with current change token for future conditional requests
+- Includes `Cache-Control: private, must-revalidate` header
 
 **Error Response (No Scene Assigned):**
 ```json
@@ -2009,6 +2029,103 @@ while true; do
 done
 ```
 
+#### Optimized Polling with Change Detection
+
+**Efficient polling using conditional requests:**
+```bash
+#!/bin/bash
+DISPLAY_ID="f940535f-ad8e-459e-ba32-6e91380f2d69"
+POLL_INTERVAL=30
+CHANGE_TOKEN=""
+
+while true; do
+  echo "Checking for updates..."
+  
+  # Build conditional request headers
+  HEADERS=""
+  if [ ! -z "$CHANGE_TOKEN" ]; then
+    HEADERS="-H \"If-None-Match: $CHANGE_TOKEN\""
+  fi
+  
+  # Check for image changes
+  RESPONSE=$(eval "curl -s -w '%{http_code}' $HEADERS \"http://localhost:5000/api/displays/${DISPLAY_ID}/current_image\"")
+  HTTP_CODE=$(echo "$RESPONSE" | tail -c 4)
+  BODY=$(echo "$RESPONSE" | head -c -4)
+  
+  if [ "$HTTP_CODE" = "304" ]; then
+    echo "Image unchanged, skipping download"
+  elif [ "$HTTP_CODE" = "200" ]; then
+    echo "Image changed, downloading..."
+    
+    # Extract new change token and image URL
+    NEW_TOKEN=$(echo "$BODY" | jq -r '.change_token')
+    IMAGE_URL=$(echo "$BODY" | jq -r '.image_url')
+    
+    # Download new image
+    curl -s "http://localhost:5000${IMAGE_URL}" --output current_image.jpg
+    echo "Image updated: current_image.jpg (token: $NEW_TOKEN)"
+    
+    CHANGE_TOKEN="$NEW_TOKEN"
+  else
+    echo "Error or no scene assigned"
+  fi
+  
+  sleep $POLL_INTERVAL
+done
+```
+
+**Python example with change detection:**
+```python
+import requests
+import time
+
+class DisplayClient:
+    def __init__(self, display_id, base_url):
+        self.display_id = display_id
+        self.base_url = base_url
+        self.last_change_token = None
+        
+    def check_for_updates(self):
+        headers = {}
+        if self.last_change_token:
+            headers['If-None-Match'] = self.last_change_token
+            
+        response = requests.get(
+            f"{self.base_url}/api/displays/{self.display_id}/current_image",
+            headers=headers
+        )
+        
+        if response.status_code == 304:
+            print("Image unchanged, skipping download")
+            return False
+            
+        if response.status_code == 200:
+            metadata = response.json()
+            print(f"Image changed: {metadata['change_token']}")
+            
+            # Download new image
+            self.download_image(metadata['image_url'])
+            self.last_change_token = metadata['change_token']
+            return True
+            
+    def download_image(self, image_url):
+        response = requests.get(f"{self.base_url}{image_url}")
+        with open("current_display.jpg", "wb") as f:
+            f.write(response.content)
+            
+    def run_polling_loop(self, interval=30):
+        while True:
+            try:
+                self.check_for_updates()
+            except Exception as e:
+                print(f"Error checking for updates: {e}")
+            time.sleep(interval)
+
+# Usage
+client = DisplayClient("your-display-id", "http://localhost:5000")
+client.run_polling_loop()
+```
+
 ### Display Management
 
 1. **Check legacy display status:**
@@ -2078,6 +2195,24 @@ Static file serving endpoints (UI assets, images) are not subject to rate limiti
 
 
 ## Changelog
+
+### v2.4.1 (August 21, 2025)
+- **🔍 Image Change Detection** - Complete change detection system for display clients
+- **⚡ Performance Optimization** - Conditional requests to reduce bandwidth usage
+- **📱 Enhanced Display Clients** - Better polling patterns with change detection
+- **🖼️ Smart Image Management** - File metadata tracking and content hashing
+- **🆕 New Features:**
+  - Added `last_modified`, `content_hash`, `change_token`, `file_size`, and `file_exists` fields to current image endpoint
+  - Support for `If-None-Match` conditional headers 
+  - Returns `304 Not Modified` when images haven't changed
+  - Enhanced example channel with dynamic asset discovery
+  - Automatic `current.jpg` creation when settings change
+  - New example channel endpoints: `/assets` and `/refresh_assets`
+- **📈 Performance Benefits:**
+  - Display clients can skip unnecessary downloads
+  - Reduced server load with 304 responses
+  - Lower bandwidth usage for unchanged content
+  - Better battery life for mobile/embedded displays
 
 ### v2.4 (August 21, 2025)
 - **🔧 Enhanced Settings Management** - Complete overhaul of channel settings persistence
