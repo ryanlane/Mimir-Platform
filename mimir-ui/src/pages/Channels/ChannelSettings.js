@@ -3,6 +3,18 @@ import { X, Save } from 'lucide-react';
 import { api } from '../../services/api';
 import './ChannelSettings.css';
 
+// Get API base URL for constructing management interface URLs
+const getApiBaseUrl = () => {
+  const raw =
+    (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
+    localStorage.getItem('mimir-api-base-url');
+  
+  // Fallback without /api suffix for UI routes
+  if (!raw) return 'http://172.31.79.107:5000';
+  // Remove /api suffix if present for UI routes
+  return raw.replace(/\/api$/, '');
+};
+
 const ChannelSettings = ({ channel, onClose }) => {
   const [config, setConfig] = useState(null);
   const [settings, setSettings] = useState({});
@@ -11,6 +23,8 @@ const ChannelSettings = ({ channel, onClose }) => {
   const [channelManifest, setChannelManifest] = useState(null);
   const [webComponentLoaded, setWebComponentLoaded] = useState(false);
   const [webComponentError, setWebComponentError] = useState(null);
+  const [managementComponentLoaded, setManagementComponentLoaded] = useState(false);
+  const [showManagementInterface, setShowManagementInterface] = useState(false);
 
   useEffect(() => {
     const loadChannelData = async () => {
@@ -111,6 +125,32 @@ const ChannelSettings = ({ channel, onClose }) => {
     }
   };
 
+  const loadManagementComponent = async (manifest) => {
+    try {
+      // Find management component with route
+      const managementComponent = manifest.ui?.find(ui => ui.route);
+      
+      if (managementComponent) {
+        console.log(`Loading Management Component: ${managementComponent.element} from ${managementComponent.moduleUrl}`);
+        
+        // Check if component is already loaded
+        if (!customElements.get(managementComponent.element)) {
+          await import(/* webpackIgnore: true */ managementComponent.moduleUrl);
+          console.log(`✅ Management Component ${managementComponent.element} loaded successfully`);
+        }
+        
+        setManagementComponentLoaded(true);
+        return managementComponent;
+      } else {
+        console.log(`No management component found for ${manifest.id}`);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error loading Management Component:', error);
+      return null;
+    }
+  };
+
   const renderWebComponent = () => {
     if (!channelManifest?.ui) return null;
 
@@ -138,6 +178,30 @@ const ChannelSettings = ({ channel, onClose }) => {
     return React.createElement(component.element, {
       'data-hostprops': JSON.stringify(hostProps),
       key: `${channel.id}-${component.element}`
+    });
+  };
+
+  const renderManagementComponent = () => {
+    if (!channelManifest?.ui || !showManagementInterface) return null;
+
+    // Find management component with route
+    const managementComponent = channelManifest.ui.find(ui => ui.route);
+    
+    if (!managementComponent) return null;
+
+    const hostProps = {
+      channel: channel,
+      settings: settings,
+      config: config,
+      onSettingsChange: handleSettingChange,
+      onSave: handleSave,
+      onClose: () => setShowManagementInterface(false)
+    };
+
+    // Create the Management Web Component element
+    return React.createElement(managementComponent.element, {
+      'data-hostprops': JSON.stringify(hostProps),
+      key: `${channel.id}-${managementComponent.element}-management`
     });
   };
 
@@ -283,7 +347,25 @@ const ChannelSettings = ({ channel, onClose }) => {
         </div>
 
         <div className="channel-settings-body">
-          {channel.hasUI && webComponentLoaded && !webComponentError ? (
+          {/* Show management interface if loaded */}
+          {showManagementInterface ? (
+            <div className="management-interface">
+              <div className="management-header">
+                <h3>Management Interface</h3>
+                <button 
+                  className="btn btn-sm" 
+                  onClick={() => setShowManagementInterface(false)}
+                >
+                  ← Back to Settings
+                </button>
+              </div>
+              <div className="management-content">
+                {renderManagementComponent()}
+              </div>
+            </div>
+          ) : (
+            <>
+              {channel.hasUI && webComponentLoaded && !webComponentError ? (
             <div className="web-component-container">
               <div className="web-component-header">
                 <p className="text-tertiary">
@@ -306,18 +388,13 @@ const ChannelSettings = ({ channel, onClose }) => {
                 </ul>
               </div>
               <div className="custom-ui-actions">
-                <button 
+                <button
                   className="btn btn-primary"
-                  onClick={() => {
-                    // Use the route specified in the manifest
-                    const managementComponent = channelManifest?.ui?.find(ui => ui.route);
+                  onClick={async () => {
+                    // Load and show the management component
+                    const managementComponent = await loadManagementComponent(channelManifest);
                     if (managementComponent) {
-                      window.open(managementComponent.route, '_blank', 'noopener,noreferrer');
-                    } else if (channel.id === 'photo_frame' || channel.id === 'com.epaperframe.photoframe') {
-                      window.open('/photo-frame', '_blank', 'noopener,noreferrer');
-                    } else {
-                      const uiUrl = `/api/channels/${channel.id}/ui/`;
-                      window.open(uiUrl, '_blank', 'noopener,noreferrer');
+                      setShowManagementInterface(true);
                     }
                   }}
                 >
@@ -357,6 +434,8 @@ const ChannelSettings = ({ channel, onClose }) => {
                 }
               </p>
             </div>
+          )}
+            </>
           )}
         </div>
 
