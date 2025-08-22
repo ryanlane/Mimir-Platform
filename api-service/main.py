@@ -1498,6 +1498,39 @@ async def get_channel_health(channel_id: str):
         print(f"❌ Health check failed for channel '{channel_id}': {str(e)}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
+@app.get("/api/channels/{channel_id}/current.jpg")
+async def get_channel_current_image_file(channel_id: str):
+    """Serve the channel's current image file (for channels that place current.jpg in root)"""
+    try:
+        # Get channel data
+        channel_data = channel_discovery.loaded_channels.get(channel_id)
+        if not channel_data:
+            raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
+        
+        channel_path = channel_data['path']
+        config = channel_data['config']
+        
+        # Get current image filename from config (defaults to current.jpg)
+        current_image_filename = config.get("current_image", "current.jpg")
+        current_image_path = channel_path / current_image_filename
+        
+        # Check if file exists
+        if not current_image_path.exists():
+            raise HTTPException(status_code=404, detail=f"Current image not found: {current_image_filename}")
+        
+        # Return the file
+        return FileResponse(
+            path=str(current_image_path),
+            media_type="image/jpeg",
+            filename=current_image_filename
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error serving current image for channel '{channel_id}': {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to serve current image: {str(e)}")
+
 # Debug endpoint to see loaded channels
 @app.get("/api/admin/channels/debug")
 async def debug_loaded_channels():
@@ -3006,11 +3039,21 @@ async def generate_scene_image_for_display(scene, display_client):
     resolution = display_client.resolution or [1920, 1080]
     orientation = display_client.orientation or "landscape"
 
-    # For this implementation, use the example_channel's generated image
-    # Assume the first channel in the scene is the one to use
+    # Use the first channel in the scene
     channel_id = scene.channels[0] if scene.channels else "example_channel"
-    image_url = f"/api/channels/{channel_id}/assets/current.jpg"
-    image_path = f"channels/{channel_id}/assets/current.jpg"
+    
+    # Get channel instance to check its config for current image path
+    channel_instance = channel_discovery.get_channel_instance(channel_id)
+    if channel_instance and hasattr(channel_instance, 'config'):
+        # Use channel's configured current image path
+        current_image_filename = channel_instance.config.get("current_image", "current.jpg")
+        # For photo frame and other channels that place current.jpg in channel root
+        image_path = f"channels/{channel_id}/{current_image_filename}"
+        image_url = f"/api/channels/{channel_id}/{current_image_filename}"
+    else:
+        # Fallback to assets subdirectory for channels without config
+        image_url = f"/api/channels/{channel_id}/assets/current.jpg"
+        image_path = f"channels/{channel_id}/assets/current.jpg"
 
     # Get file metadata for change detection
     file_metadata = await get_file_metadata(image_path)
