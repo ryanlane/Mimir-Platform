@@ -3107,8 +3107,32 @@ async def generate_scene_image_for_display(scene, display_client):
     # Use the first channel in the scene
     channel_id = scene.channels[0] if scene.channels else "example_channel"
     
-    # Get channel instance to check its config for current image path
+    # Get channel instance to trigger resolution-aware image generation
     channel_instance = channel_discovery.get_channel_instance(channel_id)
+    if channel_instance and hasattr(channel_instance, 'render_image'):
+        try:
+            # Call channel's render_image method with display-specific resolution
+            # Get current channel settings from database
+            db = SessionLocal()
+            try:
+                channel_record = db.query(Channel).filter(Channel.id == channel_id).first()
+                settings = channel_record.current_settings if channel_record else {}
+            finally:
+                db.close()
+            
+            # Generate image optimized for this display's resolution
+            await channel_instance.render_image(
+                resolution=tuple(resolution),
+                orientation=orientation,
+                settings=settings or {}
+            )
+            print(f"✅ Generated image for {channel_id} at resolution {resolution}")
+            
+        except Exception as e:
+            print(f"⚠️  Failed to generate image for {channel_id}: {e}")
+            # Continue with existing file lookup as fallback
+    
+    # Get channel config for current image path
     if channel_instance and hasattr(channel_instance, 'config'):
         # Get the actual channel directory path from the discovery system
         channel_data = channel_discovery.loaded_channels.get(channel_id)
