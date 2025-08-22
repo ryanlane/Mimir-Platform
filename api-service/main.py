@@ -252,14 +252,17 @@ class ChannelDiscovery:
             if not channel_path.is_dir():
                 continue
                 
-            channel_id = channel_path.name
-            print(f"Discovering channel: {channel_id}")
-            
-            # Load configuration
+            # First attempt to load config to get the ID
             config = self.load_channel_config(channel_path)
             if not config:
-                print(f"Skipping channel {channel_id}: invalid or missing config")
+                print(f"Skipping channel {channel_path.name}: invalid or missing config")
                 continue
+                
+            # Use ID from config if present, otherwise fall back to directory name
+            # This allows channels to specify their canonical ID in config.json
+            # If ID changes, the channel will be re-registered with the new ID
+            channel_id = config.get('id', channel_path.name)
+            print(f"Discovering channel: {channel_id} (directory: {channel_path.name})")
             
             # Load channel class
             channel_instance = self.load_channel_class(channel_path)
@@ -1471,6 +1474,82 @@ async def get_channel_status(channel_id: str, db: Session = Depends(get_db)):
         "version": channel.version,
         "status": status
     }
+
+# Development/Admin endpoint to reload channels (useful when IDs change)
+@app.post("/api/admin/reload-channels")
+async def reload_channels():
+    """Reload all channels from filesystem - useful for development when channel IDs change"""
+    try:
+        # Clear current loaded channels
+        channel_discovery.loaded_channels.clear()
+        
+        # Re-discover channels
+        print("🔄 Reloading channels...")
+        discovered_channels = channel_discovery.discover_channels(app)
+        print(f"✅ Reloaded {len(discovered_channels)} channels")
+        
+        # Sync with database
+        def sync_reloaded_channels():
+            db = SessionLocal()
+            try:
+                for channel_data in discovered_channels:
+                    channel_id = channel_data['id']
+                    config = channel_data['config']
+                    
+                    # Check if channel exists in database
+                    existing = db.query(Channel).filter(Channel.id == channel_id).first()
+                    
+                    if existing:
+                        # Update existing channel
+                        existing.name = config.get('name', channel_id)
+                        existing.description = config.get('description', '')
+                        existing.version = config.get('version', '1.0.0')
+                        existing.schema_version = config.get('schemaVersion', '2.1')
+                        existing.settings_type = config.get('settings_type', 'simple')
+                        existing.config_schema = config
+                        existing.permissions = config.get('permissions', [])
+                        existing.ui_config = config.get('ui', [])
+                        existing.assets_config = config.get('assets', [])
+                        existing.channel_dir = channel_data['channel_dir']
+                        print(f"📝 Updated channel in DB: {channel_id}")
+                    else:
+                        # Create new channel
+                        new_channel = Channel(
+                            id=channel_id,
+                            name=config.get('name', channel_id),
+                            description=config.get('description', ''),
+                            version=config.get('version', '1.0.0'),
+                            schema_version=config.get('schemaVersion', '2.1'),
+                            settings_type=config.get('settings_type', 'simple'),
+                            config_schema=config,
+                            permissions=config.get('permissions', []),
+                            ui_config=config.get('ui', []),
+                            assets_config=config.get('assets', []),
+                            channel_dir=channel_data['channel_dir']
+                        )
+                        db.add(new_channel)
+                        print(f"➕ Added new channel to DB: {channel_id}")
+                
+                db.commit()
+                print("💾 Database sync completed")
+            except Exception as e:
+                db.rollback()
+                print(f"❌ Database sync failed: {e}")
+                raise
+            finally:
+                db.close()
+        
+        sync_reloaded_channels()
+        
+        return {
+            "success": True,
+            "message": f"Successfully reloaded {len(discovered_channels)} channels",
+            "channels": [ch['id'] for ch in discovered_channels]
+        }
+        
+    except Exception as e:
+        print(f"❌ Channel reload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reload channels: {str(e)}")
 
 # Scenes
 @app.get("/api/scenes")

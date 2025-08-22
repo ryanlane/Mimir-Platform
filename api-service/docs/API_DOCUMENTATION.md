@@ -700,11 +700,14 @@ channels/
 
 1. **Scan** `channels/` directory for subdirectories
 2. **Load** and validate `config.json` manifests
-3. **Import** `channel.py` and instantiate channel class
-4. **Mount** static file serving for UI and assets
-5. **Register** channel-specific API routes
-6. **Compute** SRI hashes for security validation
-7. **Sync** channel data to database
+3. **Resolve Channel ID** - Use `id` field from config.json if present, otherwise use directory name
+4. **Import** `channel.py` and instantiate channel class
+5. **Mount** static file serving for UI and assets at `/api/channels/{id}/`
+6. **Register** channel-specific API routes with resolved ID
+7. **Compute** SRI hashes for security validation
+8. **Sync** channel data to database
+
+**Note:** Channel IDs are determined by the `id` field in `config.json`. If this field is absent, the directory name is used as the fallback ID.
 
 ### v2.1 Channel Manifest (config.json)
 

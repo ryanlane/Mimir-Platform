@@ -77,7 +77,7 @@ Retain existing fields (`name`, `description`, `version`, `update_schedule`, `se
 ```jsonc
 {
   "schemaVersion": "2.4",
-  "id": "com.example.weather",           // optional if folder name is canonical id
+  "id": "com.example.weather",           // optional: if present, overrides folder name as channel ID
   "permissions": ["read:weather"],      // server-enforced scopes
   "ui": [
     {
@@ -130,11 +130,14 @@ Retain existing fields (`name`, `description`, `version`, `update_schedule`, `se
 ### 5.1 Discovery (startup & hot‑reload)
 
 - Scan `channels/` for directories containing `config.json`.
+- **Channel ID Resolution**: Use the `id` field from `config.json` if present, otherwise fall back to the directory name. This allows channels to specify canonical IDs (e.g., `com.example.weather`) while maintaining simple installation via directory names.
 - Load `channel.py` via `importlib` and instantiate a class implementing the Channel protocol.
 - Mount static file apps for `ui/` and `assets/` to:
   - `/api/channels/<id>/ui/*`
   - `/api/channels/<id>/assets/*`
 - Compute/verify SRI (if configured) and attach to the in‑memory manifest served to clients.
+
+**⚠️ Important:** If you change the `id` field in `config.json` after initial deployment, restart the API service to re-register the channel with its new ID. The old ID will become inactive.
 
 ### 5.2 Public endpoints
 
