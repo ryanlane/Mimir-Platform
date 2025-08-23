@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { apiCache, CACHE_CONFIGS, invalidateCache } from './apiCache';
 
 // API base URL with intelligent defaults
 function getApiBaseUrl() {
@@ -83,9 +84,34 @@ export const api = {
   deactivateScene: (sceneId) => apiClient.post(`/scenes/${sceneId}/deactivate`),
   displayScene: (sceneId) => apiClient.post(`/scenes/${sceneId}/display`),
 
-  // Channels
-  getChannels: (params = {}) => apiClient.get('/channels', { params }),
-  getChannelConfig: (channelId) => apiClient.get(`/channels/${channelId}/config`),
+  // Channels with caching
+  getChannels: async (params = {}) => {
+    const key = apiCache.generateKey('/channels', params);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`📋 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get('/channels', { params });
+    apiCache.set(key, result, CACHE_CONFIGS.CHANNELS.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
+
+  getChannelConfig: async (channelId) => {
+    const key = apiCache.generateKey(`/channels/${channelId}/config`);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`📋 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get(`/channels/${channelId}/config`);
+    apiCache.set(key, result, CACHE_CONFIGS.CHANNELS.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
   requestChannelImage: (channelId, requestData, subchannelId = null) => {
@@ -93,20 +119,105 @@ export const api = {
     return apiClient.post(`/channels/${channelId}/image_request`, requestData, { params });
   },
 
-  // Sub-Channels (NEW)
-  getSubChannelConfig: (channelId) => apiClient.get(`/channels/${channelId}/subchannels/config`),
-  getSubChannels: (channelId) => apiClient.get(`/channels/${channelId}/subchannels`),
-  getSubChannelDetails: (channelId, subChannelId) => apiClient.get(`/channels/${channelId}/subchannels/${subChannelId}`),
-  createSubChannel: (channelId, data) => apiClient.post(`/channels/${channelId}/subchannels`, data),
-  updateSubChannel: (channelId, subChannelId, data) => apiClient.put(`/channels/${channelId}/subchannels/${subChannelId}`, data),
-  deleteSubChannel: (channelId, subChannelId) => apiClient.delete(`/channels/${channelId}/subchannels/${subChannelId}`),
-  assignContentToSubChannel: (channelId, subChannelId, contentIds, action = 'add') => {
-    return apiClient.post(`/channels/${channelId}/subchannels/${subChannelId}/content`, {
+  // Sub-Channels (NEW) with Performance Caching
+  getSubChannelConfig: async (channelId) => {
+    const key = apiCache.generateKey(`/channels/${channelId}/subchannels/config`);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`📋 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get(`/channels/${channelId}/subchannels/config`);
+    apiCache.set(key, result, CACHE_CONFIGS.SUB_CHANNEL_CONFIG.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
+
+  getSubChannels: async (channelId) => {
+    const key = apiCache.generateKey(`/channels/${channelId}/subchannels`);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`📋 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get(`/channels/${channelId}/subchannels`);
+    apiCache.set(key, result, CACHE_CONFIGS.SUB_CHANNELS.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
+
+  getSubChannelDetails: async (channelId, subChannelId) => {
+    const key = apiCache.generateKey(`/channels/${channelId}/subchannels/${subChannelId}`);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`📋 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get(`/channels/${channelId}/subchannels/${subChannelId}`);
+    apiCache.set(key, result, CACHE_CONFIGS.SUB_CHANNEL_DETAILS.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
+
+  createSubChannel: async (channelId, data) => {
+    const result = await apiClient.post(`/channels/${channelId}/subchannels`, data);
+    // Invalidate related caches
+    invalidateCache([
+      `/channels/${channelId}/subchannels`,
+      `/channels/${channelId}/subchannels/config`
+    ]);
+    return result;
+  },
+
+  updateSubChannel: async (channelId, subChannelId, data) => {
+    const result = await apiClient.put(`/channels/${channelId}/subchannels/${subChannelId}`, data);
+    // Invalidate related caches
+    invalidateCache([
+      `/channels/${channelId}/subchannels`,
+      `/channels/${channelId}/subchannels/${subChannelId}`
+    ]);
+    return result;
+  },
+
+  deleteSubChannel: async (channelId, subChannelId) => {
+    const result = await apiClient.delete(`/channels/${channelId}/subchannels/${subChannelId}`);
+    // Invalidate related caches
+    invalidateCache([
+      `/channels/${channelId}/subchannels`,
+      `/channels/${channelId}/subchannels/${subChannelId}`
+    ]);
+    return result;
+  },
+
+  assignContentToSubChannel: async (channelId, subChannelId, contentIds, action = 'add') => {
+    const result = await apiClient.post(`/channels/${channelId}/subchannels/${subChannelId}/content`, {
       contentIds,
       action
     });
+    // Invalidate sub-channel details cache as content assignment changes
+    invalidateCache([
+      `/channels/${channelId}/subchannels/${subChannelId}`,
+      `/channels/${channelId}/subchannels`
+    ]);
+    return result;
   },
-  getSubChannelContent: (channelId, subChannelId) => apiClient.get(`/channels/${channelId}/subchannels/${subChannelId}/content`),
+
+  getSubChannelContent: async (channelId, subChannelId) => {
+    const key = apiCache.generateKey(`/channels/${channelId}/subchannels/${subChannelId}/content`);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`📋 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get(`/channels/${channelId}/subchannels/${subChannelId}/content`);
+    apiCache.set(key, result, CACHE_CONFIGS.CONTENT.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
 
   // Overlays
   getOverlays: (params = {}) => apiClient.get('/overlays', { params }),
@@ -196,6 +307,24 @@ export const api = {
   getOrphanedChannels: () => apiClient.get('/admin/channels/orphaned'),
   removeChannelFromDatabase: (channelId) => apiClient.delete(`/admin/channels/${channelId}`),
   resetChannelsDatabase: () => apiClient.post('/admin/channels/reset'),
+
+  // Cache Management Utilities
+  cache: {
+    clear: () => {
+      apiCache.clear();
+      console.log('🗑️ All API cache cleared');
+    },
+    invalidate: (patterns) => {
+      invalidateCache(patterns);
+      console.log('🗑️ Cache invalidated for patterns:', patterns);
+    },
+    stats: () => apiCache.getStats(),
+    get: (key) => apiCache.get(key),
+    delete: (key) => {
+      apiCache.delete(key);
+      console.log('🗑️ Cache deleted for key:', key);
+    }
+  }
 };
 
 // Request interceptor for logging

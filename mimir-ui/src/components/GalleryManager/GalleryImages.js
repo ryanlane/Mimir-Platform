@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Eye, Download, Grid, List, Search, CheckSquare, Square, ArrowLeft } from 'lucide-react';
+import { Trash2, Eye, Download, Grid, List, Search, CheckSquare, Square, ArrowLeft, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
+import { LazyImage, usePerformanceMonitoring } from '../../hooks/usePerformance';
+import { LoadingState } from '../ErrorHandling/ErrorHandling';
 
 const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
   const [images, setImages] = useState([]);
@@ -9,6 +11,20 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
   const [viewMode, setViewMode] = useState('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedImages, setSelectedImages] = useState(new Set());
+  
+  // Performance monitoring
+  const { measureOperation } = usePerformanceMonitoring('GalleryImages');
+
+  // Filter images based on search
+  function filteredImages() {
+    return measureOperation('filter-images', () => {
+      if (!searchTerm) return images;
+      return images.filter(image => 
+        image.filename?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        image.name?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    });
+  }
 
   // Load gallery images
   const loadGalleryImages = useCallback(async () => {
@@ -31,12 +47,6 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
     loadGalleryImages();
   }, [loadGalleryImages]);
 
-  // Filter images based on search
-  const filteredImages = images.filter(image =>
-    image.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    image.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const handleToggleImage = (imageId) => {
     const newSelected = new Set(selectedImages);
     if (newSelected.has(imageId)) {
@@ -48,10 +58,11 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
   };
 
   const handleSelectAll = () => {
-    if (selectedImages.size === filteredImages.length) {
+    const filtered = filteredImages();
+    if (selectedImages.size === filtered.length) {
       setSelectedImages(new Set());
     } else {
-      setSelectedImages(new Set(filteredImages.map(img => img.id)));
+      setSelectedImages(new Set(filtered.map(img => img.id)));
     }
   };
 
@@ -79,12 +90,11 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
 
   if (loading) {
     return (
-      <div className="gallery-images-loading">
-        <div className="loading-content">
-          <div className="loading-spinner"></div>
-          <p>Loading gallery images...</p>
-        </div>
-      </div>
+      <LoadingState 
+        type="spinner"
+        message="Loading gallery images..."
+        size="large"
+      />
     );
   }
 
@@ -93,6 +103,7 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
       <div className="gallery-images-error">
         <p>{error}</p>
         <button onClick={loadGalleryImages} className="btn btn-primary">
+          <RefreshCw size={16} />
           Retry
         </button>
       </div>
@@ -110,7 +121,7 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
           </button>
           <div className="gallery-title">
             <h3>{gallery.name}</h3>
-            <span className="image-count">{filteredImages.length} images</span>
+            <span className="image-count">{filteredImages().length} images</span>
           </div>
         </div>
         
@@ -143,22 +154,22 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
       </div>
 
       {/* Selection Controls */}
-      {filteredImages.length > 0 && (
+      {filteredImages().length > 0 && (
         <div className="selection-controls">
           <div className="selection-info">
             <button onClick={handleSelectAll} className="select-all-btn">
-              {selectedImages.size === filteredImages.length && filteredImages.length > 0 ? (
+              {selectedImages.size === filteredImages().length && filteredImages().length > 0 ? (
                 <CheckSquare size={16} />
               ) : (
                 <Square size={16} />
               )}
-              {selectedImages.size === filteredImages.length && filteredImages.length > 0 
+              {selectedImages.size === filteredImages().length && filteredImages().length > 0 
                 ? 'Deselect All' 
                 : 'Select All'
               }
             </button>
             <span className="selection-count">
-              {selectedImages.size} of {filteredImages.length} selected
+              {selectedImages.size} of {filteredImages().length} selected
             </span>
           </div>
           
@@ -178,7 +189,7 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
 
       {/* Images Display */}
       <div className={`gallery-images-content ${viewMode}`}>
-        {filteredImages.length === 0 ? (
+        {filteredImages().length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">
               <Grid size={48} />
@@ -191,7 +202,7 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
           </div>
         ) : (
           <div className={`images-${viewMode}`}>
-            {filteredImages.map(image => {
+            {filteredImages().map(image => {
               const selected = selectedImages.has(image.id);
               
               return (
@@ -202,10 +213,22 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
                   {viewMode === 'grid' ? (
                     <>
                       <div className="image-thumbnail">
-                        <img
+                        <LazyImage
                           src={image.thumbnailUrl}
                           alt={image.name}
-                          loading="lazy"
+                          className="gallery-thumbnail-image"
+                          placeholder={
+                            <div className="image-placeholder">
+                              <Grid size={24} />
+                              <span>Loading...</span>
+                            </div>
+                          }
+                          errorFallback={
+                            <div className="image-error">
+                              <Grid size={24} />
+                              <span>Failed to load</span>
+                            </div>
+                          }
                         />
                         <div className="image-overlay">
                           <div className="overlay-actions">
