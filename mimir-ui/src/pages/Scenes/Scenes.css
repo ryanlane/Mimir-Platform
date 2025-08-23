@@ -124,6 +124,13 @@
   color: var(--color-secondary);
 }
 
+.subchannel-indicator {
+  margin-left: var(--spacing-xs);
+  font-weight: 500;
+  color: var(--color-accent);
+  font-size: 0.7rem;
+}
+
 .scene-card-footer {
   display: flex;
   justify-content: center;

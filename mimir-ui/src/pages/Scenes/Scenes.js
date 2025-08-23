@@ -235,9 +235,18 @@ const Scenes = () => {
         <div className="scenes-grid">
           {scenes.map((scene) => {
             // Get thumbnail from first channel if available
-            const thumbnailUrl = scene.channels && scene.channels.length > 0 
-              ? getChannelThumbnail(scene.channels[0]) 
+            const firstChannelAssignment = scene.channels && scene.channels.length > 0 
+              ? scene.channels[0] 
               : null;
+            
+            // Handle both old format (string) and new format (object)
+            const firstChannelId = firstChannelAssignment 
+              ? (typeof firstChannelAssignment === 'string' 
+                  ? firstChannelAssignment 
+                  : firstChannelAssignment.channel_id)
+              : null;
+              
+            const thumbnailUrl = firstChannelId ? getChannelThumbnail(firstChannelId) : null;
               
             return (
               <div key={scene.id} className="scene-card">
@@ -295,11 +304,26 @@ const Scenes = () => {
                     <div className="scene-channels">
                       <h4>Channels:</h4>
                       <div className="channel-tags">
-                        {scene.channels.map((channelId) => {
+                        {scene.channels.map((channelAssignment, index) => {
+                          // Handle both old format (string) and new format (object)
+                          const channelId = typeof channelAssignment === 'string' 
+                            ? channelAssignment 
+                            : channelAssignment.channel_id;
+                          const subChannelId = typeof channelAssignment === 'object' 
+                            ? channelAssignment.subchannel_id 
+                            : null;
+                          
                           const channel = channels.find(c => c.id === channelId);
+                          const displayName = channel?.name || channelId;
+                          
                           return (
-                            <span key={channelId} className="channel-tag">
-                              {channel?.name || channelId}
+                            <span key={`${channelId}-${subChannelId || 'all'}-${index}`} className="channel-tag">
+                              {displayName}
+                              {subChannelId && (
+                                <span className="subchannel-indicator">
+                                  → {subChannelId}
+                                </span>
+                              )}
                             </span>
                           );
                         })}

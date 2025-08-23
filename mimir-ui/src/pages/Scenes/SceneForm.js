@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Save, ChevronDown } from 'lucide-react';
 import { api } from '../../services/api';
 import './SceneForm.css';
 
@@ -16,12 +16,63 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
     schedule: null
   });
   const [loading, setLoading] = useState(false);
+  
+  // Sub-channel support
+  const [subChannelSupport, setSubChannelSupport] = useState({});
+  const [availableSubChannels, setAvailableSubChannels] = useState({});
+  const [loadingSubChannels, setLoadingSubChannels] = useState(false);
+
+  // Load sub-channel support for all channels
+  const loadSubChannelData = useCallback(async () => {
+    if (!channels.length) return;
+    
+    setLoadingSubChannels(true);
+    const supportInfo = {};
+    const subChannelsData = {};
+    
+    for (const channel of channels) {
+      try {
+        // Check if channel supports sub-channels
+        const configResponse = await api.getSubChannelConfig(channel.id);
+        supportInfo[channel.id] = configResponse.data?.supports_subchannels || false;
+        
+        if (supportInfo[channel.id]) {
+          // Get available sub-channels
+          const subChannelsResponse = await api.getSubChannels(channel.id);
+          subChannelsData[channel.id] = subChannelsResponse.data || [];
+        }
+      } catch (error) {
+        // Channel doesn't support sub-channels or error occurred
+        supportInfo[channel.id] = false;
+        subChannelsData[channel.id] = [];
+      }
+    }
+    
+    setSubChannelSupport(supportInfo);
+    setAvailableSubChannels(subChannelsData);
+    setLoadingSubChannels(false);
+  }, [channels]);
 
   useEffect(() => {
     if (scene) {
+      // Normalize channels to new format
+      const normalizedChannels = scene.channels.map(channel => {
+        if (typeof channel === 'string') {
+          // Old format: just channel ID
+          return { channel_id: channel, subchannel_id: null };
+        } else if (channel && typeof channel === 'object') {
+          // New format: channel assignment object
+          return {
+            channel_id: channel.channel_id,
+            subchannel_id: channel.subchannel_id || null
+          };
+        }
+        return { channel_id: String(channel), subchannel_id: null };
+      });
+
       setFormData({
         name: scene.name || '',
-        channels: scene.channels || [],
+        channels: normalizedChannels,
         overlay: scene.overlay || {
           overlays: [],
           position: ['top', 'right'],
@@ -32,6 +83,10 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
       });
     }
   }, [scene]);
+
+  useEffect(() => {
+    loadSubChannelData();
+  }, [loadSubChannelData]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -52,12 +107,43 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
   };
 
   const handleChannelToggle = (channelId) => {
+    setFormData(prev => {
+      const existingAssignment = prev.channels.find(ch => ch.channel_id === channelId);
+      
+      if (existingAssignment) {
+        // Remove channel assignment
+        return {
+          ...prev,
+          channels: prev.channels.filter(ch => ch.channel_id !== channelId)
+        };
+      } else {
+        // Add new channel assignment
+        return {
+          ...prev,
+          channels: [...prev.channels, { channel_id: channelId, subchannel_id: null }]
+        };
+      }
+    });
+  };
+
+  const handleSubChannelChange = (channelId, subChannelId) => {
     setFormData(prev => ({
       ...prev,
-      channels: prev.channels.includes(channelId)
-        ? prev.channels.filter(id => id !== channelId)
-        : [...prev.channels, channelId]
+      channels: prev.channels.map(ch => 
+        ch.channel_id === channelId 
+          ? { ...ch, subchannel_id: subChannelId || null }
+          : ch
+      )
     }));
+  };
+
+  const isChannelSelected = (channelId) => {
+    return formData.channels.some(ch => ch.channel_id === channelId);
+  };
+
+  const getSelectedSubChannel = (channelId) => {
+    const assignment = formData.channels.find(ch => ch.channel_id === channelId);
+    return assignment?.subchannel_id || '';
   };
 
   const handleOverlayToggle = (overlayId) => {
@@ -109,16 +195,40 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
 
           <div className="form-group">
             <label className="form-label">Channels</label>
-            <div className="checkbox-grid">
+            <div className="channels-selection">
               {channels.map((channel) => (
-                <label key={channel.id} className="checkbox-item">
-                  <input
-                    type="checkbox"
-                    checked={formData.channels.includes(channel.id)}
-                    onChange={() => handleChannelToggle(channel.id)}
-                  />
-                  <span>{channel.name}</span>
-                </label>
+                <div key={channel.id} className="channel-assignment-group">
+                  <label className="checkbox-item">
+                    <input
+                      type="checkbox"
+                      checked={isChannelSelected(channel.id)}
+                      onChange={() => handleChannelToggle(channel.id)}
+                    />
+                    <span>{channel.name}</span>
+                  </label>
+                  
+                  {isChannelSelected(channel.id) && subChannelSupport[channel.id] && availableSubChannels[channel.id]?.length > 0 && (
+                    <div className="subchannel-selection">
+                      <label className="subchannel-label">Sub-Channel:</label>
+                      <select
+                        value={getSelectedSubChannel(channel.id)}
+                        onChange={(e) => handleSubChannelChange(channel.id, e.target.value)}
+                        className="subchannel-select"
+                      >
+                        <option value="">All Content</option>
+                        {availableSubChannels[channel.id].map(subChannel => (
+                          <option key={subChannel.id} value={subChannel.id}>
+                            {subChannel.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  
+                  {isChannelSelected(channel.id) && loadingSubChannels && (
+                    <div className="subchannel-loading">Loading sub-channels...</div>
+                  )}
+                </div>
               ))}
             </div>
           </div>
