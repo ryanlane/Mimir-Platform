@@ -247,9 +247,13 @@ const ChannelSettings = ({ channel, onClose }) => {
         // The moduleUrl from manifest is relative like "/api/channels/..."
         // We need to prepend the server base URL
         const serverBaseUrl = getServerBaseUrl(); // Use dynamic server URL
-        const fullModuleUrl = managementComponent.moduleUrl.startsWith('http') 
+        let fullModuleUrl = managementComponent.moduleUrl.startsWith('http') 
           ? managementComponent.moduleUrl 
           : `${serverBaseUrl}${managementComponent.moduleUrl}`;
+        
+        // Add cache-busting parameter to ensure fresh module loading
+        const cacheBuster = Date.now();
+        fullModuleUrl += fullModuleUrl.includes('?') ? `&v=${cacheBuster}` : `?v=${cacheBuster}`;
         
         console.log(`Loading Management Component: ${managementComponent.element} from ${fullModuleUrl}`);
         
