@@ -668,17 +668,21 @@ class SceneSchedule(BaseModel):
     start: str
     end: str
 
+class ChannelAssignment(BaseModel):
+    channel_id: str
+    subchannel_id: Optional[str] = None
+
 class SceneResponse(BaseModel):
     id: str
     name: str
-    channels: List[str]
+    channels: List[ChannelAssignment]
     overlay: Optional[SceneOverlay] = None
     schedule: Optional[SceneSchedule] = None
     isActive: Optional[bool] = False
 
 class SceneCreateRequest(BaseModel):
     name: str
-    channels: List[str]
+    channels: List[ChannelAssignment]
     overlay: Optional[SceneOverlay] = None
     schedule: Optional[SceneSchedule] = None
 
@@ -1297,6 +1301,7 @@ async def update_channel_settings(
 async def request_channel_image(
     channel_id: str,
     request_body: ImageRequestBody,
+    subchannel_id: Optional[str] = Query(None, description="Optional sub-channel ID"),
     db: Session = Depends(get_db)
 ):
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
@@ -1307,13 +1312,25 @@ async def request_channel_image(
     if not channel_instance:
         raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
 
-    # Call render_image
+    # Call render_image with optional subchannel_id
     try:
-        image_path = await channel_instance.render_image(
-            resolution=tuple(request_body.resolution),
-            orientation=request_body.orientation,
-            settings={}
-        )
+        if subchannel_id:
+            # Check if channel supports sub-channels
+            if hasattr(channel_instance, 'supports_subchannels') and channel_instance.supports_subchannels():
+                image_path = await channel_instance.render_image(
+                    resolution=tuple(request_body.resolution),
+                    orientation=request_body.orientation,
+                    settings={},
+                    subchannel_id=subchannel_id
+                )
+            else:
+                raise HTTPException(status_code=400, detail=f"Channel '{channel_id}' does not support sub-channels")
+        else:
+            image_path = await channel_instance.render_image(
+                resolution=tuple(request_body.resolution),
+                orientation=request_body.orientation,
+                settings={}
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image generation failed: {e}")
 
@@ -1321,6 +1338,8 @@ async def request_channel_image(
     current_status = channel.status or {}
     current_status["lastImageRequest"] = datetime.datetime.now().isoformat()
     current_status["lastError"] = None
+    if subchannel_id:
+        current_status["lastSubChannelId"] = subchannel_id
     channel.status = current_status
     db.commit()
     
@@ -2083,11 +2102,29 @@ async def list_scenes(
     total = db.query(Scene).count()
     scenes = db.query(Scene).offset(offset).limit(limit).all()
     
+    def convert_channels(scene_channels):
+        """Convert channels to new format with backward compatibility"""
+        channels_data = []
+        for channel in (scene_channels or []):
+            if isinstance(channel, str):
+                # Old format: just channel ID
+                channels_data.append(ChannelAssignment(channel_id=channel))
+            elif isinstance(channel, dict):
+                # New format: channel assignment object
+                channels_data.append(ChannelAssignment(
+                    channel_id=channel["channel_id"],
+                    subchannel_id=channel.get("subchannel_id")
+                ))
+            else:
+                # Fallback for unexpected format
+                channels_data.append(ChannelAssignment(channel_id=str(channel)))
+        return channels_data
+    
     result = [
         SceneResponse(
             id=s.id,
             name=s.name,
-            channels=s.channels or [],
+            channels=convert_channels(s.channels),
             overlay=s.overlay,
             schedule=s.schedule,
             isActive=s.is_active
@@ -2109,10 +2146,23 @@ async def create_scene(scene_data: SceneCreateRequest, db: Session = Depends(get
     if existing:
         raise HTTPException(status_code=400, detail="Scene with this name already exists")
     
+    # Convert channel assignments to storage format
+    channels_data = []
+    for assignment in scene_data.channels:
+        if isinstance(assignment, str):
+            # Backward compatibility: if string provided, convert to assignment
+            channels_data.append({"channel_id": assignment})
+        else:
+            # New format: store channel assignment with optional subchannel
+            channel_assignment = {"channel_id": assignment.channel_id}
+            if assignment.subchannel_id:
+                channel_assignment["subchannel_id"] = assignment.subchannel_id
+            channels_data.append(channel_assignment)
+    
     db_scene = Scene(
         id=scene_id,
         name=scene_data.name,
-        channels=scene_data.channels,
+        channels=channels_data,
         overlay=scene_data.overlay.dict() if scene_data.overlay else None,
         schedule=scene_data.schedule.dict() if scene_data.schedule else None,
         is_active=False
@@ -2126,7 +2176,7 @@ async def create_scene(scene_data: SceneCreateRequest, db: Session = Depends(get
     await broadcast_event("scene_created", {
         "sceneId": scene_id,
         "sceneName": scene_data.name,
-        "channels": scene_data.channels
+        "channels": channels_data
     })
     
     return {
@@ -2141,10 +2191,26 @@ async def get_scene(scene_id: str, db: Session = Depends(get_db)):
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
     
+    # Handle backward compatibility for channels format
+    channels_data = []
+    for channel in (scene.channels or []):
+        if isinstance(channel, str):
+            # Old format: just channel ID
+            channels_data.append(ChannelAssignment(channel_id=channel))
+        elif isinstance(channel, dict):
+            # New format: channel assignment object
+            channels_data.append(ChannelAssignment(
+                channel_id=channel["channel_id"],
+                subchannel_id=channel.get("subchannel_id")
+            ))
+        else:
+            # Fallback for unexpected format
+            channels_data.append(ChannelAssignment(channel_id=str(channel)))
+    
     return SceneResponse(
         id=scene.id,
         name=scene.name,
-        channels=scene.channels or [],
+        channels=channels_data,
         overlay=scene.overlay,
         schedule=scene.schedule,
         isActive=scene.is_active
@@ -2160,8 +2226,21 @@ async def update_scene(
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
     
+    # Convert channel assignments to storage format
+    channels_data = []
+    for assignment in scene_data.channels:
+        if isinstance(assignment, str):
+            # Backward compatibility: if string provided, convert to assignment
+            channels_data.append({"channel_id": assignment})
+        else:
+            # New format: store channel assignment with optional subchannel
+            channel_assignment = {"channel_id": assignment.channel_id}
+            if assignment.subchannel_id:
+                channel_assignment["subchannel_id"] = assignment.subchannel_id
+            channels_data.append(channel_assignment)
+    
     scene.name = scene_data.name
-    scene.channels = scene_data.channels
+    scene.channels = channels_data
     scene.overlay = scene_data.overlay.dict() if scene_data.overlay else None
     scene.schedule = scene_data.schedule.dict() if scene_data.schedule else None
     
@@ -2171,7 +2250,7 @@ async def update_scene(
     await broadcast_event("scene_updated", {
         "sceneId": scene_id,
         "sceneName": scene_data.name,
-        "channels": scene_data.channels
+        "channels": channels_data
     })
     
     return {
@@ -2979,7 +3058,21 @@ async def get_display_status(
         assigned_scene = db.query(Scene).filter(Scene.id == display_client.assigned_scene_id).first()
         # Get first channel in the scene
         if assigned_scene and assigned_scene.channels:
-            channel_id = assigned_scene.channels[0]
+            # Handle both old and new channel format
+            first_channel = assigned_scene.channels[0]
+            if isinstance(first_channel, str):
+                # Old format: just channel ID
+                channel_id = first_channel
+                subchannel_id = None
+            elif isinstance(first_channel, dict):
+                # New format: channel assignment object
+                channel_id = first_channel["channel_id"]
+                subchannel_id = first_channel.get("subchannel_id")
+            else:
+                # Fallback
+                channel_id = str(first_channel)
+                subchannel_id = None
+                
             # Get channel from database to access current_settings
             channel = db.query(Channel).filter(Channel.id == channel_id).first()
             if channel:
@@ -3166,7 +3259,23 @@ async def generate_scene_image_for_display(scene, display_client):
     orientation = display_client.orientation or "landscape"
 
     # Use the first channel in the scene
-    channel_id = scene.channels[0] if scene.channels else "example_channel"
+    if scene.channels:
+        first_channel = scene.channels[0]
+        if isinstance(first_channel, str):
+            # Old format: just channel ID
+            channel_id = first_channel
+            subchannel_id = None
+        elif isinstance(first_channel, dict):
+            # New format: channel assignment object
+            channel_id = first_channel["channel_id"]
+            subchannel_id = first_channel.get("subchannel_id")
+        else:
+            # Fallback
+            channel_id = str(first_channel)
+            subchannel_id = None
+    else:
+        channel_id = "example_channel"
+        subchannel_id = None
     
     # Get channel instance to trigger resolution-aware image generation
     channel_instance = channel_discovery.get_channel_instance(channel_id)
@@ -3182,12 +3291,23 @@ async def generate_scene_image_for_display(scene, display_client):
                 db.close()
             
             # Generate image optimized for this display's resolution
-            await channel_instance.render_image(
-                resolution=tuple(resolution),
-                orientation=orientation,
-                settings=settings or {}
-            )
-            print(f"✅ Generated image for {channel_id} at resolution {resolution}")
+            if subchannel_id and hasattr(channel_instance, 'supports_subchannels') and channel_instance.supports_subchannels():
+                # Channel supports sub-channels, pass subchannel_id
+                await channel_instance.render_image(
+                    resolution=tuple(resolution),
+                    orientation=orientation,
+                    settings=settings or {},
+                    subchannel_id=subchannel_id
+                )
+                print(f"✅ Generated image for {channel_id} sub-channel {subchannel_id} at resolution {resolution}")
+            else:
+                # Standard channel rendering
+                await channel_instance.render_image(
+                    resolution=tuple(resolution),
+                    orientation=orientation,
+                    settings=settings or {}
+                )
+                print(f"✅ Generated image for {channel_id} at resolution {resolution}")
             
         except Exception as e:
             print(f"⚠️  Failed to generate image for {channel_id}: {e}")
