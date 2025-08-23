@@ -5,6 +5,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
 import ChannelSettings from './ChannelSettings';
+import SubChannelManager from './SubChannelManager';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Channels.css';
 
@@ -32,6 +33,12 @@ const Channels = () => {
   const [testResults, setTestResults] = useState({});
   const [manifest, setManifest] = useState([]);
 
+  // Sub-channel support (NEW)
+  const [subChannelSupport, setSubChannelSupport] = useState({});
+  const [subChannelCounts, setSubChannelCounts] = useState({});
+  const [showSubChannelManager, setShowSubChannelManager] = useState(false);
+  const [selectedChannelForSubChannels, setSelectedChannelForSubChannels] = useState(null);
+
   // WebSocket integration for real-time updates
   const { isConnected } = useWebSocket();
 
@@ -49,6 +56,33 @@ const Channels = () => {
       console.error('Error loading channel manifest:', error);
     }
   }, []);
+
+  // Load sub-channel support information
+  const loadSubChannelSupport = useCallback(async () => {
+    const supportInfo = {};
+    const counts = {};
+    
+    for (const channel of channels) {
+      try {
+        // Check if channel supports sub-channels
+        const configResponse = await api.getSubChannelConfig(channel.id);
+        supportInfo[channel.id] = configResponse.data?.supports_subchannels || false;
+        
+        if (supportInfo[channel.id]) {
+          // Get sub-channel count
+          const subChannelsResponse = await api.getSubChannels(channel.id);
+          counts[channel.id] = subChannelsResponse.data?.length || 0;
+        }
+      } catch (error) {
+        // Channel doesn't support sub-channels or error occurred
+        supportInfo[channel.id] = false;
+        counts[channel.id] = 0;
+      }
+    }
+    
+    setSubChannelSupport(supportInfo);
+    setSubChannelCounts(counts);
+  }, [channels]);
 
   const loadChannels = useCallback(async () => {
     try {
@@ -101,10 +135,14 @@ const Channels = () => {
       await loadChannels();
       // Load v2.1 features if supported
       await loadManifest();
+      // Load sub-channel support after channels are loaded
+      if (channels.length > 0) {
+        await loadSubChannelSupport();
+      }
     };
     
     initializeChannels();
-  }, [loadChannels, loadManifest]);
+  }, [loadChannels, loadManifest, loadSubChannelSupport, channels.length]);
   useEffect(() => {
     const handleChannelUpdate = (event) => {
       if (event.data?.type === 'channel_status_update') {
@@ -183,6 +221,11 @@ const Channels = () => {
   const handleSettings = (channel) => {
     setSelectedChannel(channel);
     setShowSettings(true);
+  };
+
+  const handleManageSubChannels = (channel) => {
+    setSelectedChannelForSubChannels(channel);
+    setShowSubChannelManager(true);
   };
 
   const handleTestImage = async (channelId) => {
@@ -297,6 +340,14 @@ const Channels = () => {
                         {channel.settingsType || 'simple'}
                       </span>
                     </div>
+                    {subChannelSupport[channel.id] && (
+                      <div className="detail-item">
+                        <span>Sub-Channels:</span>
+                        <span className="subchannel-count">
+                          {subChannelCounts[channel.id] || 0} configured
+                        </span>
+                      </div>
+                    )}
                     {supportsV21() && manifestData && (
                       <>
                         {manifestData.hasUI && (
@@ -373,6 +424,16 @@ const Channels = () => {
                     </button>
                   )}
                   
+                  {subChannelSupport[channel.id] && (
+                    <button
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => handleManageSubChannels(channel)}
+                    >
+                      <Info size={16} />
+                      Manage Sub-Channels
+                    </button>
+                  )}
+                  
                   <button
                     className="btn btn-sm btn-accent"
                     onClick={() => handleSettings(channel)}
@@ -405,6 +466,17 @@ const Channels = () => {
             setShowSettings(false);
             setSelectedChannel(null);
             loadChannels();
+          }}
+        />
+      )}
+
+      {showSubChannelManager && selectedChannelForSubChannels && (
+        <SubChannelManager
+          channel={selectedChannelForSubChannels}
+          onClose={() => {
+            setShowSubChannelManager(false);
+            setSelectedChannelForSubChannels(null);
+            loadSubChannelSupport(); // Refresh sub-channel data
           }}
         />
       )}

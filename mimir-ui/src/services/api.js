@@ -88,7 +88,20 @@ export const api = {
   getChannelConfig: (channelId) => apiClient.get(`/channels/${channelId}/config`),
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
-  requestChannelImage: (channelId, requestData) => apiClient.post(`/channels/${channelId}/image_request`, requestData),
+  requestChannelImage: (channelId, requestData, subchannelId = null) => {
+    const params = subchannelId ? { subchannel_id: subchannelId } : {};
+    return apiClient.post(`/channels/${channelId}/image_request`, requestData, { params });
+  },
+
+  // Sub-Channels (NEW)
+  getSubChannelConfig: (channelId) => apiClient.get(`/channels/${channelId}/subchannels/config`),
+  getSubChannels: (channelId) => apiClient.get(`/channels/${channelId}/subchannels`),
+  getSubChannelDetails: (channelId, subChannelId) => apiClient.get(`/channels/${channelId}/subchannels/${subChannelId}`),
+  createSubChannel: (channelId, data) => apiClient.post(`/channels/${channelId}/subchannels`, data),
+  updateSubChannel: (channelId, subChannelId, data) => apiClient.put(`/channels/${channelId}/subchannels/${subChannelId}`, data),
+  deleteSubChannel: (channelId, subChannelId) => apiClient.delete(`/channels/${channelId}/subchannels/${subChannelId}`),
+  assignContentToSubChannel: (channelId, subChannelId, content) => apiClient.post(`/channels/${channelId}/subchannels/${subChannelId}/content`, content),
+  getSubChannelContent: (channelId, subChannelId) => apiClient.get(`/channels/${channelId}/subchannels/${subChannelId}/content`),
 
   // Overlays
   getOverlays: (params = {}) => apiClient.get('/overlays', { params }),
