@@ -24,7 +24,8 @@
     "deploy": "npm run build:prod && npm run upload",
     "upload": "scp -o PreferredAuthentications=password -o PubkeyAuthentication=no -r build/* oak:/var/www/mimir-ui/",
     "deploy:rsync": "npm run build:prod && rsync -avz --delete -e 'ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no' build/ oak:/var/www/mimir-ui/",
-    "deploy:sftp": "npm run build:prod && sftp oak:/var/www/mimir-ui/"
+    "deploy:sftp": "npm run build:prod && sftp oak:/var/www/mimir-ui/",
+    "rsync": "rsync -avz --delete -e 'ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no' build/ oak:/var/www/mimir-ui/"
   },
   "eslintConfig": {
     "extends": [

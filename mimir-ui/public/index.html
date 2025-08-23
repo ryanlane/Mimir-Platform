@@ -24,7 +24,52 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>React App</title>
+    <title>Mimir UI</title>
+    <script>
+      // Mobile debugging and connection helper
+      (function() {
+        // Enhanced mobile debugging
+        window.mimirDebug = {
+          platform: navigator.platform,
+          userAgent: navigator.userAgent,
+          isMobile: /Mobi|Android/i.test(navigator.userAgent),
+          isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent),
+          isSafari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
+          networkType: navigator.connection ? navigator.connection.effectiveType : 'unknown',
+          timestamp: new Date().toISOString()
+        };
+        
+        // Log device info for debugging
+        console.log('📱 Mimir Device Info:', window.mimirDebug);
+        
+        // Test network connectivity
+        window.mimirDebug.testConnection = function(url) {
+          const testUrl = url || (window.location.protocol + '//' + window.location.hostname + ':5000/health');
+          console.log('🔍 Testing connection to:', testUrl);
+          
+          return fetch(testUrl, { 
+            method: 'GET',
+            cache: 'no-cache',
+            signal: AbortSignal.timeout(5000)
+          })
+          .then(response => {
+            console.log('✅ Connection test successful:', response.status);
+            return { success: true, status: response.status };
+          })
+          .catch(error => {
+            console.error('❌ Connection test failed:', error.message);
+            return { success: false, error: error.message };
+          });
+        };
+        
+        // Auto-test connection on mobile devices
+        if (window.mimirDebug.isMobile) {
+          setTimeout(() => {
+            window.mimirDebug.testConnection();
+          }, 2000);
+        }
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

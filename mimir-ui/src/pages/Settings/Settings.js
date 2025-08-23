@@ -6,6 +6,7 @@ import { logger } from '../../utils/logger';
 import './Settings.css';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import DisplayClientManager from '../../components/Settings/DisplayClientManager';
+import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 
 const Settings = () => {
   const [displayStatus, setDisplayStatus] = useState(null);
@@ -22,9 +23,11 @@ const Settings = () => {
 
   // WebSocket integration for real-time display updates
   const { isConnected } = useWebSocket();
-  const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('mimir-api-base-url') || 'http://localhost:5000');
+  const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('mimir-api-base-url') || '');
+  const [wsBaseUrl, setWsBaseUrl] = useState(localStorage.getItem('mimir-websocket-url') || '');
   const [apiConnectionStatus, setApiConnectionStatus] = useState(null);
   const [testingApi, setTestingApi] = useState(false);
+  const [testingWs, setTestingWs] = useState(false);
 
   // Admin operations state
   const [showResetConfirmation, setShowResetConfirmation] = useState(false);
@@ -96,6 +99,71 @@ const Settings = () => {
     window.mimirConsoleSettings = newSettings;
     
     console.log(`Console setting changed: ${setting} = ${value}`);
+  };
+
+  // Connection configuration handlers
+  const handleApiUrlChange = (url) => {
+    setApiBaseUrl(url);
+    if (url) {
+      localStorage.setItem('mimir-api-base-url', url);
+    } else {
+      localStorage.removeItem('mimir-api-base-url');
+    }
+    // Clear previous test results
+    setApiConnectionStatus(null);
+  };
+
+  const handleWsUrlChange = (url) => {
+    setWsBaseUrl(url);
+    if (url) {
+      localStorage.setItem('mimir-websocket-url', url);
+    } else {
+      localStorage.removeItem('mimir-websocket-url');
+    }
+  };
+
+  const testWebSocketConnection = () => {
+    if (!wsBaseUrl) {
+      return;
+    }
+
+    setTestingWs(true);
+    try {
+      const testWs = new WebSocket(`${wsBaseUrl}/ws`);
+      
+      testWs.onopen = () => {
+        setApiConnectionStatus({ success: true, message: 'WebSocket connection successful!' });
+        testWs.close();
+        setTestingWs(false);
+      };
+      
+      testWs.onerror = () => {
+        setApiConnectionStatus({ success: false, error: 'WebSocket connection failed' });
+        setTestingWs(false);
+      };
+      
+      testWs.onclose = () => {
+        setTestingWs(false);
+      };
+      
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        if (testWs.readyState === WebSocket.CONNECTING) {
+          testWs.close();
+          setApiConnectionStatus({ success: false, error: 'WebSocket connection timeout' });
+          setTestingWs(false);
+        }
+      }, 5000);
+    } catch (error) {
+      setApiConnectionStatus({ success: false, error: `WebSocket test failed: ${error.message}` });
+      setTestingWs(false);
+    }
+  };
+
+  const getCurrentUrls = () => {
+    const apiUrl = apiBaseUrl || 'Auto-detected';
+    const wsUrl = wsBaseUrl || 'Auto-detected';
+    return { apiUrl, wsUrl };
   };
 
   const handleVerbosityLevelChange = (level) => {
@@ -249,6 +317,83 @@ const Settings = () => {
       {/* WebSocket Status Component */}
       <WebSocketStatus />
       <DisplayClientManager />
+
+      {/* Mobile Connection Guide */}
+      <MobileConnectionGuide />
+
+      {/* Connection Configuration */}
+      <div className="settings-card">
+        <div className="card-header">
+          <div className="flex items-center gap-sm">
+            <Database size={20} />
+            <h3 className="card-title">Connection Configuration</h3>
+          </div>
+        </div>
+        
+        <div className="card-body">
+          <p className="text-tertiary" style={{ marginBottom: '1rem' }}>
+            Configure API and WebSocket connections. Leave blank to use auto-detection based on current page URL.
+          </p>
+          
+          <div className="connection-config">
+            <div className="config-group">
+              <label htmlFor="api-url">API Base URL:</label>
+              <div className="url-input-group">
+                <input
+                  id="api-url"
+                  type="url"
+                  value={apiBaseUrl}
+                  onChange={(e) => handleApiUrlChange(e.target.value)}
+                  placeholder="e.g., http://192.168.1.100:5000 (leave blank for auto-detect)"
+                  className="url-input"
+                />
+                <button 
+                  className="btn btn-outline" 
+                  type="button" 
+                  onClick={testApiConnection} 
+                  disabled={testingApi}
+                >
+                  {testingApi ? 'Testing...' : 'Test'}
+                </button>
+              </div>
+              <small className="input-help">
+                Current: {getCurrentUrls().apiUrl}
+              </small>
+            </div>
+
+            <div className="config-group">
+              <label htmlFor="ws-url">WebSocket Base URL:</label>
+              <div className="url-input-group">
+                <input
+                  id="ws-url"
+                  type="url"
+                  value={wsBaseUrl}
+                  onChange={(e) => handleWsUrlChange(e.target.value)}
+                  placeholder="e.g., ws://192.168.1.100:5000 (leave blank for auto-detect)"
+                  className="url-input"
+                />
+                <button 
+                  className="btn btn-outline" 
+                  type="button" 
+                  onClick={testWebSocketConnection} 
+                  disabled={testingWs}
+                >
+                  {testingWs ? 'Testing...' : 'Test'}
+                </button>
+              </div>
+              <small className="input-help">
+                Current: {getCurrentUrls().wsUrl}
+              </small>
+            </div>
+
+            {apiConnectionStatus && (
+              <div className={`connection-status-message ${apiConnectionStatus.success ? 'success' : 'error'}`}>
+                {apiConnectionStatus.message || apiConnectionStatus.error}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="settings-grid">
         {/* Display Control Section */}

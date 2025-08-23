@@ -15,16 +15,50 @@ class WebSocketService {
     this.connectionId = null;
   }
 
-  // Connect to the enhanced WebSocket API
-  connect(baseUrl = 'ws://oak:5000') {
+  // Generate smart WebSocket URL based on current environment
+  getWebSocketUrl() {
+    // 1. Check for explicit configuration
+    const storedUrl = localStorage.getItem('mimir-websocket-url');
+    if (storedUrl) {
+      return storedUrl;
+    }
+
+    // 2. Generate based on current page location
+    if (typeof window !== 'undefined') {
+      const currentHost = window.location.hostname;
+      const isSecure = window.location.protocol === 'https:';
+      const wsProtocol = isSecure ? 'wss:' : 'ws:';
+      
+      // If we're running on localhost (development), use localhost
+      if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+        return 'ws://localhost:5000';
+      }
+      
+      // If we're running on the same host as the UI, use the same host
+      if (currentHost && currentHost !== 'localhost') {
+        return `${wsProtocol}//${currentHost}:5000`;
+      }
+    }
+
+    // 3. Final fallback for specific deployment
+    return 'ws://172.31.79.107:5000';
+  }
+
+  // Connect to the enhanced WebSocket API with dynamic URL
+  connect(baseUrl = null) {
     // Prevent multiple connections
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
       console.log('🔄 WebSocket already connected or connecting, skipping...');
       return;
     }
 
+    // Generate smart WebSocket URL if not provided
+    if (!baseUrl) {
+      baseUrl = this.getWebSocketUrl();
+    }
+
     try {
-      console.log('🔌 Connecting to enhanced WebSocket...');
+      console.log('🔌 Connecting to enhanced WebSocket at:', baseUrl);
       this.ws = new WebSocket(`${baseUrl}/ws`);
       
       this.ws.onopen = (event) => {

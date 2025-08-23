@@ -1,14 +1,34 @@
 import axios from 'axios';
 
-// API base URL
+// API base URL with intelligent defaults
 function getApiBaseUrl() {
+  // 1. Check for explicit configuration
   const raw =
     (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
     localStorage.getItem('mimir-api-base-url');
 
-  // Fallback includes /api already
-  if (!raw) return 'http://172.31.79.107:5000/api';
-  return ensureApiSuffix(raw);
+  if (raw) {
+    return ensureApiSuffix(raw);
+  }
+
+  // 2. Smart fallback based on current environment
+  if (typeof window !== 'undefined') {
+    const currentHost = window.location.hostname;
+    const currentProtocol = window.location.protocol;
+    
+    // If we're running on localhost (development), use localhost
+    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+      return 'http://localhost:5000/api';
+    }
+    
+    // If we're running on the same host as the UI, use the same host
+    if (currentHost && currentHost !== 'localhost') {
+      return `${currentProtocol}//${currentHost}:5000/api`;
+    }
+  }
+
+  // 3. Final fallback for specific deployment
+  return 'http://172.31.79.107:5000/api';
 }
 
 function ensureApiSuffix(base) {
@@ -108,6 +128,10 @@ export const api = {
   // v2.1 Channel Static Assets
   getChannelUIAsset: (channelId, assetPath) => `${getApiBaseUrl()}/channels/${channelId}/ui/${assetPath}`,
   getChannelAsset: (channelId, assetPath) => `${getApiBaseUrl()}/channels/${channelId}/assets/${assetPath}`,
+  getChannelImageUrl: (channelId, imagePath = 'image') => `${getApiBaseUrl()}/channels/${channelId}/${imagePath}?t=${Date.now()}`,
+  
+  // Helper function to get API base URL (useful for components)
+  getApiBaseUrl: () => getApiBaseUrl(),
 
   // v2.3: Display Management API endpoints
   registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),

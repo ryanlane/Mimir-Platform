@@ -9,24 +9,42 @@ const getApiBaseUrl = () => {
     (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
     localStorage.getItem('mimir-api-base-url');
 
-  // Fallback includes /api already
-  if (!raw) return 'http://oak:5000/api';
-  
-  try {
-    // Handle absolute or relative bases
-    const u = new URL(raw, window.location.origin);
-    // Normalize trailing slashes
-    u.pathname = u.pathname.replace(/\/+$/, '') || '/';
-    // If path doesn't already start with /api, append it
-    if (!/^\/api(\/|$)/i.test(u.pathname)) {
-      u.pathname = (u.pathname === '/' ? '' : u.pathname) + '/api';
+  if (raw) {
+    try {
+      // Handle absolute or relative bases
+      const u = new URL(raw, window.location.origin);
+      // Normalize trailing slashes
+      u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+      // If path doesn't already start with /api, append it
+      if (!/^\/api(\/|$)/i.test(u.pathname)) {
+        u.pathname = (u.pathname === '/' ? '' : u.pathname) + '/api';
+      }
+      return u.toString();
+    } catch {
+      // Fallback for unusual inputs
+      const t = String(raw).replace(/\/+$/, '');
+      return /\/api(\/|$)/i.test(t) ? t : `${t}/api`;
     }
-    return u.toString();
-  } catch {
-    // Fallback for unusual inputs
-    const t = String(raw).replace(/\/+$/, '');
-    return /\/api(\/|$)/i.test(t) ? t : `${t}/api`;
   }
+
+  // Smart fallback based on current environment
+  if (typeof window !== 'undefined') {
+    const currentHost = window.location.hostname;
+    const currentProtocol = window.location.protocol;
+    
+    // If we're running on localhost (development), use localhost
+    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+      return 'http://localhost:5000/api';
+    }
+    
+    // If we're running on the same host as the UI, use the same host
+    if (currentHost && currentHost !== 'localhost') {
+      return `${currentProtocol}//${currentHost}:5000/api`;
+    }
+  }
+
+  // Final fallback for specific deployment
+  return 'http://172.31.79.107:5000/api';
 };
 
 // Helper function to get server base URL (without /api suffix)
@@ -35,20 +53,38 @@ const getServerBaseUrl = () => {
     (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
     localStorage.getItem('mimir-api-base-url');
 
-  // Fallback without /api suffix for UI routes
-  if (!raw) return 'http://oak:5000';
-  
-  try {
-    // Handle absolute or relative bases
-    const u = new URL(raw, window.location.origin);
-    // Normalize trailing slashes and remove /api if present
-    u.pathname = u.pathname.replace(/\/+$/, '').replace(/\/api$/, '') || '/';
-    return u.toString().replace(/\/$/, '');
-  } catch {
-    // Fallback for unusual inputs
-    const t = String(raw).replace(/\/+$/, '').replace(/\/api$/, '');
-    return t || 'http://oak:5000';
+  if (raw) {
+    try {
+      // Handle absolute or relative bases
+      const u = new URL(raw, window.location.origin);
+      // Normalize trailing slashes and remove /api if present
+      u.pathname = u.pathname.replace(/\/+$/, '').replace(/\/api$/, '') || '/';
+      return u.toString().replace(/\/$/, '');
+    } catch {
+      // Fallback for unusual inputs
+      const t = String(raw).replace(/\/+$/, '').replace(/\/api$/, '');
+      return t;
+    }
   }
+
+  // Smart fallback based on current environment
+  if (typeof window !== 'undefined') {
+    const currentHost = window.location.hostname;
+    const currentProtocol = window.location.protocol;
+    
+    // If we're running on localhost (development), use localhost
+    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+      return 'http://localhost:5000';
+    }
+    
+    // If we're running on the same host as the UI, use the same host
+    if (currentHost && currentHost !== 'localhost') {
+      return `${currentProtocol}//${currentHost}:5000`;
+    }
+  }
+
+  // Final fallback for specific deployment
+  return 'http://172.31.79.107:5000';
 };
 
 const ChannelSettings = ({ channel, onClose }) => {

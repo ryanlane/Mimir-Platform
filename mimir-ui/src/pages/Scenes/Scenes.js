@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Play, Square, Monitor, Edit, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Monitor, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
@@ -143,6 +143,23 @@ const Scenes = () => {
     console.log('🎯 Full displayStatus:', displayStatus);
   }, [displayStatus]);
 
+  const getChannelThumbnail = (channelId) => {
+    const channel = channels.find(c => c.id === channelId);
+    if (!channel) return null;
+    
+    // For photo frame channels, try to get the current image
+    if (channel.id === 'com.epaperframe.photoframe' || channel.name?.toLowerCase().includes('photo')) {
+      return api.getChannelImageUrl(channelId, 'image');
+    }
+    
+    // For other channels, check if they have a thumbnail or current image endpoint
+    if (channel.config?.current_image) {
+      return api.getChannelImageUrl(channelId, channel.config.current_image);
+    }
+    
+    return null;
+  };
+
   const handleCreateScene = () => {
     setEditingScene(null);
     setShowForm(true);
@@ -161,29 +178,6 @@ const Scenes = () => {
       } catch (error) {
         console.error('Error deleting scene:', error);
       }
-    }
-  };
-
-  const handleActivateScene = async (sceneId) => {
-    const activeScene = displayStatus?.currentScene;
-    console.log('handleActivateScene called with:', sceneId, 'current activeScene:', activeScene);
-    try {
-      if (activeScene === sceneId) {
-        // If this scene is already active, deactivate it
-        console.log('Deactivating scene:', sceneId);
-        await api.deactivateScene(sceneId);
-        // Don't call setState here - let WebSocket handle it
-      } else {
-        // Activate this scene (this will automatically deactivate any other active scene)
-        console.log('Activating scene:', sceneId);
-        await api.activateScene(sceneId);
-        // Don't call setState here - let WebSocket handle it
-      }
-      // Don't call loadData() here - WebSocket events will handle the state updates
-    } catch (error) {
-      console.error('Error toggling scene activation:', error);
-      // On error, reload data to ensure consistency
-      await loadData();
     }
   };
 
@@ -240,18 +234,16 @@ const Scenes = () => {
       {scenes.length > 0 ? (
         <div className="scenes-grid">
           {scenes.map((scene) => {
-            const isActive = displayStatus?.currentScene === scene.id;
-            console.log(`Scene ${scene.id}: isActive=${isActive}, displayStatus.currentScene=${displayStatus?.currentScene}, scene.id=${scene.id}`);
+            // Get thumbnail from first channel if available
+            const thumbnailUrl = scene.channels && scene.channels.length > 0 
+              ? getChannelThumbnail(scene.channels[0]) 
+              : null;
+              
             return (
-              <div key={scene.id} className={`scene-card ${isActive ? 'scene-card-active' : ''}`}>
+              <div key={scene.id} className="scene-card">
                 <div className="scene-card-header">
                   <div className="scene-title-container">
                     <h3>{scene.name}</h3>
-                    {isActive && (
-                      <span className="status-indicator status-success">
-                        Active
-                      </span>
-                    )}
                   </div>
                   <div className="scene-actions">
                     <button
@@ -270,6 +262,16 @@ const Scenes = () => {
                 </div>
 
                 <div className="scene-card-body">
+                  {thumbnailUrl && (
+                    <div className="scene-thumbnail">
+                      <img 
+                        src={thumbnailUrl} 
+                        alt={`${scene.name} preview`}
+                        onError={(e) => e.target.style.display = 'none'}
+                      />
+                    </div>
+                  )}
+                  
                   <div className="scene-info">
                     <div className="info-item">
                       <span>Channels:</span>
@@ -308,27 +310,11 @@ const Scenes = () => {
 
                 <div className="scene-card-footer">
                   <button
-                    className="btn btn-sm btn-accent"
+                    className="btn btn-primary"
                     onClick={() => handleDisplayScene(scene.id)}
                   >
                     <Monitor size={16} />
                     Display Now
-                  </button>
-                  <button
-                    className={`btn btn-sm ${isActive ? 'btn-warning' : 'btn-success'}`}
-                    onClick={() => handleActivateScene(scene.id)}
-                  >
-                    {isActive ? (
-                      <>
-                        <Square size={16} />
-                        Deactivate
-                      </>
-                    ) : (
-                      <>
-                        <Play size={16} />
-                        Activate
-                      </>
-                    )}
                   </button>
                 </div>
               </div>

@@ -20,7 +20,7 @@
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding: 8px 12px 4px 12px;
+  padding: 8px 12px 12px 12px;
   height: 100%;
   max-width: 100%;
 }
