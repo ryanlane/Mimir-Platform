@@ -857,7 +857,7 @@ def cleanup_rate_limit_data():
         del GLOBAL_RATE_LIMITS[client_ip]
 
 # CORS Configuration - Environment-based origins for security
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://oak:3000,http://127.0.0.1:3000").split(",")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://oak:3000,http://127.0.0.1:3000,http://oak,http://localhost,http://127.0.0.1").split(",")
 print(f"🌐 CORS configured for origins: {CORS_ORIGINS}")
 
 # Add CORS middleware for React frontend - explicit origins for security
@@ -1102,6 +1102,46 @@ def init_sample_data():
 init_sample_data()
 
 # API Endpoints
+
+# Health endpoint
+@app.get("/api/health")
+async def get_api_health():
+    """Get overall API health status"""
+    db = SessionLocal()
+    try:
+        # Test database connection
+        db.execute("SELECT 1")
+        db_healthy = True
+        db_error = None
+    except Exception as e:
+        db_healthy = False
+        db_error = str(e)
+    finally:
+        db.close()
+    
+    # Get basic stats
+    total_channels = len(channel_discovery.loaded_channels)
+    websocket_connections = len(manager.active_connections)
+    
+    health_status = {
+        "status": "healthy" if db_healthy else "unhealthy",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "version": "1.0",
+        "database": {
+            "healthy": db_healthy,
+            "error": db_error
+        },
+        "channels": {
+            "loaded": total_channels,
+            "available": list(channel_discovery.loaded_channels.keys())
+        },
+        "websockets": {
+            "active_connections": websocket_connections
+        },
+        "uptime": "running"  # Simple indicator
+    }
+    
+    return health_status
 
 # Channels
 @app.get("/api/channels")
