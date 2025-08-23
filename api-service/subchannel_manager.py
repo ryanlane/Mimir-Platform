@@ -57,11 +57,20 @@ class SubChannelManager:
         try:
             channel = self._get_channel(channel_id)
             
-            # Check if channel supports sub-channels
-            if not channel.supports_subchannels():
+            # Check if channel supports sub-channels by looking for the method
+            if not hasattr(channel, 'supports_subchannels') or not channel.supports_subchannels():
                 return {
                     "supported": False,
                     "message": f"Channel '{channel_id}' does not support sub-channels",
+                    "subChannelTypes": [],
+                    "settings": {}
+                }
+            
+            # Check if channel has the get_subchannel_config method
+            if not hasattr(channel, 'get_subchannel_config'):
+                return {
+                    "supported": False,
+                    "message": f"Channel '{channel_id}' does not implement sub-channel configuration",
                     "subChannelTypes": [],
                     "settings": {}
                 }
@@ -94,19 +103,24 @@ class SubChannelManager:
         try:
             channel = self._get_channel(channel_id)
             
-            if not channel.supports_subchannels():
+            # Check if channel supports sub-channels by looking for the method
+            if not hasattr(channel, 'supports_subchannels') or not channel.supports_subchannels():
+                return {"subChannels": []}
+            
+            # Check if channel has the get_subchannels method
+            if not hasattr(channel, 'get_subchannels'):
                 return {"subChannels": []}
             
             subchannels = channel.get_subchannels()
             
-            logger.info(f"Listed {len(subchannels)} sub-channels for channel '{channel_id}'")
+            logger.info("Listed %d sub-channels for channel '%s'", len(subchannels), channel_id)
             return {"subChannels": subchannels}
             
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error listing sub-channels for '{channel_id}': {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to list sub-channels: {str(e)}")
+            logger.error("Error listing sub-channels for '%s': %s", channel_id, e)
+            raise HTTPException(status_code=500, detail=f"Failed to list sub-channels: {str(e)}") from e
     
     async def get_subchannel_details(self, channel_id: str, subchannel_id: str) -> Dict[str, Any]:
         """
