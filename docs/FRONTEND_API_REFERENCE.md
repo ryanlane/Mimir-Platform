@@ -368,6 +368,61 @@ List database channels not found on filesystem.
 #### `DELETE /api/admin/channels/{channel_id}`
 Remove channel from database (filesystem untouched).
 
+#### `POST /api/admin/channels/reset`
+**🔄 Database Reset** - Clear all channels from database and rebuild from filesystem only.
+
+```javascript
+// Request (no body required)
+fetch('/api/admin/channels/reset', { method: 'POST' })
+
+// Response
+{
+  "success": true,
+  "message": "Successfully reset channels database from filesystem",
+  "summary": {
+    "before": {
+      "total_channels": 5,
+      "channel_ids": ["old_weather", "photo_frame", "example_channel", "broken_channel", "weather_channel"]
+    },
+    "after": {
+      "total_channels": 3,
+      "channel_ids": ["com.epaperframe.photoframe", "example_channel", "weather_channel"]
+    },
+    "changes": {
+      "removed_count": 3,
+      "removed_ids": ["old_weather", "photo_frame", "broken_channel"],
+      "added_count": 1,
+      "added_ids": ["com.epaperframe.photoframe"],
+      "kept_count": 2,
+      "kept_ids": ["example_channel", "weather_channel"]
+    }
+  },
+  "affected_scenes": [
+    {
+      "scene_id": 1,
+      "scene_name": "Living Room Display",
+      "channel_id": "photo_frame",
+      "channel_name": "Photo Frame"
+    }
+  ],
+  "warnings": [
+    "1 scene(s) may need channel reassignment"
+  ]
+}
+```
+
+**⚠️ Important:** This is a destructive operation that:
+- Removes ALL channels from database
+- Rebuilds database from current filesystem state only
+- May break scene assignments if channel IDs changed
+- Cannot be undone
+
+**Use Cases:**
+- Clean up after major channel reorganization
+- Resolve database/filesystem inconsistencies
+- Start fresh after channel ID changes
+- Remove all orphaned database entries at once
+
 ---
 
 ## 🎯 **React Integration Patterns**

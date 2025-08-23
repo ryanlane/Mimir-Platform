@@ -10,20 +10,41 @@ A modern, minimal React frontend for the Mimir Platform API, inspired by Dieter 
 - **Display Control**: Monitor hardware status and control the e-ink display
 - **Minimal Design**: Clean, functional interface following Dieter Rams' design language
 
+## Quick Start
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Start development server:
+   ```bash
+   npm start
+   ```
+
+3. Build for production:
+   ```bash
+   npm build
+   ```
+
+## API Configuration
+
+The application connects to the Mimir Platform API at:
+- **Development**: `http://172.31.79.107:5000/api`
+- **Documentation**: `http://172.31.79.107:5000/docs`
+
+## 📖 Documentation
+
+**Complete documentation is available at:** [github.com/ryanlane/mimir-documentation](https://github.com/ryanlane/mimir-documentation)
+
+- **[Frontend Integration Guide](https://github.com/ryanlane/mimir-documentation/blob/main/FRONTEND_INTEGRATION_GUIDE.md)** - Frontend development patterns
+- **[Frontend API Reference](https://github.com/ryanlane/mimir-documentation/blob/main/FRONTEND_API_REFERENCE.md)** - JavaScript integration examples
+- **[API Documentation](https://github.com/ryanlane/mimir-documentation/blob/main/API_DOCUMENTATION.md)** - Complete REST API reference
+- **[Channel Architecture](https://github.com/ryanlane/mimir-documentation/blob/main/CHANNEL_ARCHITECTURE.md)** - Channel Web Components guide
+
 ## Design Principles
 
-This interface follows Dieter Rams' ten principles of good design:
-
-1. **Innovative** - Uses modern React patterns and clean architecture
-2. **Useful** - Focused on essential functionality for display management
-3. **Aesthetic** - Minimal, clean visual design with purposeful typography
-4. **Understandable** - Clear navigation and intuitive user flows
-5. **Unobtrusive** - Interface stays out of the way, content-focused
-6. **Honest** - Direct representation of system state and capabilities
-7. **Long-lasting** - Timeless design that won't feel outdated
-8. **Thorough** - Attention to detail in spacing, typography, and interactions
-9. **Environmentally friendly** - Efficient code, minimal resource usage
-10. **As little design as possible** - Only essential UI elements, maximum clarity
+This interface follows Dieter Rams' ten principles of good design, focusing on minimal, functional design with purposeful typography and clean interactions.
 
 ## Technology Stack
 
@@ -32,21 +53,6 @@ This interface follows Dieter Rams' ten principles of good design:
 - **Axios**: HTTP client for API communication
 - **Lucide React**: Minimal, consistent icons
 - **CSS Custom Properties**: Design system with consistent spacing and colors
-
-## API Configuration
-
-The application connects to the Mimir Platform API at:
-- **Development**: `http://172.31.79.107:5000/api`
-- **Documentation**: `http://172.31.79.107:5000/docs`
-
-## Available Scripts
-
-- `npm start` - Runs the app in development mode
-- `npm build` - Builds the app for production
-- `npm test` - Launches the test runner
-- `npm eject` - Ejects from Create React App (not recommended)
-
-## Project Structure
 
 ```
 src/
