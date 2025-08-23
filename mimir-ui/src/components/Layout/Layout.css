@@ -17,5 +17,7 @@
   
   .layout-main {
     padding: var(--spacing-lg);
+    padding-bottom: calc(var(--spacing-lg) + 70px); /* Account for bottom tab bar */
+    min-height: calc(100vh - 70px); /* Ensure content doesn't get cut off */
   }
 }

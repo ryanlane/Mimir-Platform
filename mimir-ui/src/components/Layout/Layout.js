@@ -1,5 +1,6 @@
 import React from 'react';
 import Navigation from './Navigation';
+import MobileNavigation from './MobileNavigation';
 import './Layout.css';
 
 const Layout = ({ children }) => {
@@ -9,6 +10,7 @@ const Layout = ({ children }) => {
       <main className="layout-main">
         {children}
       </main>
+      <MobileNavigation />
     </div>
   );
 };
