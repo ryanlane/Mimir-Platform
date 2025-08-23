@@ -3250,3 +3250,131 @@ async def generate_scene_image_for_display(scene, display_client):
         db.close()
 
     return image_info
+
+
+# =========================================================================
+# Sub-Channel Management Endpoints (v2.4+)
+# =========================================================================
+
+# Import sub-channel manager
+try:
+    from subchannel_manager import SubChannelManager
+    
+    # Initialize sub-channel manager when channels are loaded
+    subchannel_manager = None
+    
+    def initialize_subchannel_manager():
+        """Initialize sub-channel manager with loaded channels"""
+        global subchannel_manager
+        if channel_discovery and hasattr(channel_discovery, 'loaded_channels'):
+            # Create registry of channel instances
+            channel_registry = {}
+            for channel_id, channel_data in channel_discovery.loaded_channels.items():
+                instance = channel_discovery.get_channel_instance(channel_id)
+                if instance:
+                    channel_registry[channel_id] = instance
+            
+            subchannel_manager = SubChannelManager(channel_registry)
+            print(f"✅ SubChannelManager initialized with {len(channel_registry)} channels")
+    
+    # Initialize when channels are discovered
+    initialize_subchannel_manager()
+    
+except ImportError as e:
+    print(f"⚠️  Sub-channel functionality not available: {e}")
+    subchannel_manager = None
+
+
+@app.get("/api/channels/{channel_id}/subchannels/config")
+async def get_subchannel_config(channel_id: str):
+    """Get sub-channel configuration for a channel"""
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    return await subchannel_manager.get_subchannel_config(channel_id)
+
+
+@app.get("/api/channels/{channel_id}/subchannels")
+async def list_subchannels(channel_id: str):
+    """List all sub-channels for a channel"""
+    if not subchannel_manager:
+        return {"subChannels": []}  # Graceful fallback
+    
+    return await subchannel_manager.list_subchannels(channel_id)
+
+
+@app.get("/api/channels/{channel_id}/subchannels/{subchannel_id}")
+async def get_subchannel_details(channel_id: str, subchannel_id: str):
+    """Get details for a specific sub-channel"""
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    return await subchannel_manager.get_subchannel_details(channel_id, subchannel_id)
+
+
+@app.post("/api/channels/{channel_id}/subchannels")
+async def create_subchannel(channel_id: str, request: Request):
+    """Create a new sub-channel"""
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON data")
+    
+    return await subchannel_manager.create_subchannel(channel_id, data)
+
+
+@app.put("/api/channels/{channel_id}/subchannels/{subchannel_id}")
+async def update_subchannel(channel_id: str, subchannel_id: str, request: Request):
+    """Update an existing sub-channel"""
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON data")
+    
+    return await subchannel_manager.update_subchannel(channel_id, subchannel_id, data)
+
+
+@app.delete("/api/channels/{channel_id}/subchannels/{subchannel_id}")
+async def delete_subchannel(channel_id: str, subchannel_id: str):
+    """Delete a sub-channel"""
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    return await subchannel_manager.delete_subchannel(channel_id, subchannel_id)
+
+
+@app.post("/api/channels/{channel_id}/subchannels/{subchannel_id}/content")
+async def assign_content_to_subchannel(channel_id: str, subchannel_id: str, request: Request):
+    """Assign content to a sub-channel"""
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON data")
+    
+    return await subchannel_manager.assign_content_to_subchannel(channel_id, subchannel_id, data)
+
+
+@app.get("/api/channels/{channel_id}/subchannels/{subchannel_id}/content")
+async def get_subchannel_content(
+    channel_id: str, 
+    subchannel_id: str,
+    limit: Optional[int] = Query(None, description="Maximum number of items to return"),
+    offset: Optional[int] = Query(None, description="Number of items to skip")
+):
+    """Get content within a sub-channel"""
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    return await subchannel_manager.get_subchannel_content(channel_id, subchannel_id, limit, offset)
+
+
+# =========================================================================
