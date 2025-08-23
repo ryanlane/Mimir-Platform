@@ -7,6 +7,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import DisplayCard from './DisplayCard';
 import DisplayRegistration from './DisplayRegistration';
 import SceneAssignment from './SceneAssignment';
+import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Displays.css';
 
 // Global cache for displays data to prevent excessive API requests
@@ -357,6 +358,8 @@ const Displays = () => {
           onSuccess={handleSceneAssigned}
         />
       )}
+      
+      <DebugPanel />
     </div>
   );
 };

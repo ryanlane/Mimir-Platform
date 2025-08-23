@@ -5,6 +5,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
 import ChannelSettings from './ChannelSettings';
+import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Channels.css';
 
 // Global cache for channels data to prevent excessive API requests
@@ -407,6 +408,8 @@ const Channels = () => {
           }}
         />
       )}
+      
+      <DebugPanel />
     </div>
   );
 };
