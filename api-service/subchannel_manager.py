@@ -56,6 +56,16 @@ class SubChannelManager:
         """
         try:
             channel = self._get_channel(channel_id)
+            
+            # Check if channel supports sub-channels
+            if not channel.supports_subchannels():
+                return {
+                    "supported": False,
+                    "message": f"Channel '{channel_id}' does not support sub-channels",
+                    "subChannelTypes": [],
+                    "settings": {}
+                }
+            
             config = channel.get_subchannel_config()
             
             logger.info(f"Retrieved sub-channel config for channel '{channel_id}'")
