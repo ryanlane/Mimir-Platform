@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Plus, Edit, Trash2, Image, AlertCircle, Check } from 'lucide-react';
 import { api } from '../../services/api';
+import { GalleryManager } from '../../components/GalleryManager';
 import './SubChannelManager.css';
 
 const SubChannelManager = ({ channel, onClose }) => {
@@ -114,6 +115,15 @@ const SubChannelManager = ({ channel, onClose }) => {
         </div>
       </div>
     );
+  }
+
+  // Use enhanced Gallery Manager for photo frame channels
+  const isPhotoFrameChannel = channel.id === 'com.epaperframe.photoframe' || 
+                             channel.id === 'photo_frame' ||
+                             channel.name?.toLowerCase().includes('photo frame');
+  
+  if (isPhotoFrameChannel) {
+    return <GalleryManager channel={channel} onClose={onClose} />;
   }
 
   return (

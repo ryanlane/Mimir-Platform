@@ -100,7 +100,12 @@ export const api = {
   createSubChannel: (channelId, data) => apiClient.post(`/channels/${channelId}/subchannels`, data),
   updateSubChannel: (channelId, subChannelId, data) => apiClient.put(`/channels/${channelId}/subchannels/${subChannelId}`, data),
   deleteSubChannel: (channelId, subChannelId) => apiClient.delete(`/channels/${channelId}/subchannels/${subChannelId}`),
-  assignContentToSubChannel: (channelId, subChannelId, content) => apiClient.post(`/channels/${channelId}/subchannels/${subChannelId}/content`, content),
+  assignContentToSubChannel: (channelId, subChannelId, contentIds, action = 'add') => {
+    return apiClient.post(`/channels/${channelId}/subchannels/${subChannelId}/content`, {
+      contentIds,
+      action
+    });
+  },
   getSubChannelContent: (channelId, subChannelId) => apiClient.get(`/channels/${channelId}/subchannels/${subChannelId}/content`),
 
   // Overlays
