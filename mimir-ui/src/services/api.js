@@ -192,6 +192,35 @@ export const api = {
     return result;
   },
 
+  // New endpoints for subchannel requirements
+  getSubChannelRequirements: async (channelId) => {
+    const key = apiCache.generateKey(`/channels/${channelId}/subchannel-config`);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`🎯 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get(`/channels/${channelId}/subchannel-config`);
+    apiCache.set(key, result, CACHE_CONFIGS.SUB_CHANNEL_CONFIG.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
+
+  getAllSubChannelRequirements: async () => {
+    const key = apiCache.generateKey('/channels/subchannel-requirements');
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`🎯 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get('/channels/subchannel-requirements');
+    apiCache.set(key, result, CACHE_CONFIGS.CHANNELS.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
+
   assignContentToSubChannel: async (channelId, subChannelId, contentIds, action = 'add') => {
     const result = await apiClient.post(`/channels/${channelId}/subchannels/${subChannelId}/content`, {
       contentIds,

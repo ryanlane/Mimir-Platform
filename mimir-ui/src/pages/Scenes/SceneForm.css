@@ -183,3 +183,38 @@
     flex-direction: column;
   }
 }
+
+/* Validation errors styling */
+.validation-errors {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.validation-errors h4 {
+  margin: 0 0 var(--spacing-sm) 0;
+  color: #dc2626;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.validation-errors ul {
+  margin: 0;
+  padding-left: var(--spacing-md);
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
+.validation-errors li {
+  margin-bottom: var(--spacing-xs);
+}
+
+/* Subchannel requirement note styling */
+.subchannel-requirement-note {
+  margin-top: var(--spacing-xs);
+  font-size: 0.75rem;
+  color: #dc2626;
+  font-style: italic;
+}
