@@ -182,8 +182,8 @@ const Settings = () => {
       
       if (res.ok) {
         const data = await res.json();
-        // Accept both 'ok' and 'unhealthy' status - any response means API is reachable
-        if (data.status === 'ok') {
+        // Accept both 'ok' and 'healthy' status - any response means API is reachable
+        if (data.status === 'ok' || data.status === 'healthy') {
           setApiConnectionStatus({ success: true, message: 'API connection successful!' });
           console.log('API connection test successful - API is healthy');
         } else if (data.status === 'unhealthy') {
