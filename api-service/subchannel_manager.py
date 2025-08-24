@@ -434,34 +434,26 @@ class SubChannelManager:
             except ValueError:
                 raise HTTPException(status_code=400, detail=f"Invalid resolution format: {resolution}")
             
+            # Import os for file operations
+            import os
+            
             # Generate current image for this subchannel
-            image_data = await channel.render_image(
+            image_path = await channel.render_image(
                 resolution=(width, height),
                 orientation=orientation,
                 settings=None,  # Use gallery-specific settings
                 subchannel_id=subchannel_id
             )
             
-            # Create a temporary file to store the generated image
-            import tempfile
-            import os
+            # Read the generated image file and return its path
+            if not os.path.exists(image_path):
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Generated image file not found: {image_path}"
+                )
             
-            # Create temp directory if it doesn't exist
-            temp_dir = "/tmp/mimir_subchannel_images"
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            # Generate unique filename
-            import time
-            timestamp = int(time.time())
-            filename = f"subchannel_current_{channel_id}_{subchannel_id}_{resolution}_{timestamp}.jpg"
-            temp_path = os.path.join(temp_dir, filename)
-            
-            # Save the image data to temporary file
-            with open(temp_path, 'wb') as f:
-                f.write(image_data)
-            
-            logger.info(f"Generated current image for '{channel_id}/{subchannel_id}' at {resolution}: {temp_path}")
-            return temp_path
+            logger.info(f"Generated current image for '{channel_id}/{subchannel_id}' at {resolution}: {image_path}")
+            return image_path
             
         except HTTPException:
             raise
