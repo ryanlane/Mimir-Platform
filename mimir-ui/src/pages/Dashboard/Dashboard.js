@@ -77,7 +77,9 @@ const Dashboard = () => {
         console.log('⏰ WebSocket connected but no state received, loading via API');
         loadDashboardData();
       } else {
-        console.log('✅ Using WebSocket state, skipping API load');
+        console.log('✅ Using WebSocket state, but still loading displays via API');
+        // WebSocket doesn't provide displays, so we need to load them separately
+        loadDisplaysOnly();
       }
     }, 1000); // Give WebSocket 1 second to connect and send state
 
@@ -113,6 +115,20 @@ const Dashboard = () => {
       addToActivityLog('WebSocket connected with live state');
     }
   }, [currentState]);
+
+  const loadDisplaysOnly = async () => {
+    try {
+      console.log('🔍 Dashboard: Loading displays only...');
+      const displaysResponse = await api.getDisplays({ limit: 10 });
+      console.log('🔍 Dashboard: Displays-only API response:', displaysResponse);
+      
+      const displaysData = Array.isArray(displaysResponse.data) ? displaysResponse.data : [];
+      console.log('🔍 Dashboard: Setting displays data:', displaysData);
+      setDisplays(displaysData);
+    } catch (error) {
+      console.error('❌ Error loading displays:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
