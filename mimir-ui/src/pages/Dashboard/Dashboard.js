@@ -123,12 +123,17 @@ const Dashboard = () => {
         api.getDisplays({ limit: 10 })
       ]);
 
-      console.log('🔍 Dashboard: Displays API response:', displaysResponse);
+      console.log('🔍 Dashboard: Raw displaysResponse:', displaysResponse);
+      console.log('🔍 Dashboard: displaysResponse.data:', displaysResponse.data);
+      
       setDisplayStatus(displayResponse.data);
       setScenes(scenesResponse.data.scenes || []);
       setChannels(channelsResponse.data.channels || []);
-      setDisplays(displaysResponse.data || []);
-      console.log('🔍 Dashboard: Set displays state to:', displaysResponse.data || []);
+      
+      // Handle displays response - it should be an array directly in data
+      const displaysData = Array.isArray(displaysResponse.data) ? displaysResponse.data : [];
+      console.log('🔍 Dashboard: Processed displays data:', displaysData);
+      setDisplays(displaysData);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -156,10 +161,16 @@ const Dashboard = () => {
 
   // Helper to get connected displays that have scenes assigned
   const getConnectedDisplays = () => {
-    const connectedDisplays = displays.filter(display => 
-      (display.assigned_scene_id || display.assignedSceneId)
-    );
-    console.log('🔍 Dashboard: All displays:', displays);
+    console.log('🔍 Dashboard: getConnectedDisplays called');
+    console.log('🔍 Dashboard: displays array length:', displays.length);
+    console.log('🔍 Dashboard: displays array:', displays);
+    
+    const connectedDisplays = displays.filter(display => {
+      const hasScene = display.assigned_scene_id || display.assignedSceneId;
+      console.log(`🔍 Display ${display.name || display.id}: assigned_scene_id=${display.assigned_scene_id}, assignedSceneId=${display.assignedSceneId}, hasScene=${hasScene}`);
+      return hasScene;
+    });
+    
     console.log('🔍 Dashboard: Connected displays with scenes:', connectedDisplays);
     return connectedDisplays;
   };
@@ -200,6 +211,9 @@ const Dashboard = () => {
             </div>
           </div>
           <div className="card-body">
+            <div className="debug-info" style={{fontSize: '0.75rem', color: '#666', marginBottom: '1rem'}}>
+              Debug: Total displays: {displays.length}, Connected: {getConnectedDisplays().length}
+            </div>
             {getConnectedDisplays().length > 0 ? (
               <div className="displays-list">
                 {getConnectedDisplays().map((display) => (
