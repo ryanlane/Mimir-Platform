@@ -44,15 +44,16 @@ class SubChannelManager:
     # Sub-Channel Configuration
     # =========================================================================
     
-    async def get_subchannel_config(self, channel_id: str) -> Dict[str, Any]:
+    async def get_subchannel_config(self, channel_id: str, include_subchannels: bool = False) -> Dict[str, Any]:
         """
         Get sub-channel configuration for a channel
         
         Args:
             channel_id: ID of channel
+            include_subchannels: Whether to include the actual subchannel list
             
         Returns:
-            Sub-channel configuration dictionary
+            Sub-channel configuration dictionary with validation requirements
         """
         try:
             channel = self._get_channel(channel_id)
@@ -61,24 +62,47 @@ class SubChannelManager:
             if not hasattr(channel, 'supports_subchannels') or not channel.supports_subchannels():
                 return {
                     "supported": False,
+                    "supports_subchannels": False,
+                    "requires_subchannel": False,
                     "message": f"Channel '{channel_id}' does not support sub-channels",
                     "subChannelTypes": [],
-                    "settings": {}
+                    "settings": {},
+                    "subchannels": [] if include_subchannels else None
                 }
             
             # Check if channel has the get_subchannel_config method
             if not hasattr(channel, 'get_subchannel_config'):
                 return {
                     "supported": False,
+                    "supports_subchannels": False,
+                    "requires_subchannel": False,
                     "message": f"Channel '{channel_id}' does not implement sub-channel configuration",
                     "subChannelTypes": [],
-                    "settings": {}
+                    "settings": {},
+                    "subchannels": [] if include_subchannels else None
                 }
             
             config = channel.get_subchannel_config()
             
+            # Add validation requirements to the config
+            enhanced_config = {
+                **config,
+                "supported": True,
+                "supports_subchannels": True,
+                "requires_subchannel": True,  # For now, all supported channels require selection
+            }
+            
+            # Optionally include subchannel list
+            if include_subchannels:
+                try:
+                    subchannel_list = await self.list_subchannels(channel_id)
+                    enhanced_config["subchannels"] = subchannel_list.get("subChannels", [])
+                except Exception as e:
+                    logger.warning(f"Failed to load subchannels for {channel_id}: {e}")
+                    enhanced_config["subchannels"] = []
+            
             logger.info(f"Retrieved sub-channel config for channel '{channel_id}'")
-            return config
+            return enhanced_config
             
         except HTTPException:
             raise

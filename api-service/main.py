@@ -1173,38 +1173,6 @@ async def get_api_health():
     
     return health_status
 
-@app.get("/api/channels/{channel_id}/subchannel-config")
-async def get_channel_subchannel_config(channel_id: str):
-    """Get subchannel configuration for a channel (used by UI to determine if subchannel selection is required)"""
-    try:
-        channel_instance = channel_discovery.get_channel_instance(channel_id)
-        if not channel_instance:
-            raise HTTPException(status_code=404, detail="Channel not found")
-        
-        # Check if channel supports subchannels
-        supports_subchannels = hasattr(channel_instance, 'supports_subchannels') and channel_instance.supports_subchannels()
-        
-        if not supports_subchannels:
-            return {
-                "supports_subchannels": False,
-                "requires_subchannel": False,
-                "subchannels": []
-            }
-        
-        # Get subchannel configuration
-        subchannel_config = channel_instance.get_subchannel_config()
-        subchannels = channel_instance.get_subchannels()
-        
-        return {
-            "supports_subchannels": True,
-            "requires_subchannel": True,  # If channel supports subchannels, we require selection
-            "subchannel_config": subchannel_config,
-            "subchannels": subchannels
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting channel subchannel config: {str(e)}")
-
 # Channels
 @app.get("/api/channels")
 async def list_channels(
@@ -1237,47 +1205,6 @@ async def list_channels(
         "channels": result,
         "meta": PaginationMeta(total=total, limit=limit, offset=offset)
     }
-
-@app.get("/api/channels/subchannel-requirements")
-async def get_channels_subchannel_requirements():
-    """Get all channels with their subchannel requirements (useful for UI scene creation)"""
-    try:
-        channel_requirements = []
-        
-        if hasattr(channel_discovery, 'loaded_channels'):
-            for channel_id, channel_data in channel_discovery.loaded_channels.items():
-                instance = channel_discovery.get_channel_instance(channel_id)
-                if instance:
-                    supports_subchannels = hasattr(instance, 'supports_subchannels') and instance.supports_subchannels()
-                    
-                    channel_info = {
-                        "channel_id": channel_id,
-                        "name": channel_data.get('config', {}).get('name', channel_id),
-                        "supports_subchannels": supports_subchannels,
-                        "requires_subchannel": supports_subchannels,  # If supports, then requires
-                        "subchannels": []
-                    }
-                    
-                    if supports_subchannels:
-                        try:
-                            subchannels = instance.get_subchannels()
-                            channel_info["subchannels"] = [
-                                {
-                                    "id": sc["id"], 
-                                    "name": sc["name"],
-                                    "description": sc.get("description", "")
-                                } 
-                                for sc in subchannels
-                            ]
-                        except Exception as e:
-                            print(f"Error getting subchannels for {channel_id}: {e}")
-                    
-                    channel_requirements.append(channel_info)
-        
-        return {"channels": channel_requirements}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting channel subchannel requirements: {str(e)}")
 
 @app.get("/api/channels/{channel_id}/config")
 async def get_channel_config(channel_id: str, db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
@@ -3584,12 +3511,21 @@ async def generate_scene_image_for_display(scene, display_client):
 # =========================================================================
 
 @app.get("/api/channels/{channel_id}/subchannels/config")
-async def get_subchannel_config(channel_id: str):
-    """Get sub-channel configuration for a channel"""
+async def get_subchannel_config(channel_id: str, include_subchannels: bool = False):
+    """
+    Get sub-channel configuration for a channel
+    
+    Args:
+        channel_id: Channel ID
+        include_subchannels: Whether to include the actual subchannel list (default: False)
+    
+    Returns:
+        Configuration with validation requirements and optionally subchannel list
+    """
     if not subchannel_manager:
         raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
     
-    return await subchannel_manager.get_subchannel_config(channel_id)
+    return await subchannel_manager.get_subchannel_config(channel_id, include_subchannels)
 
 
 @app.get("/api/channels/{channel_id}/subchannels")
