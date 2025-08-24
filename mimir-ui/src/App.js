@@ -7,6 +7,7 @@ import Channels from './pages/Channels/Channels';
 import Settings from './pages/Settings/Settings';
 import Displays from './pages/Displays/Displays';
 import { ErrorBoundary, useToast, ToastContainer, NetworkStatus } from './components/ErrorHandling/ErrorHandling';
+import CacheDebug from './utils/cacheDebug';
 import './App.css';
 
 function AppContent() {
@@ -14,6 +15,16 @@ function AppContent() {
 
   // Provide toast context to the whole app
   React.createContext(toast);
+
+  // Enable cache debugging in development
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      CacheDebug.showVisualIndicator();
+      console.log('🚀 Sub-Channels Performance System Loaded');
+      console.log('🔍 Use CacheDebug.testCachePerformance() to test API caching');
+      console.log('🎨 Use CacheDebug.testSubChannelCache() to test sub-channel caching');
+    }
+  }, []);
 
   return (
     <>
