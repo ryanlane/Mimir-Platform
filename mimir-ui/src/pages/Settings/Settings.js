@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings as SettingsIcon, Monitor, RefreshCw, Square, Volume2, VolumeX, AlertTriangle, Database, ChevronDown, ChevronUp } from 'lucide-react';
+import { Settings as SettingsIcon, Monitor, RefreshCw, Square, Volume2, VolumeX, AlertTriangle, Database } from 'lucide-react';
 import { api } from '../../services/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { logger } from '../../utils/logger';
 import './Settings.css';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
+import DisplayClientManager from '../../components/Settings/DisplayClientManager';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 
 const Settings = () => {
@@ -35,7 +36,6 @@ const Settings = () => {
   const [resetResults, setResetResults] = useState(null);
   const [orphanedChannels, setOrphanedChannels] = useState(null);
   const [checkingOrphaned, setCheckingOrphaned] = useState(false);
-  const [adminCollapsed, setAdminCollapsed] = useState(true); // Collapsed by default
 
   const loadDisplayStatus = useCallback(async () => {
     try {
@@ -316,6 +316,7 @@ const Settings = () => {
       </div>
       {/* WebSocket Status Component */}
       <WebSocketStatus />
+      <DisplayClientManager />
 
       {/* Mobile Connection Guide */}
       <MobileConnectionGuide />
@@ -541,43 +542,12 @@ const Settings = () => {
           </div>
         </div>
 
-        {/* API Base URL Configuration */}
-        <div className="settings-card">
-          <div className="card-header">
-            <h3 className="card-title">API Base URL</h3>
-          </div>
-          <div className="card-body">
-            <div className="form-group">
-              <label htmlFor="api-base-url">API Base URL</label>
-              <input
-                type="text"
-                id="api-base-url"
-                value={apiBaseUrl}
-                onChange={e => setApiBaseUrl(e.target.value)}
-                placeholder="http://localhost:5000"
-                className="form-control"
-              />
-              <button className="btn btn-outline" type="button" onClick={testApiConnection} disabled={testingApi} style={{marginTop: '0.5rem'}}>
-                {testingApi ? 'Testing...' : 'Test Connection'}
-              </button>
-              {apiConnectionStatus === 'success' && (
-                <span style={{color: 'var(--color-success)', marginLeft: '1rem'}}>✔ Connected</span>
-              )}
-              {apiConnectionStatus === 'error' && (
-                <span style={{color: 'var(--color-error)', marginLeft: '1rem'}}>✖ Connection Failed</span>
-              )}
-              <small className="form-help">Change the API server address for all requests.</small>
-            </div>
-          </div>
-        </div>
-
         {/* Admin Operations */}
         <div className="settings-card">
-          <div className="card-header" style={{ cursor: 'pointer' }} onClick={() => setAdminCollapsed(!adminCollapsed)}>
+          <div className="card-header">
             <div className="flex items-center gap-sm">
               <Database size={20} />
               <h3 className="card-title">Admin Operations</h3>
-              {adminCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </div>
             <div className="warning-badge">
               <AlertTriangle size={16} />
@@ -585,8 +555,7 @@ const Settings = () => {
             </div>
           </div>
           
-          {!adminCollapsed && (
-            <div className="card-body">
+          <div className="card-body">
             <div className="admin-section">
               <div className="admin-operation">
                 <div className="operation-info">
@@ -774,7 +743,6 @@ const Settings = () => {
               )}
             </div>
           </div>
-          )}
         </div>
 
         {/* System Information */}
