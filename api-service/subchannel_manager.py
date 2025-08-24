@@ -16,14 +16,16 @@ class SubChannelManager:
     Manages sub-channel operations across all channels
     """
     
-    def __init__(self, channel_registry: Dict[str, BaseChannel]):
+    def __init__(self, channel_registry: Dict[str, BaseChannel], channel_discovery_module=None):
         """
         Initialize with channel registry
         
         Args:
             channel_registry: Dictionary mapping channel_id -> channel instance
+            channel_discovery_module: Channel discovery module for getting channel paths
         """
         self.channel_registry = channel_registry
+        self.channel_discovery = channel_discovery_module
     
     def _get_channel(self, channel_id: str) -> BaseChannel:
         """Get channel instance, raising HTTPException if not found"""
@@ -390,3 +392,78 @@ class SubChannelManager:
         except Exception as e:
             logger.error(f"Error getting content for '{channel_id}/{subchannel_id}': {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get sub-channel content: {str(e)}")
+
+    async def get_subchannel_current_image_path(self, channel_id: str, subchannel_id: str, resolution: str = "800x600") -> str:
+        """
+        Get the file path for a subchannel's current image
+        
+        Args:
+            channel_id: ID of channel
+            subchannel_id: ID of sub-channel (e.g., gallery)
+            resolution: Image resolution (e.g., "800x600")
+            
+        Returns:
+            Absolute path to the current image file
+            
+        Raises:
+            HTTPException: If channel/subchannel not found or doesn't support current images
+        """
+        try:
+            channel = self._get_channel(channel_id)
+            self._ensure_subchannels_supported(channel, channel_id)
+            
+            # Verify subchannel exists
+            subchannels = channel.get_subchannels()
+            if not any(sc["id"] == subchannel_id for sc in subchannels):
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Sub-channel '{subchannel_id}' not found in channel '{channel_id}'"
+                )
+            
+            # Check if channel has a method to generate current images for subchannels
+            if not hasattr(channel, 'render_image_for_resolution'):
+                raise HTTPException(
+                    status_code=501,
+                    detail=f"Channel '{channel_id}' does not support subchannel current images"
+                )
+            
+            # Parse resolution
+            try:
+                width, height = map(int, resolution.split('x'))
+                orientation = "landscape" if width > height else "portrait"
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid resolution format: {resolution}")
+            
+            # Generate current image for this subchannel
+            await channel.render_image_for_resolution(
+                resolution=(width, height),
+                orientation=orientation,
+                settings=None,  # Use gallery-specific settings
+                subchannel_id=subchannel_id
+            )
+            
+            # Construct path to the generated image
+            if not self.channel_discovery:
+                raise HTTPException(status_code=500, detail="Channel discovery not available")
+                
+            channel_data = self.channel_discovery.loaded_channels.get(channel_id)
+            if not channel_data:
+                raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
+            
+            channel_path = channel_data['path']
+            current_image_path = channel_path / "current" / resolution / "current.jpg"
+            
+            if not current_image_path.exists():
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Current image not found for subchannel '{subchannel_id}' at resolution {resolution}"
+                )
+            
+            logger.info(f"Retrieved current image path for '{channel_id}/{subchannel_id}' at {resolution}")
+            return str(current_image_path)
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting current image for '{channel_id}/{subchannel_id}': {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get subchannel current image: {str(e)}")

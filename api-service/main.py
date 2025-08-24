@@ -890,7 +890,7 @@ try:
                 if instance:
                     channel_registry[channel_id] = instance
             
-            subchannel_manager = SubChannelManager(channel_registry)
+            subchannel_manager = SubChannelManager(channel_registry, channel_discovery)
             print(f"✅ SubChannelManager initialized with {len(channel_registry)} channels")
             return True
         return False
@@ -3609,6 +3609,64 @@ async def get_subchannel_content(
         raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
     
     return await subchannel_manager.get_subchannel_content(channel_id, subchannel_id, limit, offset)
+
+
+@app.get("/api/channels/{channel_id}/subchannels/{subchannel_id}/current.jpg")
+async def get_subchannel_current_image(
+    channel_id: str, 
+    subchannel_id: str,
+    resolution: str = Query("800x600", description="Image resolution (e.g., '800x600')")
+):
+    """
+    Serve the current image for a specific subchannel (e.g., gallery)
+    
+    Args:
+        channel_id: Channel ID
+        subchannel_id: Subchannel ID (e.g., gallery ID)
+        resolution: Image resolution in format 'WIDTHxHEIGHT'
+    
+    Returns:
+        Current image file for the specified subchannel
+    """
+    if not subchannel_manager:
+        raise HTTPException(status_code=501, detail="Sub-channel functionality not available")
+    
+    try:
+        # Get the current image path for this subchannel
+        image_path = await subchannel_manager.get_subchannel_current_image_path(
+            channel_id, subchannel_id, resolution
+        )
+        
+        # Determine MIME type based on file extension
+        from pathlib import Path
+        file_extension = Path(image_path).suffix.lower()
+        if file_extension in ['.jpg', '.jpeg']:
+            media_type = "image/jpeg"
+        elif file_extension == '.png':
+            media_type = "image/png"
+        elif file_extension == '.gif':
+            media_type = "image/gif"
+        elif file_extension == '.webp':
+            media_type = "image/webp"
+        else:
+            media_type = "image/jpeg"  # Default fallback
+        
+        # Return the file with correct headers for inline display
+        return FileResponse(
+            path=image_path,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": "inline",  # Display in browser, don't force download
+                "Cache-Control": "public, max-age=300",  # Cache for 5 minutes
+                "X-Subchannel-ID": subchannel_id,  # Custom header for debugging
+                "X-Resolution": resolution,
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error serving subchannel current image: {str(e)}")
 
 
 # =========================================================================
