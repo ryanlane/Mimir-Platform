@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, JSON, ForeignKey, text
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from pydantic import BaseModel, Field
@@ -1110,7 +1110,7 @@ async def get_api_health():
     db = SessionLocal()
     try:
         # Test database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_healthy = True
         db_error = None
     except Exception as e:
