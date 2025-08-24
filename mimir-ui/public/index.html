@@ -46,7 +46,7 @@
         
         // Test network connectivity
         window.mimirDebug.testConnection = function(url) {
-          const testUrl = url || (window.location.protocol + '//' + window.location.hostname + ':5000/health');
+          const testUrl = url || (window.location.protocol + '//' + window.location.hostname + ':5000/api/health');
           console.log('🔍 Testing connection to:', testUrl);
           
           return fetch(testUrl, { 

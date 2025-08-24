@@ -184,24 +184,6 @@ const Dashboard = () => {
     }
   };
 
-  // Helper to manually test the displays API
-  const testDisplaysAPI = async () => {
-    try {
-      console.log('🧪 Testing displays API directly...');
-      console.log('🧪 Current API base URL:', window.location.hostname);
-      const response = await api.getDisplays();
-      console.log('🧪 Direct API test response:', response);
-      console.log('🧪 Direct API test response.data:', response.data);
-      
-      // Also test a simple fetch to compare
-      const fetchResponse = await fetch(`http://${window.location.hostname}:5000/api/displays`);
-      const fetchData = await fetchResponse.json();
-      console.log('🧪 Direct fetch response:', fetchData);
-    } catch (error) {
-      console.error('🧪 Direct API test failed:', error);
-    }
-  };
-
   // Helper to count displays connected to a scene
   const getDisplaysConnectedToScene = (sceneId) => {
     return displays.filter(display => 
@@ -262,15 +244,6 @@ const Dashboard = () => {
             </div>
           </div>
           <div className="card-body">
-            <div className="debug-info" style={{fontSize: '0.75rem', color: '#666', marginBottom: '1rem'}}>
-              Debug: Total displays: {displays.length}, Connected: {getConnectedDisplays().length}
-              <button 
-                onClick={testDisplaysAPI} 
-                style={{marginLeft: '1rem', fontSize: '0.75rem', padding: '2px 8px'}}
-              >
-                Test API
-              </button>
-            </div>
             {getConnectedDisplays().length > 0 ? (
               <div className="displays-list">
                 {getConnectedDisplays().map((display) => (
