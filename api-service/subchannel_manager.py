@@ -421,7 +421,7 @@ class SubChannelManager:
                 )
             
             # Check if channel has a method to generate current images for subchannels
-            if not hasattr(channel, 'render_image_for_resolution'):
+            if not hasattr(channel, 'render_image'):
                 raise HTTPException(
                     status_code=501,
                     detail=f"Channel '{channel_id}' does not support subchannel current images"
@@ -435,32 +435,33 @@ class SubChannelManager:
                 raise HTTPException(status_code=400, detail=f"Invalid resolution format: {resolution}")
             
             # Generate current image for this subchannel
-            await channel.render_image_for_resolution(
+            image_data = await channel.render_image(
                 resolution=(width, height),
                 orientation=orientation,
                 settings=None,  # Use gallery-specific settings
                 subchannel_id=subchannel_id
             )
             
-            # Construct path to the generated image
-            if not self.channel_discovery:
-                raise HTTPException(status_code=500, detail="Channel discovery not available")
-                
-            channel_data = self.channel_discovery.loaded_channels.get(channel_id)
-            if not channel_data:
-                raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
+            # Create a temporary file to store the generated image
+            import tempfile
+            import os
             
-            channel_path = channel_data['path']
-            current_image_path = channel_path / "current" / resolution / "current.jpg"
+            # Create temp directory if it doesn't exist
+            temp_dir = "/tmp/mimir_subchannel_images"
+            os.makedirs(temp_dir, exist_ok=True)
             
-            if not current_image_path.exists():
-                raise HTTPException(
-                    status_code=404, 
-                    detail=f"Current image not found for subchannel '{subchannel_id}' at resolution {resolution}"
-                )
+            # Generate unique filename
+            import time
+            timestamp = int(time.time())
+            filename = f"subchannel_current_{channel_id}_{subchannel_id}_{resolution}_{timestamp}.jpg"
+            temp_path = os.path.join(temp_dir, filename)
             
-            logger.info(f"Retrieved current image path for '{channel_id}/{subchannel_id}' at {resolution}")
-            return str(current_image_path)
+            # Save the image data to temporary file
+            with open(temp_path, 'wb') as f:
+                f.write(image_data)
+            
+            logger.info(f"Generated current image for '{channel_id}/{subchannel_id}' at {resolution}: {temp_path}")
+            return temp_path
             
         except HTTPException:
             raise
