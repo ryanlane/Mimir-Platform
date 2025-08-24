@@ -143,23 +143,6 @@ const Scenes = () => {
     console.log('🎯 Full displayStatus:', displayStatus);
   }, [displayStatus]);
 
-  const getChannelThumbnail = (channelId) => {
-    const channel = channels.find(c => c.id === channelId);
-    if (!channel) return null;
-    
-    // For photo frame channels, try to get the current image
-    if (channel.id === 'com.epaperframe.photoframe' || channel.name?.toLowerCase().includes('photo')) {
-      return api.getChannelImageUrl(channelId, 'image');
-    }
-    
-    // For other channels, check if they have a thumbnail or current image endpoint
-    if (channel.config?.current_image) {
-      return api.getChannelImageUrl(channelId, channel.config.current_image);
-    }
-    
-    return null;
-  };
-
   const handleCreateScene = () => {
     setEditingScene(null);
     setShowForm(true);
@@ -234,75 +217,16 @@ const Scenes = () => {
       {scenes.length > 0 ? (
         <div className="scenes-grid">
           {scenes.map((scene) => {
-            // Get thumbnail from first channel if available
-            const firstChannelAssignment = scene.channels && scene.channels.length > 0 
-              ? scene.channels[0] 
-              : null;
-            
-            // Handle both old format (string) and new format (object)
-            const firstChannelId = firstChannelAssignment 
-              ? (typeof firstChannelAssignment === 'string' 
-                  ? firstChannelAssignment 
-                  : firstChannelAssignment.channel_id)
-              : null;
-              
-            const thumbnailUrl = firstChannelId ? getChannelThumbnail(firstChannelId) : null;
-              
             return (
               <div key={scene.id} className="scene-card">
                 <div className="scene-card-header">
-                  <div className="scene-title-container">
-                    <h3>{scene.name}</h3>
-                  </div>
-                  <div className="scene-actions">
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => handleEditScene(scene)}
-                    >
-                      <Edit size={16} />
-                    </button>
-                    <button
-                      className="btn btn-sm btn-error"
-                      onClick={() => handleDeleteScene(scene.id)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                  <h3>{scene.name}</h3>
                 </div>
 
                 <div className="scene-card-body">
-                  {thumbnailUrl && (
-                    <div className="scene-thumbnail">
-                      <img 
-                        src={thumbnailUrl} 
-                        alt={`${scene.name} preview`}
-                        onError={(e) => e.target.style.display = 'none'}
-                      />
-                    </div>
-                  )}
-                  
-                  <div className="scene-info">
-                    <div className="info-item">
-                      <span>Channels:</span>
-                      <span>{scene.channels?.length || 0}</span>
-                    </div>
-                    <div className="info-item">
-                      <span>Overlays:</span>
-                      <span>{scene.overlay?.overlays?.length || 0}</span>
-                    </div>
-                    {scene.schedule && (
-                      <div className="info-item">
-                        <span>Schedule:</span>
-                        <span>
-                          {scene.schedule.start} - {scene.schedule.end}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
                   {scene.channels && scene.channels.length > 0 && (
                     <div className="scene-channels">
-                      <h4>Channels:</h4>
+                      <span className="channels-label">Channels:</span>
                       <div className="channel-tags">
                         {scene.channels.map((channelAssignment, index) => {
                           // Handle both old format (string) and new format (object)
@@ -334,11 +258,25 @@ const Scenes = () => {
 
                 <div className="scene-card-footer">
                   <button
-                    className="btn btn-primary"
+                    className="btn btn-sm btn-accent"
                     onClick={() => handleDisplayScene(scene.id)}
                   >
                     <Monitor size={16} />
-                    Display Now
+                    Display
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => handleEditScene(scene)}
+                  >
+                    <Edit size={16} />
+                    Edit
+                  </button>
+                  <button
+                    className="btn btn-sm btn-error"
+                    onClick={() => handleDeleteScene(scene.id)}
+                  >
+                    <Trash2 size={16} />
+                    Delete
                   </button>
                 </div>
               </div>
