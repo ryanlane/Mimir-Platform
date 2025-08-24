@@ -13,6 +13,9 @@ const Scenes = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingScene, setEditingScene] = useState(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [currentImageData, setCurrentImageData] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
   // Initialize WebSocket connection with automatic state sync on mount
   const { isConnected, currentState, requestStateSync } = useEnsureFreshState();
@@ -166,9 +169,51 @@ const Scenes = () => {
 
   const handleDisplayScene = async (sceneId) => {
     try {
-      await api.displayScene(sceneId);
+      setImageLoading(true);
+      
+      // First, get displays to find one with this scene assigned
+      const displaysResponse = await api.getDisplays();
+      const displays = Array.isArray(displaysResponse.data) ? displaysResponse.data : [];
+      
+      // Find a display that has this scene assigned
+      const displayWithScene = displays.find(display => 
+        display.assigned_scene_id === sceneId
+      );
+      
+      if (!displayWithScene) {
+        // If no display has this scene, let's try to get the first channel's image directly
+        const scene = scenes.find(s => s.id === sceneId);
+        if (scene?.channels && scene.channels.length > 0) {
+          const firstChannel = scene.channels[0];
+          const channelId = typeof firstChannel === 'string' ? firstChannel : firstChannel.channel_id;
+          
+          // Try to get channel image
+          const baseUrl = window.location.protocol + '//' + window.location.hostname + ':5000';
+          const imageUrl = `${baseUrl}/api/channels/${channelId}/current/800x480/current.jpg`;
+          setCurrentImageData({
+            scene_name: scene.name,
+            scene_id: sceneId,
+            image_url: imageUrl,
+            channels: [channelId],
+            source: 'channel'
+          });
+          setShowImageModal(true);
+        } else {
+          alert('No displays are assigned to this scene and no channels found to preview.');
+        }
+        return;
+      }
+      
+      // Get the current image for this display
+      const imageResponse = await api.getDisplayImage(displayWithScene.id);
+      setCurrentImageData(imageResponse.data);
+      setShowImageModal(true);
+      
     } catch (error) {
-      console.error('Error displaying scene:', error);
+      console.error('Error getting scene image:', error);
+      alert('Could not load scene image. Scene may not be assigned to any display.');
+    } finally {
+      setImageLoading(false);
     }
   };
 
@@ -260,9 +305,10 @@ const Scenes = () => {
                   <button
                     className="btn btn-sm btn-accent"
                     onClick={() => handleDisplayScene(scene.id)}
+                    disabled={imageLoading}
                   >
                     <Monitor size={16} />
-                    Display
+                    {imageLoading ? 'Loading...' : 'Display'}
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -303,6 +349,51 @@ const Scenes = () => {
           overlays={overlays}
           onClose={handleFormClose}
         />
+      )}
+
+      {showImageModal && currentImageData && (
+        <div className="modal-overlay" onClick={() => setShowImageModal(false)}>
+          <div className="image-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Scene Preview: {currentImageData.scene_name}</h3>
+              <button 
+                className="btn btn-sm btn-secondary"
+                onClick={() => setShowImageModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="scene-image-container">
+                <img 
+                  src={currentImageData.image_url} 
+                  alt={`Preview of ${currentImageData.scene_name}`}
+                  className="scene-preview-image"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
+                />
+                <div className="image-error" style={{ display: 'none' }}>
+                  <p>Image preview not available</p>
+                  <p className="text-tertiary">The scene may not have generated content yet.</p>
+                </div>
+              </div>
+              <div className="scene-details">
+                <p><strong>Scene ID:</strong> {currentImageData.scene_id}</p>
+                {currentImageData.channels && (
+                  <p><strong>Channels:</strong> {currentImageData.channels.join(', ')}</p>
+                )}
+                {currentImageData.resolution && (
+                  <p><strong>Resolution:</strong> {currentImageData.resolution.join(' × ')}</p>
+                )}
+                {currentImageData.generated_at && (
+                  <p><strong>Generated:</strong> {new Date(currentImageData.generated_at).toLocaleString()}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
