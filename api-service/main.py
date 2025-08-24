@@ -1173,6 +1173,38 @@ async def get_api_health():
     
     return health_status
 
+@app.get("/api/channels/{channel_id}/subchannel-config")
+async def get_channel_subchannel_config(channel_id: str):
+    """Get subchannel configuration for a channel (used by UI to determine if subchannel selection is required)"""
+    try:
+        channel_instance = channel_discovery.get_channel_instance(channel_id)
+        if not channel_instance:
+            raise HTTPException(status_code=404, detail="Channel not found")
+        
+        # Check if channel supports subchannels
+        supports_subchannels = hasattr(channel_instance, 'supports_subchannels') and channel_instance.supports_subchannels()
+        
+        if not supports_subchannels:
+            return {
+                "supports_subchannels": False,
+                "requires_subchannel": False,
+                "subchannels": []
+            }
+        
+        # Get subchannel configuration
+        subchannel_config = channel_instance.get_subchannel_config()
+        subchannels = channel_instance.get_subchannels()
+        
+        return {
+            "supports_subchannels": True,
+            "requires_subchannel": True,  # If channel supports subchannels, we require selection
+            "subchannel_config": subchannel_config,
+            "subchannels": subchannels
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting channel subchannel config: {str(e)}")
+
 # Channels
 @app.get("/api/channels")
 async def list_channels(
@@ -1205,6 +1237,47 @@ async def list_channels(
         "channels": result,
         "meta": PaginationMeta(total=total, limit=limit, offset=offset)
     }
+
+@app.get("/api/channels/subchannel-requirements")
+async def get_channels_subchannel_requirements():
+    """Get all channels with their subchannel requirements (useful for UI scene creation)"""
+    try:
+        channel_requirements = []
+        
+        if hasattr(channel_discovery, 'loaded_channels'):
+            for channel_id, channel_data in channel_discovery.loaded_channels.items():
+                instance = channel_discovery.get_channel_instance(channel_id)
+                if instance:
+                    supports_subchannels = hasattr(instance, 'supports_subchannels') and instance.supports_subchannels()
+                    
+                    channel_info = {
+                        "channel_id": channel_id,
+                        "name": channel_data.get('config', {}).get('name', channel_id),
+                        "supports_subchannels": supports_subchannels,
+                        "requires_subchannel": supports_subchannels,  # If supports, then requires
+                        "subchannels": []
+                    }
+                    
+                    if supports_subchannels:
+                        try:
+                            subchannels = instance.get_subchannels()
+                            channel_info["subchannels"] = [
+                                {
+                                    "id": sc["id"], 
+                                    "name": sc["name"],
+                                    "description": sc.get("description", "")
+                                } 
+                                for sc in subchannels
+                            ]
+                        except Exception as e:
+                            print(f"Error getting subchannels for {channel_id}: {e}")
+                    
+                    channel_requirements.append(channel_info)
+        
+        return {"channels": channel_requirements}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting channel subchannel requirements: {str(e)}")
 
 @app.get("/api/channels/{channel_id}/config")
 async def get_channel_config(channel_id: str, db: Session = Depends(get_db), _: dict = Depends(check_rate_limit)):
@@ -2206,8 +2279,61 @@ async def list_scenes(
         "meta": PaginationMeta(total=total, limit=limit, offset=offset)
     }
 
+def validate_scene_channel_assignments(channel_assignments: List[ChannelAssignment]) -> List[str]:
+    """
+    Validate scene channel assignments for subchannel requirements.
+    
+    Returns list of validation errors. Empty list means validation passed.
+    """
+    errors = []
+    
+    for assignment in channel_assignments:
+        channel_id = assignment.channel_id
+        subchannel_id = assignment.subchannel_id
+        
+        # Get channel instance to check if it supports subchannels
+        try:
+            channel_instance = channel_discovery.get_channel_instance(channel_id)
+            if not channel_instance:
+                errors.append(f"Channel '{channel_id}' not found or not loaded")
+                continue
+            
+            # Check if channel supports subchannels
+            supports_subchannels = hasattr(channel_instance, 'supports_subchannels') and channel_instance.supports_subchannels()
+            
+            if supports_subchannels and not subchannel_id:
+                # This channel requires a subchannel but none was provided
+                errors.append(f"Channel '{channel_id}' supports subchannels and requires a subchannel to be selected")
+            elif not supports_subchannels and subchannel_id:
+                # This channel doesn't support subchannels but one was provided
+                errors.append(f"Channel '{channel_id}' does not support subchannels, but subchannel '{subchannel_id}' was specified")
+            elif supports_subchannels and subchannel_id:
+                # Validate that the specified subchannel exists
+                try:
+                    subchannels = channel_instance.get_subchannels()
+                    valid_subchannel_ids = [sc['id'] for sc in subchannels]
+                    if subchannel_id not in valid_subchannel_ids:
+                        errors.append(f"Subchannel '{subchannel_id}' not found in channel '{channel_id}'. Available subchannels: {', '.join(valid_subchannel_ids)}")
+                except Exception as e:
+                    errors.append(f"Error validating subchannel '{subchannel_id}' for channel '{channel_id}': {str(e)}")
+                    
+        except Exception as e:
+            errors.append(f"Error validating channel '{channel_id}': {str(e)}")
+    
+    return errors
+
 @app.post("/api/scenes")
 async def create_scene(scene_data: SceneCreateRequest, db: Session = Depends(get_db)):
+    # Validate channel assignments for subchannel requirements
+    validation_errors = validate_scene_channel_assignments(scene_data.channels)
+    if validation_errors:
+        raise HTTPException(
+            status_code=400, 
+            detail={
+                "message": "Scene validation failed",
+                "errors": validation_errors
+            }
+        )
     # Generate ID from name
     scene_id = scene_data.name.lower().replace(" ", "-")
     
@@ -2292,6 +2418,17 @@ async def update_scene(
     scene_data: SceneCreateRequest, 
     db: Session = Depends(get_db)
 ):
+    # Validate channel assignments for subchannel requirements
+    validation_errors = validate_scene_channel_assignments(scene_data.channels)
+    if validation_errors:
+        raise HTTPException(
+            status_code=400, 
+            detail={
+                "message": "Scene validation failed",
+                "errors": validation_errors
+            }
+        )
+        
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
