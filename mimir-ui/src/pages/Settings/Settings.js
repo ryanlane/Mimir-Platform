@@ -123,22 +123,27 @@ const Settings = () => {
   };
 
   const testWebSocketConnection = () => {
-    if (!wsBaseUrl) {
+    if (!wsBaseUrl || !wsBaseUrl.trim()) {
+      setApiConnectionStatus({ success: false, error: 'WebSocket URL is required' });
       return;
     }
 
     setTestingWs(true);
+    console.log('Testing WebSocket connection to:', `${wsBaseUrl}/ws`);
+    
     try {
       const testWs = new WebSocket(`${wsBaseUrl}/ws`);
       
       testWs.onopen = () => {
         setApiConnectionStatus({ success: true, message: 'WebSocket connection successful!' });
+        console.log('WebSocket connection test successful');
         testWs.close();
         setTestingWs(false);
       };
       
-      testWs.onerror = () => {
+      testWs.onerror = (error) => {
         setApiConnectionStatus({ success: false, error: 'WebSocket connection failed' });
+        console.log('WebSocket connection test failed:', error);
         setTestingWs(false);
       };
       
@@ -151,11 +156,13 @@ const Settings = () => {
         if (testWs.readyState === WebSocket.CONNECTING) {
           testWs.close();
           setApiConnectionStatus({ success: false, error: 'WebSocket connection timeout' });
+          console.log('WebSocket connection test timed out');
           setTestingWs(false);
         }
       }, 5000);
     } catch (error) {
       setApiConnectionStatus({ success: false, error: `WebSocket test failed: ${error.message}` });
+      console.log('WebSocket test failed with error:', error.message);
       setTestingWs(false);
     }
   };
@@ -202,33 +209,56 @@ const Settings = () => {
   }, [apiBaseUrl]);
 
   const testApiConnection = useCallback(async () => {
+    if (!apiBaseUrl || !apiBaseUrl.trim()) {
+      setApiConnectionStatus('error');
+      return;
+    }
+
     setTestingApi(true);
     setApiConnectionStatus(null);
     try {
       const url = `${apiBaseUrl.replace(/\/$/, '')}/api/health`;
-      const res = await fetch(url);
+      console.log('Testing API connection to:', url);
+      
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // Add timeout to prevent hanging requests
+        signal: AbortSignal.timeout(5000)
+      });
+      
       if (res.ok) {
         const data = await res.json();
         if (data.status === 'ok' && data.message === 'Mimir API service is healthy') {
           setApiConnectionStatus('success');
+          console.log('API connection test successful');
         } else {
           setApiConnectionStatus('error');
+          console.log('API responded but with unexpected data:', data);
         }
       } else {
         setApiConnectionStatus('error');
+        console.log('API connection test failed with status:', res.status);
       }
-    } catch {
+    } catch (error) {
       setApiConnectionStatus('error');
+      console.log('API connection test failed with error:', error.message);
     } finally {
       setTestingApi(false);
     }
   }, [apiBaseUrl]);
 
+  // Don't auto-test API connection on load to prevent console errors
+  // Users can manually test using the "Test Connection" button
+  /*
   useEffect(() => {
     if (apiBaseUrl) {
       testApiConnection();
     }
   }, [apiBaseUrl, testApiConnection]);
+  */
 
   // Admin Operations Handlers
   const handleCheckOrphanedChannels = async () => {
