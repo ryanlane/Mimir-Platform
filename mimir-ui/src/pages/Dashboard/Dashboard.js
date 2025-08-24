@@ -116,13 +116,29 @@ const Dashboard = () => {
 
   const loadDashboardData = async () => {
     try {
+      console.log('🔍 Dashboard: Starting API calls...');
+      
       const [displayResponse, scenesResponse, channelsResponse, displaysResponse] = await Promise.all([
-        api.getDisplayStatus(),
-        api.getScenes({ limit: 5 }),
-        api.getChannels({ limit: 5 }),
-        api.getDisplays({ limit: 10 })
+        api.getDisplayStatus().catch(err => {
+          console.error('❌ getDisplayStatus failed:', err);
+          return { data: null };
+        }),
+        api.getScenes({ limit: 5 }).catch(err => {
+          console.error('❌ getScenes failed:', err);
+          return { data: { scenes: [] } };
+        }),
+        api.getChannels({ limit: 5 }).catch(err => {
+          console.error('❌ getChannels failed:', err);
+          return { data: { channels: [] } };
+        }),
+        api.getDisplays({ limit: 10 }).catch(err => {
+          console.error('❌ getDisplays failed:', err);
+          console.error('❌ getDisplays error details:', err.response || err.message || err);
+          return { data: [] };
+        })
       ]);
 
+      console.log('🔍 Dashboard: API calls completed');
       console.log('🔍 Dashboard: Raw displaysResponse:', displaysResponse);
       console.log('🔍 Dashboard: displaysResponse.data:', displaysResponse.data);
       
@@ -135,7 +151,8 @@ const Dashboard = () => {
       console.log('🔍 Dashboard: Processed displays data:', displaysData);
       setDisplays(displaysData);
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      console.error('❌ Error loading dashboard data:', error);
+      console.error('❌ Error details:', error.response || error.message || error);
     } finally {
       setLoading(false);
     }
@@ -148,6 +165,24 @@ const Dashboard = () => {
       console.log('📺 Dashboard: Display action completed');
     } catch (error) {
       console.error('Error displaying scene:', error);
+    }
+  };
+
+  // Helper to manually test the displays API
+  const testDisplaysAPI = async () => {
+    try {
+      console.log('🧪 Testing displays API directly...');
+      console.log('🧪 Current API base URL:', window.location.hostname);
+      const response = await api.getDisplays();
+      console.log('🧪 Direct API test response:', response);
+      console.log('🧪 Direct API test response.data:', response.data);
+      
+      // Also test a simple fetch to compare
+      const fetchResponse = await fetch(`http://${window.location.hostname}:5000/api/displays`);
+      const fetchData = await fetchResponse.json();
+      console.log('🧪 Direct fetch response:', fetchData);
+    } catch (error) {
+      console.error('🧪 Direct API test failed:', error);
     }
   };
 
@@ -213,6 +248,12 @@ const Dashboard = () => {
           <div className="card-body">
             <div className="debug-info" style={{fontSize: '0.75rem', color: '#666', marginBottom: '1rem'}}>
               Debug: Total displays: {displays.length}, Connected: {getConnectedDisplays().length}
+              <button 
+                onClick={testDisplaysAPI} 
+                style={{marginLeft: '1rem', fontSize: '0.75rem', padding: '2px 8px'}}
+              >
+                Test API
+              </button>
             </div>
             {getConnectedDisplays().length > 0 ? (
               <div className="displays-list">
