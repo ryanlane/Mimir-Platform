@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Monitor, Layers, Settings, Activity } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
@@ -7,6 +8,7 @@ import './Dashboard.css';
 
 const Dashboard = () => {
   const [displayStatus, setDisplayStatus] = useState(null);
+  const [displays, setDisplays] = useState([]);
   const [scenes, setScenes] = useState([]);
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +102,12 @@ const Dashboard = () => {
         console.log('🔌 Setting channels from WebSocket:', currentState.channels);
         setChannels(currentState.channels);
       }
+
+      // Update displays if provided
+      if (currentState.displays) {
+        console.log('📺 Setting displays from WebSocket:', currentState.displays);
+        setDisplays(currentState.displays);
+      }
       
       // Add activity log entry for connection
       addToActivityLog('WebSocket connected with live state');
@@ -108,42 +116,21 @@ const Dashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [displayResponse, scenesResponse, channelsResponse] = await Promise.all([
+      const [displayResponse, scenesResponse, channelsResponse, displaysResponse] = await Promise.all([
         api.getDisplayStatus(),
         api.getScenes({ limit: 5 }),
-        api.getChannels({ limit: 5 })
+        api.getChannels({ limit: 5 }),
+        api.getDisplays({ limit: 10 })
       ]);
 
       setDisplayStatus(displayResponse.data);
       setScenes(scenesResponse.data.scenes || []);
       setChannels(channelsResponse.data.channels || []);
+      setDisplays(displaysResponse.data || []);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleActivateScene = async (sceneId) => {
-    try {
-      const isCurrentlyActive = displayStatus?.currentScene === sceneId;
-      console.log(`🎬 Dashboard: handleActivateScene called for ${sceneId}, currently active: ${isCurrentlyActive}`);
-      console.log('🎬 Dashboard: Current displayStatus:', displayStatus);
-      
-      if (isCurrentlyActive) {
-        console.log('🔴 Dashboard: Deactivating scene via API');
-        await api.deactivateScene(sceneId);
-      } else {
-        console.log('🟢 Dashboard: Activating scene via API');
-        await api.activateScene(sceneId);
-      }
-      
-      // Don't reload data immediately - let WebSocket handle the state update
-      console.log('🔄 Dashboard: Scene action completed, waiting for WebSocket update');
-    } catch (error) {
-      console.error('Error toggling scene activation:', error);
-      // Fallback to reload on error
-      await loadDashboardData();
     }
   };
 
@@ -157,18 +144,20 @@ const Dashboard = () => {
     }
   };
 
-  // Helper to get update interval for the display's channel
-  const getDisplayUpdateInterval = () => {
-    if (!displayStatus?.currentScene || !channels.length) return null;
-    // Find the channel for the current scene (assumes scene.channels[0] is used)
-    const scene = scenes.find(s => s.id === displayStatus.currentScene);
-    const channelId = scene?.channels?.[0];
-    const channel = channels.find(c => c.id === channelId);
-    const settings = channel?.settings;
-    if (settings && settings.update_interval_value && settings.update_interval_unit) {
-      return `${settings.update_interval_value.value} ${settings.update_interval_unit.value}`;
-    }
-    return null;
+  // Helper to count displays connected to a scene
+  const getDisplaysConnectedToScene = (sceneId) => {
+    return displays.filter(display => 
+      display.assigned_scene_id === sceneId || 
+      display.assignedSceneId === sceneId
+    ).length;
+  };
+
+  // Helper to get connected displays that have scenes assigned
+  const getConnectedDisplays = () => {
+    return displays.filter(display => 
+      display.isOnline !== false && 
+      (display.assigned_scene_id || display.assignedSceneId)
+    );
   };
 
   if (loading) {
@@ -199,36 +188,45 @@ const Dashboard = () => {
           <div className="card-header">
             <div className="flex items-center gap-sm">
               <Monitor size={20} />
-              <h3 className="card-title">Display Status</h3>
+              <h3 className="card-title">
+                <Link to="/displays" className="display-status-header-link">
+                  Display Status
+                </Link>
+              </h3>
             </div>
           </div>
           <div className="card-body">
-            {displayStatus && (
-              <div className="display-status">
-                <div className="status-row">
-                  <span>Hardware:</span>
-                  <span className={`status-indicator ${displayStatus.hardware?.available ? 'status-success' : 'status-error'}`}>
-                    {displayStatus.hardware?.type || 'Unknown'}
-                  </span>
-                </div>
-                <div className="status-row">
-                  <span>Resolution:</span>
-                  <span>{displayStatus.resolution ? displayStatus.resolution.join(' × ') : 'Unknown'}</span>
-                </div>
-                <div className="status-row">
-                  <span>Current Scene:</span>
-                  <span>{displayStatus.currentScene || 'None'}</span>
-                </div>
-                {displayStatus.currentImage && (
-                  <div className="status-row">
-                    <span>Last Update:</span>
-                    <span>{new Date(displayStatus.currentImage.uploadedAt).toLocaleString()}</span>
+            {getConnectedDisplays().length > 0 ? (
+              <div className="displays-list">
+                {getConnectedDisplays().map((display) => (
+                  <div key={display.id} className="display-item">
+                    <div className="display-info">
+                      <h4>{display.name}</h4>
+                      <p className="text-tertiary">
+                        {display.location || 'No location set'}
+                      </p>
+                    </div>
+                    <div className="display-status">
+                      <div className="status-row">
+                        <span>Scene:</span>
+                        <span>{display.assigned_scene_name || display.assignedSceneName || 'None'}</span>
+                      </div>
+                      <div className="status-row">
+                        <span>Status:</span>
+                        <span className={`status-indicator ${display.isOnline !== false ? 'status-success' : 'status-error'}`}>
+                          {display.isOnline !== false ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                )}
-                <div className="status-row">
-                  <span>Update Interval:</span>
-                  <span>{getDisplayUpdateInterval() || 'Unknown'}</span>
-                </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <p className="text-tertiary">No displays connected to scenes</p>
+                <Link to="/displays" className="btn btn-sm btn-primary">
+                  Manage Displays
+                </Link>
               </div>
             )}
           </div>
@@ -246,26 +244,16 @@ const Dashboard = () => {
             {scenes.length > 0 ? (
               <div className="scenes-list">
                 {scenes.map((scene) => {
-                  const isActive = displayStatus?.currentScene === scene.id;
-                  console.log(`Dashboard Scene ${scene.id}: isActive=${isActive}, displayStatus.currentScene=${displayStatus?.currentScene}`);
+                  const connectedDisplays = getDisplaysConnectedToScene(scene.id);
                   return (
-                    <div key={scene.id} className={`scene-item ${isActive ? 'scene-item-active' : ''}`}>
+                    <div key={scene.id} className="scene-item">
                       <div className="scene-info">
-                        <h4>
-                          {scene.name}
-                          {isActive && <span className="active-badge">Active</span>}
-                        </h4>
+                        <h4>{scene.name}</h4>
                         <p className="text-tertiary">
-                          {scene.channels?.length || 0} channels
+                          {scene.channels?.length || 0} channels • {connectedDisplays} {connectedDisplays === 1 ? 'display' : 'displays'} connected
                         </p>
                       </div>
                       <div className="scene-actions">
-                        <button 
-                          className={`btn btn-sm ${isActive ? 'btn-warning' : 'btn-primary'}`}
-                          onClick={() => handleActivateScene(scene.id)}
-                        >
-                          {isActive ? 'Deactivate' : 'Activate'}
-                        </button>
                         <button 
                           className="btn btn-sm btn-accent"
                           onClick={() => handleDisplayScene(scene.id)}
