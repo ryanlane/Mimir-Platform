@@ -123,10 +123,12 @@ const Dashboard = () => {
         api.getDisplays({ limit: 10 })
       ]);
 
+      console.log('🔍 Dashboard: Displays API response:', displaysResponse);
       setDisplayStatus(displayResponse.data);
       setScenes(scenesResponse.data.scenes || []);
       setChannels(channelsResponse.data.channels || []);
       setDisplays(displaysResponse.data || []);
+      console.log('🔍 Dashboard: Set displays state to:', displaysResponse.data || []);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -154,10 +156,12 @@ const Dashboard = () => {
 
   // Helper to get connected displays that have scenes assigned
   const getConnectedDisplays = () => {
-    return displays.filter(display => 
-      display.isOnline !== false && 
+    const connectedDisplays = displays.filter(display => 
       (display.assigned_scene_id || display.assignedSceneId)
     );
+    console.log('🔍 Dashboard: All displays:', displays);
+    console.log('🔍 Dashboard: Connected displays with scenes:', connectedDisplays);
+    return connectedDisplays;
   };
 
   if (loading) {
@@ -213,8 +217,8 @@ const Dashboard = () => {
                       </div>
                       <div className="status-row">
                         <span>Status:</span>
-                        <span className={`status-indicator ${display.isOnline !== false ? 'status-success' : 'status-error'}`}>
-                          {display.isOnline !== false ? 'Online' : 'Offline'}
+                        <span className={`status-indicator ${display.is_online !== false ? 'status-success' : 'status-error'}`}>
+                          {display.is_online !== false ? 'Online' : 'Offline'}
                         </span>
                       </div>
                     </div>
