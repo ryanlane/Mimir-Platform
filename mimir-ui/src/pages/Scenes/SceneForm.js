@@ -35,21 +35,25 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
     
     for (const channel of channels) {
       try {
-        // Check if channel supports sub-channels
-        const configResponse = await api.getSubChannelConfig(channel.id);
-        supportInfo[channel.id] = configResponse.data?.supports_subchannels || false;
+        // Use the enhanced subchannel config endpoint with subchannels included
+        const configResponse = await api.getSubChannelConfig(channel.id, true);
+        const data = configResponse.data;
         
-        if (supportInfo[channel.id]) {
-          // Get subchannel requirements using new API
-          const requirementsResponse = await api.getSubChannelRequirements(channel.id);
-          requirementsInfo[channel.id] = requirementsResponse.data;
-          
-          // Get available sub-channels
-          const subChannelsResponse = await api.getSubChannels(channel.id);
-          subChannelsData[channel.id] = subChannelsResponse.data || [];
-        }
+        supportInfo[channel.id] = data?.supports_subchannels || false;
+        requirementsInfo[channel.id] = {
+          requires_subchannel_selection: data?.requires_subchannel || false
+        };
+        subChannelsData[channel.id] = data?.subchannels || [];
+        
+        console.log(`Channel ${channel.id}:`, {
+          supports: supportInfo[channel.id],
+          requires: requirementsInfo[channel.id].requires_subchannel_selection,
+          subchannels: subChannelsData[channel.id].length
+        });
+        
       } catch (error) {
         // Channel doesn't support sub-channels or error occurred
+        console.log(`Channel ${channel.id} doesn't support subchannels:`, error.message);
         supportInfo[channel.id] = false;
         requirementsInfo[channel.id] = { requires_subchannel_selection: false };
         subChannelsData[channel.id] = [];
@@ -60,6 +64,11 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
     setSubChannelRequirements(requirementsInfo);
     setAvailableSubChannels(subChannelsData);
     setLoadingSubChannels(false);
+    
+    // Debug logging
+    console.log('SubChannel Support:', supportInfo);
+    console.log('SubChannel Requirements:', requirementsInfo);
+    console.log('Available SubChannels:', subChannelsData);
   }, [channels]);
 
   useEffect(() => {
@@ -279,26 +288,30 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
                     <span>{channel.name}</span>
                   </label>
                   
-                  {isChannelSelected(channel.id) && subChannelSupport[channel.id] && availableSubChannels[channel.id]?.length > 0 && (
+                  {isChannelSelected(channel.id) && subChannelSupport[channel.id] && (
                     <div className="subchannel-selection">
                       <label className="subchannel-label">Sub-Channel:</label>
-                      <select
-                        value={getSelectedSubChannel(channel.id)}
-                        onChange={(e) => handleSubChannelChange(channel.id, e.target.value)}
-                        className="subchannel-select"
-                      >
-                        {!subChannelRequirements[channel.id]?.requires_subchannel_selection && (
-                          <option value="">All Content</option>
-                        )}
-                        {subChannelRequirements[channel.id]?.requires_subchannel_selection && !getSelectedSubChannel(channel.id) && (
-                          <option value="">Select a subchannel...</option>
-                        )}
-                        {availableSubChannels[channel.id].map(subChannel => (
-                          <option key={subChannel.id} value={subChannel.id}>
-                            {subChannel.name}
-                          </option>
-                        ))}
-                      </select>
+                      {availableSubChannels[channel.id]?.length > 0 ? (
+                        <select
+                          value={getSelectedSubChannel(channel.id)}
+                          onChange={(e) => handleSubChannelChange(channel.id, e.target.value)}
+                          className="subchannel-select"
+                        >
+                          {!subChannelRequirements[channel.id]?.requires_subchannel_selection && (
+                            <option value="">All Content</option>
+                          )}
+                          {subChannelRequirements[channel.id]?.requires_subchannel_selection && !getSelectedSubChannel(channel.id) && (
+                            <option value="">Select a subchannel...</option>
+                          )}
+                          {availableSubChannels[channel.id].map(subChannel => (
+                            <option key={subChannel.id} value={subChannel.id}>
+                              {subChannel.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="subchannel-loading">No subchannels available</div>
+                      )}
                       {subChannelRequirements[channel.id]?.requires_subchannel_selection && (
                         <div className="subchannel-requirement-note">
                           * Subchannel selection required
@@ -309,6 +322,10 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
                   
                   {isChannelSelected(channel.id) && loadingSubChannels && (
                     <div className="subchannel-loading">Loading sub-channels...</div>
+                  )}
+
+                  {isChannelSelected(channel.id) && !subChannelSupport[channel.id] && !loadingSubChannels && (
+                    <div className="subchannel-loading">This channel does not support sub-channels</div>
                   )}
                 </div>
               ))}
