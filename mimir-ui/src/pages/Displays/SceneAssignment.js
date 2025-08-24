@@ -59,7 +59,11 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
     }
     
     // Check if scene has any issues
-    if (scene.channels.some(channelId => channelId.includes('unavailable'))) {
+    // Now scene.channels is an array of objects with channel_id, not strings
+    if (scene.channels.some(channelAssignment => {
+      const channelId = channelAssignment.channel_id || channelAssignment;
+      return typeof channelId === 'string' && channelId.includes('unavailable');
+    })) {
       return { compatible: false, reason: 'Contains unavailable channels' };
     }
 
@@ -162,7 +166,9 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                           
                           <div className="scene-details">
                             <div className="scene-channels">
-                              <strong>Channels:</strong> {scene.channels?.join(', ') || 'None'}
+                              <strong>Channels:</strong> {
+                                scene.channels?.map(ch => ch.channel_id || ch).join(', ') || 'None'
+                              }
                             </div>
                             
                             {scene.overlay && scene.overlay.overlays?.length > 0 && (
