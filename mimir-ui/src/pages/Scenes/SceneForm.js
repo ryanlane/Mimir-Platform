@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Save, ChevronDown } from 'lucide-react';
+import { X, Save } from 'lucide-react';
 import { api } from '../../services/api';
 import './SceneForm.css';
 
@@ -64,7 +64,7 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
 
   useEffect(() => {
     if (scene) {
-      // Normalize channels to new format
+      // Normalize channels to new format and limit to single selection
       const normalizedChannels = scene.channels.map(channel => {
         if (typeof channel === 'string') {
           // Old format: just channel ID
@@ -79,9 +79,12 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
         return { channel_id: String(channel), subchannel_id: null };
       });
 
+      // Only keep the first channel for single selection
+      const singleChannel = normalizedChannels.length > 0 ? [normalizedChannels[0]] : [];
+
       setFormData({
         name: scene.name || '',
-        channels: normalizedChannels,
+        channels: singleChannel,
         overlay: scene.overlay || {
           overlays: [],
           position: ['top', 'right'],
@@ -155,16 +158,16 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
       const existingAssignment = prev.channels.find(ch => ch.channel_id === channelId);
       
       if (existingAssignment) {
-        // Remove channel assignment
+        // Remove channel assignment (deselect)
         return {
           ...prev,
-          channels: prev.channels.filter(ch => ch.channel_id !== channelId)
+          channels: []
         };
       } else {
-        // Add new channel assignment
+        // Replace with new channel assignment (single selection)
         return {
           ...prev,
-          channels: [...prev.channels, { channel_id: channelId, subchannel_id: null }]
+          channels: [{ channel_id: channelId, subchannel_id: null }]
         };
       }
     });
@@ -190,16 +193,29 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
     return assignment?.subchannel_id || '';
   };
 
-  const handleOverlayToggle = (overlayId) => {
-    setFormData(prev => ({
-      ...prev,
-      overlay: {
-        ...prev.overlay,
-        overlays: prev.overlay.overlays.includes(overlayId)
-          ? prev.overlay.overlays.filter(id => id !== overlayId)
-          : [...prev.overlay.overlays, overlayId]
+  // Validation function to check if form is valid for submission
+  const isFormValid = () => {
+    // Check if scene name is provided
+    if (!formData.name.trim()) {
+      return false;
+    }
+
+    // Check if at least one channel is selected
+    if (formData.channels.length === 0) {
+      return false;
+    }
+
+    // Check subchannel requirements
+    for (const assignment of formData.channels) {
+      const channelId = assignment.channel_id;
+      const requirements = subChannelRequirements[channelId];
+      
+      if (requirements?.requires_subchannel_selection && !assignment.subchannel_id) {
+        return false;
       }
-    }));
+    }
+
+    return true;
   };
 
   const handleScheduleChange = (field, value) => {
@@ -249,13 +265,14 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
           )}
 
           <div className="form-group">
-            <label className="form-label">Channels</label>
+            <label className="form-label">Channel</label>
             <div className="channels-selection">
               {channels.map((channel) => (
                 <div key={channel.id} className="channel-assignment-group">
-                  <label className="checkbox-item">
+                  <label className="radio-item">
                     <input
-                      type="checkbox"
+                      type="radio"
+                      name="channel"
                       checked={isChannelSelected(channel.id)}
                       onChange={() => handleChannelToggle(channel.id)}
                     />
@@ -298,6 +315,7 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
             </div>
           </div>
 
+          {/* Overlays section temporarily hidden
           <div className="form-group">
             <label className="form-label">Overlays</label>
             <div className="checkbox-grid">
@@ -313,6 +331,7 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
               ))}
             </div>
           </div>
+          */}
 
           <div className="form-group">
             <label className="form-label">
@@ -389,7 +408,7 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
             <button type="button" className="btn" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+            <button type="submit" className="btn btn-primary" disabled={loading || !isFormValid()}>
               <Save size={16} />
               {loading ? 'Saving...' : 'Save Scene'}
             </button>

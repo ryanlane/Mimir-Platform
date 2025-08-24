@@ -64,6 +64,30 @@
   accent-color: var(--color-accent);
 }
 
+/* Radio button styling */
+.radio-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  transition: border-color 0.2s ease;
+}
+
+.radio-item:hover {
+  border-color: var(--color-accent);
+}
+
+.radio-item input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+}
+
 .schedule-section {
   padding: var(--spacing-md);
   background-color: var(--color-surface);
