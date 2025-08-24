@@ -161,7 +161,7 @@ const Settings = () => {
 
   const testApiConnection = useCallback(async () => {
     if (!apiBaseUrl || !apiBaseUrl.trim()) {
-      setApiConnectionStatus('error');
+      setApiConnectionStatus({ success: false, error: 'API Base URL is required' });
       return;
     }
 
@@ -183,18 +183,18 @@ const Settings = () => {
       if (res.ok) {
         const data = await res.json();
         if (data.status === 'ok' && data.message === 'Mimir API service is healthy') {
-          setApiConnectionStatus('success');
+          setApiConnectionStatus({ success: true, message: 'API connection successful!' });
           console.log('API connection test successful');
         } else {
-          setApiConnectionStatus('error');
+          setApiConnectionStatus({ success: false, error: 'API responded but with unexpected data' });
           console.log('API responded but with unexpected data:', data);
         }
       } else {
-        setApiConnectionStatus('error');
+        setApiConnectionStatus({ success: false, error: `API connection failed (Status: ${res.status})` });
         console.log('API connection test failed with status:', res.status);
       }
     } catch (error) {
-      setApiConnectionStatus('error');
+      setApiConnectionStatus({ success: false, error: `Connection failed: ${error.message}` });
       console.log('API connection test failed with error:', error.message);
     } finally {
       setTestingApi(false);
