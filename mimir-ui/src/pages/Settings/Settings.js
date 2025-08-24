@@ -182,11 +182,15 @@ const Settings = () => {
       
       if (res.ok) {
         const data = await res.json();
-        if (data.status === 'ok' && data.message === 'Mimir API service is healthy') {
+        // Accept both 'ok' and 'unhealthy' status - any response means API is reachable
+        if (data.status === 'ok') {
           setApiConnectionStatus({ success: true, message: 'API connection successful!' });
-          console.log('API connection test successful');
+          console.log('API connection test successful - API is healthy');
+        } else if (data.status === 'unhealthy') {
+          setApiConnectionStatus({ success: true, message: 'API connected but reports unhealthy status (check database)' });
+          console.log('API connection test successful - API reachable but unhealthy:', data);
         } else {
-          setApiConnectionStatus({ success: false, error: 'API responded but with unexpected data' });
+          setApiConnectionStatus({ success: false, error: 'API responded but with unexpected status' });
           console.log('API responded but with unexpected data:', data);
         }
       } else {
