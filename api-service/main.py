@@ -875,6 +875,36 @@ print("🔍 Discovering channels...")
 discovered_channels = channel_discovery.discover_channels(app)
 print(f"✅ Loaded {len(discovered_channels)} channels")
 
+# Initialize sub-channel manager after channels are loaded
+try:
+    from subchannel_manager import SubChannelManager
+    
+    def initialize_subchannel_manager():
+        """Initialize sub-channel manager with loaded channels"""
+        global subchannel_manager
+        if channel_discovery and hasattr(channel_discovery, 'loaded_channels'):
+            # Create registry of channel instances
+            channel_registry = {}
+            for channel_id, channel_data in channel_discovery.loaded_channels.items():
+                instance = channel_discovery.get_channel_instance(channel_id)
+                if instance:
+                    channel_registry[channel_id] = instance
+            
+            subchannel_manager = SubChannelManager(channel_registry)
+            print(f"✅ SubChannelManager initialized with {len(channel_registry)} channels")
+            return True
+        return False
+    
+    # Initialize sub-channel manager now that channels are loaded
+    subchannel_manager = None
+    if not initialize_subchannel_manager():
+        print("⚠️  SubChannelManager initialization failed")
+        subchannel_manager = None
+    
+except ImportError as e:
+    print(f"⚠️  Sub-channel functionality not available: {e}")
+    subchannel_manager = None
+
 # Note: Background cleanup will be handled during normal rate limit checks
 
 # Sync discovered channels with database
@@ -3415,35 +3445,6 @@ async def generate_scene_image_for_display(scene, display_client):
 # =========================================================================
 # Sub-Channel Management Endpoints (v2.4+)
 # =========================================================================
-
-# Import sub-channel manager
-try:
-    from subchannel_manager import SubChannelManager
-    
-    # Initialize sub-channel manager when channels are loaded
-    subchannel_manager = None
-    
-    def initialize_subchannel_manager():
-        """Initialize sub-channel manager with loaded channels"""
-        global subchannel_manager
-        if channel_discovery and hasattr(channel_discovery, 'loaded_channels'):
-            # Create registry of channel instances
-            channel_registry = {}
-            for channel_id, channel_data in channel_discovery.loaded_channels.items():
-                instance = channel_discovery.get_channel_instance(channel_id)
-                if instance:
-                    channel_registry[channel_id] = instance
-            
-            subchannel_manager = SubChannelManager(channel_registry)
-            print(f"✅ SubChannelManager initialized with {len(channel_registry)} channels")
-    
-    # Initialize when channels are discovered
-    initialize_subchannel_manager()
-    
-except ImportError as e:
-    print(f"⚠️  Sub-channel functionality not available: {e}")
-    subchannel_manager = None
-
 
 @app.get("/api/channels/{channel_id}/subchannels/config")
 async def get_subchannel_config(channel_id: str):
