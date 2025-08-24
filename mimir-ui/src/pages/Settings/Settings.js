@@ -5,7 +5,6 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { logger } from '../../utils/logger';
 import './Settings.css';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
-import DisplayClientManager from '../../components/Settings/DisplayClientManager';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 
 const Settings = () => {
@@ -346,7 +345,6 @@ const Settings = () => {
       </div>
       {/* WebSocket Status Component */}
       <WebSocketStatus />
-      <DisplayClientManager />
 
       {/* Mobile Connection Guide */}
       <MobileConnectionGuide />
