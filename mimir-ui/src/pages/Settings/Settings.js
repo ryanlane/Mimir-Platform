@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings as SettingsIcon, Monitor, RefreshCw, Square, Volume2, VolumeX, AlertTriangle, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Monitor, RefreshCw, Square, Volume2, VolumeX, AlertTriangle, Database, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../../services/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { logger } from '../../utils/logger';
 import './Settings.css';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
-import DisplayClientManager from '../../components/Settings/DisplayClientManager';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 
 const Settings = () => {
@@ -36,6 +35,7 @@ const Settings = () => {
   const [resetResults, setResetResults] = useState(null);
   const [orphanedChannels, setOrphanedChannels] = useState(null);
   const [checkingOrphaned, setCheckingOrphaned] = useState(false);
+  const [adminCollapsed, setAdminCollapsed] = useState(true); // Collapsed by default
 
   const loadDisplayStatus = useCallback(async () => {
     try {
@@ -316,7 +316,6 @@ const Settings = () => {
       </div>
       {/* WebSocket Status Component */}
       <WebSocketStatus />
-      <DisplayClientManager />
 
       {/* Mobile Connection Guide */}
       <MobileConnectionGuide />
@@ -574,10 +573,11 @@ const Settings = () => {
 
         {/* Admin Operations */}
         <div className="settings-card">
-          <div className="card-header">
+          <div className="card-header" style={{ cursor: 'pointer' }} onClick={() => setAdminCollapsed(!adminCollapsed)}>
             <div className="flex items-center gap-sm">
               <Database size={20} />
               <h3 className="card-title">Admin Operations</h3>
+              {adminCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </div>
             <div className="warning-badge">
               <AlertTriangle size={16} />
@@ -585,7 +585,8 @@ const Settings = () => {
             </div>
           </div>
           
-          <div className="card-body">
+          {!adminCollapsed && (
+            <div className="card-body">
             <div className="admin-section">
               <div className="admin-operation">
                 <div className="operation-info">
@@ -773,6 +774,7 @@ const Settings = () => {
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* System Information */}
