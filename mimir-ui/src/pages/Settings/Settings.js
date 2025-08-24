@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings as SettingsIcon, Volume2, VolumeX, AlertTriangle, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Volume2, VolumeX, AlertTriangle, Database, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../../services/api';
 import { logger } from '../../utils/logger';
 import './Settings.css';
@@ -31,6 +31,7 @@ const Settings = () => {
   const [resetResults, setResetResults] = useState(null);
   const [orphanedChannels, setOrphanedChannels] = useState(null);
   const [checkingOrphaned, setCheckingOrphaned] = useState(false);
+  const [adminCollapsed, setAdminCollapsed] = useState(true); // Collapsed by default
 
   // Remove display status loading since Display Control section is removed
   useEffect(() => {
@@ -469,10 +470,13 @@ const Settings = () => {
 
         {/* Admin Operations */}
         <div className="settings-card">
-          <div className="card-header">
+          <div className="card-header" style={{ cursor: 'pointer' }} onClick={() => setAdminCollapsed(!adminCollapsed)}>
             <div className="flex items-center gap-sm">
               <Database size={20} />
               <h3 className="card-title">Admin Operations</h3>
+              <button className="expand-button" style={{ marginLeft: 'auto' }}>
+                {adminCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              </button>
             </div>
             <div className="warning-badge">
               <AlertTriangle size={16} />
