@@ -220,6 +220,19 @@ export const api = {
     return result;
   },
 
+  reorderSubChannelImages: async (channelId, subChannelId, draggedId, targetId) => {
+    const result = await apiClient.post(`/channels/${channelId}/subchannels/${subChannelId}/images/reorder`, {
+      dragged_id: draggedId,
+      target_id: targetId
+    });
+    // Invalidate sub-channel content cache as order changes
+    invalidateCache([
+      `/channels/${channelId}/subchannels/${subChannelId}/content`,
+      `/channels/${channelId}/subchannels/${subChannelId}`
+    ]);
+    return result;
+  },
+
   // Overlays
   getOverlays: (params = {}) => apiClient.get('/overlays', { params }),
 

@@ -1404,3 +1404,72 @@
 .btn-danger:hover {
   background: #fee2e2;
 }
+
+/* Drag and Drop Styles */
+.gallery-image-item[draggable="true"] {
+  cursor: grab;
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+
+.gallery-image-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.gallery-image-item.drag-over {
+  transform: scale(1.02);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.gallery-image-item.dragging {
+  opacity: 0.5;
+  transform: rotate(5deg);
+}
+
+.reorder-status {
+  color: #3b82f6;
+  font-weight: 500;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.reorder-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #6b7280;
+  font-size: 12px;
+  background: #f3f4f6;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Drop zone indicator for grid view */
+.images-grid .gallery-image-item.drag-over::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border: 2px dashed #3b82f6;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.1);
+  z-index: 1;
+}
+
+/* List view drag indicator */
+.images-list .gallery-image-item.drag-over {
+  border-left: 4px solid #3b82f6;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
+}

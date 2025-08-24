@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings, RefreshCw, Image, AlertCircle, TestTube, Heart, Info } from 'lucide-react';
+import { Settings, RefreshCw, AlertCircle, Heart, Info } from 'lucide-react';
 import { api } from '../../services/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
 import ChannelSettings from './ChannelSettings';
-import SubChannelManager from './SubChannelManager';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Channels.css';
 
@@ -24,20 +23,12 @@ const Channels = () => {
   const { 
     supportsV21, 
     supportsChannelHealth, 
-    supportsChannelTesting, 
     supportsPluginSystem,
     apiVersion
   } = useFeatureDetection();
   
   const [channelHealth, setChannelHealth] = useState({});
-  const [testResults, setTestResults] = useState({});
   const [manifest, setManifest] = useState([]);
-
-  // Sub-channel support (NEW)
-  const [subChannelSupport, setSubChannelSupport] = useState({});
-  const [subChannelCounts, setSubChannelCounts] = useState({});
-  const [showSubChannelManager, setShowSubChannelManager] = useState(false);
-  const [selectedChannelForSubChannels, setSelectedChannelForSubChannels] = useState(null);
 
   // WebSocket integration for real-time updates
   const { isConnected } = useWebSocket();
@@ -56,33 +47,6 @@ const Channels = () => {
       console.error('Error loading channel manifest:', error);
     }
   }, []);
-
-  // Load sub-channel support information
-  const loadSubChannelSupport = useCallback(async () => {
-    const supportInfo = {};
-    const counts = {};
-    
-    for (const channel of channels) {
-      try {
-        // Check if channel supports sub-channels
-        const configResponse = await api.getSubChannelConfig(channel.id);
-        supportInfo[channel.id] = configResponse.data?.supports_subchannels || false;
-        
-        if (supportInfo[channel.id]) {
-          // Get sub-channel count
-          const subChannelsResponse = await api.getSubChannels(channel.id);
-          counts[channel.id] = subChannelsResponse.data?.length || 0;
-        }
-      } catch (error) {
-        // Channel doesn't support sub-channels or error occurred
-        supportInfo[channel.id] = false;
-        counts[channel.id] = 0;
-      }
-    }
-    
-    setSubChannelSupport(supportInfo);
-    setSubChannelCounts(counts);
-  }, [channels]);
 
   const loadChannels = useCallback(async () => {
     try {
@@ -135,14 +99,10 @@ const Channels = () => {
       await loadChannels();
       // Load v2.1 features if supported
       await loadManifest();
-      // Load sub-channel support after channels are loaded
-      if (channels.length > 0) {
-        await loadSubChannelSupport();
-      }
     };
     
     initializeChannels();
-  }, [loadChannels, loadManifest, loadSubChannelSupport, channels.length]);
+  }, [loadChannels, loadManifest, channels.length]);
   useEffect(() => {
     const handleChannelUpdate = (event) => {
       if (event.data?.type === 'channel_status_update') {
@@ -181,63 +141,9 @@ const Channels = () => {
     }
   };
 
-  // v2.1: Test a specific channel
-  const testChannel = async (channelId) => {
-    try {
-      console.log(`🧪 Testing channel: ${channelId}`);
-      const result = await api.testChannel(channelId);
-      setTestResults(prev => ({ ...prev, [channelId]: result.data }));
-      console.log(`✅ Test result for ${channelId}:`, result.data);
-      
-      // Refresh health after test
-      if (supportsChannelHealth()) {
-        const health = await api.getChannelHealth(channelId);
-        setChannelHealth(prev => ({ ...prev, [channelId]: health.data }));
-      }
-    } catch (error) {
-      console.error(`Error testing channel ${channelId}:`, error);
-      setTestResults(prev => ({ 
-        ...prev, 
-        [channelId]: { 
-          success: false, 
-          error: error.message,
-          timestamp: new Date().toISOString()
-        }
-      }));
-    }
-  };
-
-  // v2.1: Refresh health for a specific channel
-  const refreshChannelHealth = async (channelId) => {
-    try {
-      const health = await api.getChannelHealth(channelId);
-      setChannelHealth(prev => ({ ...prev, [channelId]: health.data }));
-      console.log(`💚 Refreshed health for ${channelId}:`, health.data);
-    } catch (error) {
-      console.error(`Error refreshing health for ${channelId}:`, error);
-    }
-  };
-
   const handleSettings = (channel) => {
     setSelectedChannel(channel);
     setShowSettings(true);
-  };
-
-  const handleManageSubChannels = (channel) => {
-    setSelectedChannelForSubChannels(channel);
-    setShowSubChannelManager(true);
-  };
-
-  const handleTestImage = async (channelId) => {
-    try {
-      await api.requestChannelImage(channelId, {
-        resolution: [800, 600],
-        orientation: 'landscape'
-      });
-      console.log('Test image requested successfully');
-    } catch (error) {
-      console.error('Error requesting test image:', error);
-    }
   };
 
   const getStatusInfo = (channel) => {
@@ -299,7 +205,6 @@ const Channels = () => {
           {channels.map((channel) => {
             const status = getStatusInfo(channel);
             const health = channelHealth[channel.id];
-            const testResult = testResults[channel.id];
             const manifestData = manifest.find(m => m.id === channel.id);
             
             return (
@@ -340,14 +245,6 @@ const Channels = () => {
                         {channel.settingsType || 'simple'}
                       </span>
                     </div>
-                    {subChannelSupport[channel.id] && (
-                      <div className="detail-item">
-                        <span>Sub-Channels:</span>
-                        <span className="subchannel-count">
-                          {subChannelCounts[channel.id] || 0} configured
-                        </span>
-                      </div>
-                    )}
                     {supportsV21() && manifestData && (
                       <>
                         {manifestData.hasUI && (
@@ -384,15 +281,6 @@ const Channels = () => {
                       <span>{channel.status.lastError}</span>
                     </div>
                   )}
-
-                  {testResult && (
-                    <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
-                      <TestTube size={16} />
-                      <span>
-                        Test {testResult.success ? 'passed' : 'failed'}: {testResult.message || testResult.error}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 <div className="channel-card-footer">
@@ -423,16 +311,6 @@ const Channels = () => {
                       Health Check
                     </button>
                   )} */}
-                  
-                  {subChannelSupport[channel.id] && (
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      onClick={() => handleManageSubChannels(channel)}
-                    >
-                      <Info size={16} />
-                      Manage Sub-Channels
-                    </button>
-                  )}
                   
                   <button
                     className="btn btn-sm btn-accent"
@@ -466,17 +344,6 @@ const Channels = () => {
             setShowSettings(false);
             setSelectedChannel(null);
             loadChannels();
-          }}
-        />
-      )}
-
-      {showSubChannelManager && selectedChannelForSubChannels && (
-        <SubChannelManager
-          channel={selectedChannelForSubChannels}
-          onClose={() => {
-            setShowSubChannelManager(false);
-            setSelectedChannelForSubChannels(null);
-            loadSubChannelSupport(); // Refresh sub-channel data
           }}
         />
       )}

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Trash2, Eye, Download, Grid, List, Search, CheckSquare, Square, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Trash2, Eye, Download, Grid, List, Search, CheckSquare, Square, ArrowLeft, RefreshCw, Move } from 'lucide-react';
 import { api } from '../../services/api';
 import { LazyImage, usePerformanceMonitoring } from '../../hooks/usePerformance';
 import { LoadingState } from '../ErrorHandling/ErrorHandling';
+import './GalleryManager.css';
 
 const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
   const [images, setImages] = useState([]);
@@ -11,6 +12,9 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
   const [viewMode, setViewMode] = useState('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedImages, setSelectedImages] = useState(new Set());
+  const [draggedImage, setDraggedImage] = useState(null);
+  const [dragOverImage, setDragOverImage] = useState(null);
+  const [isReordering, setIsReordering] = useState(false);
   
   // Performance monitoring
   const { measureOperation } = usePerformanceMonitoring('GalleryImages');
@@ -88,6 +92,71 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
     window.open(image.uploadUrl, '_blank');
   };
 
+  // Drag and drop handlers
+  const handleDragStart = (e, image) => {
+    setDraggedImage(image);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', image.id);
+    
+    // Add visual feedback - use setTimeout to allow class to be applied after drag starts
+    setTimeout(() => {
+      e.target.classList.add('dragging');
+    }, 0);
+  };
+
+  const handleDragEnd = (e) => {
+    setDraggedImage(null);
+    setDragOverImage(null);
+    e.target.classList.remove('dragging');
+  };
+
+  const handleDragOver = (e, targetImage) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverImage(targetImage);
+  };
+
+  const handleDragLeave = (e) => {
+    // Only clear drag over if leaving the image container entirely
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      setDragOverImage(null);
+    }
+  };
+
+  const handleDrop = async (e, targetImage) => {
+    e.preventDefault();
+    
+    if (!draggedImage || draggedImage.id === targetImage.id) {
+      setDraggedImage(null);
+      setDragOverImage(null);
+      return;
+    }
+
+    try {
+      setIsReordering(true);
+      setError(null);
+
+      // Call the reorder API
+      await api.reorderSubChannelImages(
+        channel.id,
+        gallery.id,
+        draggedImage.id,
+        targetImage.id
+      );
+
+      // Reload the gallery to show the new order
+      await loadGalleryImages();
+      
+    } catch (err) {
+      setError(`Failed to reorder images: ${err.message}`);
+      console.error('Error reordering images:', err);
+    } finally {
+      setIsReordering(false);
+      setDraggedImage(null);
+      setDragOverImage(null);
+    }
+  };
+
   if (loading) {
     return (
       <LoadingState 
@@ -121,7 +190,10 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
           </button>
           <div className="gallery-title">
             <h3>{gallery.name}</h3>
-            <span className="image-count">{filteredImages().length} images</span>
+            <span className="image-count">
+              {filteredImages().length} images
+              {isReordering && <span className="reorder-status"> • Reordering...</span>}
+            </span>
           </div>
         </div>
         
@@ -135,6 +207,13 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          
+          {filteredImages().length > 1 && (
+            <div className="reorder-hint">
+              <Move size={14} />
+              <span>Drag to reorder</span>
+            </div>
+          )}
           
           <div className="view-controls">
             <button
@@ -204,11 +283,21 @@ const GalleryImages = ({ gallery, channel, onBack, onRemoveImages }) => {
           <div className={`images-${viewMode}`}>
             {filteredImages().map(image => {
               const selected = selectedImages.has(image.id);
+              const isDragOver = dragOverImage?.id === image.id;
               
               return (
                 <div
                   key={image.id}
-                  className={`gallery-image-item ${selected ? 'selected' : ''}`}
+                  className={`gallery-image-item ${selected ? 'selected' : ''} ${isDragOver ? 'drag-over' : ''}`}
+                  draggable="true"
+                  onDragStart={(e) => handleDragStart(e, image)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => handleDragOver(e, image)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, image)}
+                  style={{
+                    cursor: draggedImage ? 'move' : 'default'
+                  }}
                 >
                   {viewMode === 'grid' ? (
                     <>
