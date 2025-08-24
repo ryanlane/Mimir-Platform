@@ -233,9 +233,6 @@ const Settings = () => {
       {/* WebSocket Status Component */}
       <WebSocketStatus />
 
-      {/* Mobile Connection Guide */}
-      <MobileConnectionGuide />
-
       {/* Connection Configuration */}
       <div className="settings-card">
         <div className="card-header">
@@ -400,6 +397,9 @@ const Settings = () => {
 
         {/* Admin Operations */}
         <AdminOperations />
+
+        {/* Mobile Connection Guide */}
+        <MobileConnectionGuide />
 
         {/* System Information */}
         <div className="settings-card">
