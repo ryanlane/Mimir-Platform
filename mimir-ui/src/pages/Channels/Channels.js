@@ -396,7 +396,7 @@ const Channels = () => {
                 </div>
 
                 <div className="channel-card-footer">
-                  <button
+                  {/* <button
                     className="btn btn-sm"
                     onClick={() => handleTestImage(channel.id)}
                   >
@@ -422,7 +422,7 @@ const Channels = () => {
                       <Heart size={16} />
                       Health Check
                     </button>
-                  )}
+                  )} */}
                   
                   {subChannelSupport[channel.id] && (
                     <button
