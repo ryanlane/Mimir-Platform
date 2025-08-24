@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings as SettingsIcon, Monitor, RefreshCw, Square, Volume2, VolumeX, AlertTriangle, Database } from 'lucide-react';
+import { Settings as SettingsIcon, Volume2, VolumeX, AlertTriangle, Database } from 'lucide-react';
 import { api } from '../../services/api';
-import { useWebSocket } from '../../hooks/useWebSocket';
 import { logger } from '../../utils/logger';
 import './Settings.css';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 
 const Settings = () => {
-  const [displayStatus, setDisplayStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   
   // Console verbosity settings
@@ -20,8 +18,6 @@ const Settings = () => {
     showDisplayEvents: localStorage.getItem('mimir-show-display-events') !== 'false'
   });
 
-  // WebSocket integration for real-time display updates
-  const { isConnected } = useWebSocket();
   const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('mimir-api-base-url') || '');
   const [wsBaseUrl, setWsBaseUrl] = useState(localStorage.getItem('mimir-websocket-url') || '');
   const [apiConnectionStatus, setApiConnectionStatus] = useState(null);
@@ -36,54 +32,10 @@ const Settings = () => {
   const [orphanedChannels, setOrphanedChannels] = useState(null);
   const [checkingOrphaned, setCheckingOrphaned] = useState(false);
 
-  const loadDisplayStatus = useCallback(async () => {
-    try {
-      const response = await api.getDisplayStatus();
-      setDisplayStatus(response.data);
-    } catch (error) {
-      console.error('Error loading display status:', error);
-    } finally {
-      setLoading(false);
-    }
+  // Remove display status loading since Display Control section is removed
+  useEffect(() => {
+    setLoading(false);
   }, []);
-
-  useEffect(() => {
-    loadDisplayStatus();
-  }, [loadDisplayStatus]);
-
-  // Listen for display-related events
-  useEffect(() => {
-    const handleDisplayUpdate = (event) => {
-      if (event.data?.type === 'display_update') {
-        // Reload display status when display changes
-        loadDisplayStatus();
-      } else if (event.data?.type === 'scene_activated' || event.data?.type === 'scene_deactivated') {
-        // Reload display status when scenes change
-        loadDisplayStatus();
-      }
-    };
-
-    window.addEventListener('websocket-message', handleDisplayUpdate);
-    return () => window.removeEventListener('websocket-message', handleDisplayUpdate);
-  }, [loadDisplayStatus]);
-
-  const handleClearDisplay = async () => {
-    try {
-      await api.clearDisplay();
-      await loadDisplayStatus();
-    } catch (error) {
-      console.error('Error clearing display:', error);
-    }
-  };
-
-  const handleRefreshImage = async () => {
-    try {
-      await api.refreshDisplayImage();
-      await loadDisplayStatus();
-    } catch (error) {
-      console.error('Error refreshing display image:', error);
-    }
-  };
 
   // Console verbosity handlers
   const handleVerbosityChange = (setting, value) => {
@@ -424,65 +376,6 @@ const Settings = () => {
       </div>
 
       <div className="settings-grid">
-        {/* Display Control Section */}
-        <div className="settings-card">
-          <div className="card-header">
-            <div className="flex items-center gap-sm">
-              <Monitor size={20} />
-              <h3 className="card-title">Display Control</h3>
-            </div>
-            <div className="connection-status">
-              <span className={`status-badge ${isConnected ? 'status-connected' : 'status-disconnected'}`}>
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
-          </div>
-          
-          <div className="card-body">
-            {displayStatus && (
-              <div className="display-status">
-                <div className="status-row">
-                  <span>Hardware:</span>
-                  <span className={`status-indicator ${displayStatus.hardware?.available ? 'status-success' : 'status-error'}`}>
-                    {displayStatus.hardware?.type || 'Unknown'}
-                  </span>
-                </div>
-                <div className="status-row">
-                  <span>Resolution:</span>
-                  <span>{displayStatus.resolution ? displayStatus.resolution.join(' × ') : 'Unknown'}</span>
-                </div>
-                <div className="status-row">
-                  <span>Current Scene:</span>
-                  <span>{displayStatus.currentScene || 'None'}</span>
-                </div>
-                {displayStatus.currentImage && (
-                  <>
-                    <div className="status-row">
-                      <span>Last Update:</span>
-                      <span>{new Date(displayStatus.currentImage.uploadedAt).toLocaleString()}</span>
-                    </div>
-                    <div className="status-row">
-                      <span>Image Size:</span>
-                      <span>{displayStatus.currentImage.size} bytes</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-            
-            <div className="display-actions">
-              <button className="btn btn-warning" onClick={handleClearDisplay}>
-                <Square size={16} />
-                Clear Display
-              </button>
-              <button className="btn btn-primary" onClick={handleRefreshImage}>
-                <RefreshCw size={16} />
-                Refresh Image
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Console Verbosity Settings */}
         <div className="settings-card">
           <div className="card-header">
