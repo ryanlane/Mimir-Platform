@@ -226,10 +226,11 @@ export const api = {
       target_id: targetId
     });
     // Invalidate sub-channel content cache as order changes
-    invalidateCache([
-      `/channels/${channelId}/subchannels/${subChannelId}/content`,
-      `/channels/${channelId}/subchannels/${subChannelId}`
-    ]);
+    const contentKey = apiCache.generateKey(`/channels/${channelId}/subchannels/${subChannelId}/content`);
+    const subChannelKey = apiCache.generateKey(`/channels/${channelId}/subchannels/${subChannelId}`);
+    apiCache.delete(contentKey);
+    apiCache.delete(subChannelKey);
+    console.log(`🗑️ Cache invalidated: ${contentKey}, ${subChannelKey}`);
     return result;
   },
 
