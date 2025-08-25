@@ -638,14 +638,7 @@ const ChannelSettings = ({ channel, onClose }) => {
               <p className="text-tertiary">
                 This channel has a custom management interface with advanced features.
               </p>
-              <div className="channel-features">
-                <ul className="feature-list">
-                  <li>📷 Image upload and management</li>
-                  <li>✂️ Intelligent crop editing</li>
-                  <li>🎬 Slideshow configuration</li>
-                  <li>⚙️ Hardware settings</li>
-                </ul>
-              </div>
+              
               <div className="custom-ui-actions">
                 <button
                   className="btn btn-primary"
@@ -660,11 +653,7 @@ const ChannelSettings = ({ channel, onClose }) => {
                   Open Management Interface
                 </button>
               </div>
-              <div className="basic-settings-note">
-                <small className="text-tertiary">
-                  Use the management interface above for all channel configuration and advanced features.
-                </small>
-              </div>
+             
             </div>
           ) : null}
 
@@ -685,11 +674,7 @@ const ChannelSettings = ({ channel, onClose }) => {
               ))}
             </div>
           ) : config?.settings && hasManagementInterface() ? (
-            <div className="management-only-notice">
-              <p className="text-tertiary">
-                Settings for this channel are managed through the custom management interface above.
-              </p>
-            </div>
+            <div />
           ) : (
             <div className="no-settings">
               <p className="text-tertiary">
