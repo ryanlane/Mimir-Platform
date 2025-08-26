@@ -8,7 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 
 # Import infrastructure components
-from app.infrastructure.database.connection import create_tables
+from app.db.base import create_tables
+from app.core.logging import setup_logging, get_logger
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -18,6 +19,10 @@ from app.api.routes.admin import health_router, admin_router
 
 def create_app() -> FastAPI:
     """Application factory function"""
+    
+    # Setup logging first
+    setup_logging()
+    logger = get_logger("app.main")
     
     # Create FastAPI app
     app = FastAPI(

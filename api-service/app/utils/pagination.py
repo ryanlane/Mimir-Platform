@@ -1,0 +1,206 @@
+"""
+Pagination utilities for Mimir API
+Provides pagination helpers for list endpoints
+"""
+from typing import List, Optional, Dict, Any, TypeVar, Generic
+from fastapi import Query
+from pydantic import BaseModel, Field
+from app.core.logging import get_logger
+
+logger = get_logger("app.utils.pagination")
+
+T = TypeVar('T')
+
+
+class PaginationMeta(BaseModel):
+    """Pagination metadata for API responses"""
+    
+    page: int = Field(..., description="Current page number")
+    size: int = Field(..., description="Number of items per page")
+    total: int = Field(..., description="Total number of items")
+    pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there is a next page")
+    has_prev: bool = Field(..., description="Whether there is a previous page")
+    
+    class Config:
+        # Use camelCase for frontend compatibility
+        alias_generator = lambda field_name: ''.join(
+            word.capitalize() if i > 0 else word 
+            for i, word in enumerate(field_name.split('_'))
+        )
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Generic paginated response wrapper"""
+    
+    data: List[T] = Field(..., description="List of items")
+    pagination: PaginationMeta = Field(..., description="Pagination metadata")
+    
+    class Config:
+        # Use camelCase for frontend compatibility
+        alias_generator = lambda field_name: ''.join(
+            word.capitalize() if i > 0 else word 
+            for i, word in enumerate(field_name.split('_'))
+        )
+
+
+def create_pagination_meta(
+    page: int,
+    size: int,
+    total: int
+) -> PaginationMeta:
+    """
+    Create pagination metadata
+    
+    Args:
+        page: Current page number (1-based)
+        size: Number of items per page
+        total: Total number of items
+        
+    Returns:
+        PaginationMeta object with calculated values
+    """
+    if size <= 0:
+        size = 1
+    
+    pages = (total + size - 1) // size  # Ceiling division
+    has_next = page < pages
+    has_prev = page > 1
+    
+    return PaginationMeta(
+        page=page,
+        size=size,
+        total=total,
+        pages=pages,
+        has_next=has_next,
+        has_prev=has_prev
+    )
+
+
+def paginate_list(
+    items: List[T],
+    page: int,
+    size: int
+) -> PaginatedResponse[T]:
+    """
+    Paginate a list of items
+    
+    Args:
+        items: List of items to paginate
+        page: Current page number (1-based)
+        size: Number of items per page
+        
+    Returns:
+        PaginatedResponse with paginated data and metadata
+    """
+    total = len(items)
+    start_idx = (page - 1) * size
+    end_idx = start_idx + size
+    
+    paginated_items = items[start_idx:end_idx]
+    pagination_meta = create_pagination_meta(page, size, total)
+    
+    return PaginatedResponse(
+        data=paginated_items,
+        pagination=pagination_meta
+    )
+
+
+def get_pagination_params(
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    size: int = Query(20, ge=1, le=100, description="Number of items per page")
+) -> Dict[str, int]:
+    """
+    FastAPI dependency to get pagination parameters
+    
+    Args:
+        page: Page number from query parameter
+        size: Page size from query parameter
+        
+    Returns:
+        Dictionary with page, size, and offset values
+    """
+    offset = (page - 1) * size
+    
+    return {
+        "page": page,
+        "size": size,
+        "offset": offset,
+        "limit": size
+    }
+
+
+def create_paginated_response(
+    items: List[T],
+    page: int,
+    size: int,
+    total: Optional[int] = None
+) -> PaginatedResponse[T]:
+    """
+    Create a paginated response from items and parameters
+    
+    Args:
+        items: List of items for current page
+        page: Current page number
+        size: Page size
+        total: Total number of items (if None, uses len(items))
+        
+    Returns:
+        PaginatedResponse with data and metadata
+    """
+    if total is None:
+        total = len(items)
+    
+    pagination_meta = create_pagination_meta(page, size, total)
+    
+    return PaginatedResponse(
+        data=items,
+        pagination=pagination_meta
+    )
+
+
+class SQLPaginator:
+    """Helper for paginating SQLAlchemy queries"""
+    
+    @staticmethod
+    def paginate_query(query, page: int, size: int):
+        """
+        Paginate a SQLAlchemy query
+        
+        Args:
+            query: SQLAlchemy query object
+            page: Page number (1-based)
+            size: Page size
+            
+        Returns:
+            Tuple of (items, total_count)
+        """
+        # Get total count
+        total = query.count()
+        
+        # Apply pagination
+        offset = (page - 1) * size
+        items = query.offset(offset).limit(size).all()
+        
+        return items, total
+    
+    @staticmethod
+    def create_response(query, page: int, size: int) -> Dict[str, Any]:
+        """
+        Create paginated response from SQLAlchemy query
+        
+        Args:
+            query: SQLAlchemy query object
+            page: Page number
+            size: Page size
+            
+        Returns:
+            Dictionary with paginated data and metadata
+        """
+        items, total = SQLPaginator.paginate_query(query, page, size)
+        pagination_meta = create_pagination_meta(page, size, total)
+        
+        return {
+            "data": items,
+            "pagination": pagination_meta.dict()
+        }

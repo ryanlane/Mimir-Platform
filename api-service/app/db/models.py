@@ -1,0 +1,195 @@
+"""
+SQLAlchemy database models for Mimir API
+Contains all database table definitions and relationships
+"""
+import datetime
+from enum import Enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, ForeignKey, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
+
+# Create declarative base
+Base = declarative_base()
+
+
+class DistributionMode(str, Enum):
+    """Content distribution modes for multi-display systems"""
+    MIRROR = "MIRROR"                    # All displays show the same content (default)
+    SEQUENTIAL = "SEQUENTIAL"            # Displays cycle through content in order
+    RANDOM_UNIQUE = "RANDOM_UNIQUE"      # Displays get randomized content without duplication
+
+
+class Channel(Base):
+    """Channel configuration and metadata"""
+    __tablename__ = "channels"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String)
+    version = Column(String, default="1.0.0")
+    settings_type = Column(String, default="simple")
+    config_schema = Column(JSON, nullable=True)
+    current_settings = Column(JSON, nullable=True)
+    status = Column(JSON, nullable=True)
+    rel_logo_image_path = Column(String, nullable=True)
+    
+    # v2.1 additions
+    schema_version = Column(String, default="2.1")
+    permissions = Column(JSON, nullable=True)
+    ui_config = Column(JSON, nullable=True)
+    assets_config = Column(JSON, nullable=True)
+    integrity_hashes = Column(JSON, nullable=True)
+    channel_dir = Column(String, nullable=True)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class Scene(Base):
+    """Scene configuration with channel assignments"""
+    __tablename__ = "scenes"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    channels = Column(JSON, nullable=False)  # List of channel configurations
+    image_fit = Column(String, default="cover")
+    overlay = Column(JSON, nullable=True)
+    schedule = Column(JSON, nullable=True)
+    theme = Column(String, nullable=True)
+    is_active = Column(Boolean, default=False)
+    
+    # Redis integration: distribution mode
+    distribution_mode = Column(String, default=DistributionMode.MIRROR.value)
+    
+    # Content versioning for Redis integration
+    content_hash = Column(String, nullable=True)
+    content_epoch = Column(String, nullable=True)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class Overlay(Base):
+    """Overlay configurations"""
+    __tablename__ = "overlays"
+    
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(String)
+    channel = Column(JSON, nullable=True)
+    path_root = Column(String, nullable=True)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class DisplayStatus(Base):
+    """Legacy display status tracking"""
+    __tablename__ = "display_status"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    hardware = Column(JSON)
+    current_scene = Column(String, nullable=True)
+    current_image = Column(JSON, nullable=True)
+    resolution = Column(JSON)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class DisplayClient(Base):
+    """Connected display clients with capabilities and status"""
+    __tablename__ = "display_clients"
+    
+    # Primary identification
+    id = Column(String, primary_key=True, index=True)  # UUID
+    name = Column(String, nullable=False)  # Human-readable name
+    description = Column(String, nullable=True)
+    location = Column(String, nullable=True)  # Physical location
+    
+    # Display type and discovery
+    display_type = Column(String, default="registered")  # "registered" or "discovered"
+    discovery_method = Column(String, nullable=True)  # "manual", "mdns", "webhook"
+    auto_discovered = Column(Boolean, default=False)  # True for mDNS discovered displays
+    
+    # Enhanced networking fields
+    hostname = Column(String, nullable=True)  # System hostname for mDNS/networking
+    webhook_port = Column(Integer, nullable=True)  # Port for webhook server
+    redis_distribution = Column(Boolean, default=False)  # Supports Redis distribution
+    content_claiming = Column(Boolean, default=False)  # Supports content claiming
+    
+    # Client capabilities
+    resolution = Column(JSON, nullable=True)  # [width, height]
+    supported_formats = Column(JSON, nullable=True)  # ["jpg", "png", "gif"]
+    orientation = Column(String, default="landscape")  # "landscape", "portrait"
+    refresh_rate_hz = Column(Integer, nullable=True)  # Display refresh rate
+    client_version = Column(String, nullable=True)  # Client software version
+    
+    # Connection status
+    is_online = Column(Boolean, default=False)
+    last_seen = Column(DateTime, nullable=True)
+    last_image_fetch = Column(DateTime, nullable=True)  # When client last fetched image
+    websocket_connection_id = Column(String, nullable=True)
+    
+    # Current assignment
+    assigned_scene_id = Column(String, nullable=True)  # Should be ForeignKey to scenes.id
+    current_image_path = Column(String, nullable=True)  # Path to current scene image
+    
+    # Configuration
+    settings = Column(JSON, nullable=True)  # Display-specific settings
+    tags = Column(JSON, nullable=True)  # ["lobby", "conference-room", "kiosk"]
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class DistributionQueue(Base):
+    """SQL fallback table for content distribution when Redis is unavailable"""
+    __tablename__ = "distribution_queue"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    scene_id = Column(String, index=True)
+    content_id = Column(String)  # Content item identifier
+    queue_position = Column(Integer)  # Position in queue for sequential mode
+    
+    # Claim tracking
+    claimed_at = Column(DateTime, nullable=True)
+    claimed_by = Column(String, nullable=True)  # Display ID that claimed this content
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    epoch_id = Column(String, nullable=True)  # Content epoch for tracking updates
+
+
+class ContentLease(Base):
+    """Audit table for tracking content assignments and leases"""
+    __tablename__ = "content_leases"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    lease_id = Column(String, unique=True, index=True)  # Redis lease key
+    scene_id = Column(String, index=True)
+    display_id = Column(String, index=True)
+    content_id = Column(String)
+    
+    # Lease lifecycle
+    assigned_at = Column(DateTime, default=datetime.datetime.now)
+    acknowledged_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime)
+    
+    # Status tracking
+    status = Column(String, default="assigned")  # assigned, acknowledged, expired, released
+    distribution_mode = Column(String)
+    assignment_id = Column(String, nullable=True)  # Client-side assignment tracking
+
+
+# TODO: Add proper foreign key relationships in a future migration
+# class Scene(Base):
+#     display_clients = relationship("DisplayClient", back_populates="assigned_scene")
+# 
+# class DisplayClient(Base):
+#     assigned_scene = relationship("Scene", back_populates="display_clients")
