@@ -6,7 +6,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
+
+# Import infrastructure components
 from app.infrastructure.database.connection import create_tables
+
+# Import routers
 from app.api.routes.channels import router as channels_router
 from app.api.routes.scenes import router as scenes_router
 from app.api.routes.admin import health_router, admin_router
@@ -20,7 +24,9 @@ def create_app() -> FastAPI:
         title="Mimir API",
         description="Multi-display content management system",
         version="2.1.0",
-        debug=settings.debug
+        debug=settings.debug,
+        docs_url="/docs" if settings.debug else None,
+        redoc_url="/redoc" if settings.debug else None,
     )
     
     # Configure CORS
@@ -32,18 +38,22 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Create database tables
+    # Create database tables (this will be replaced by Alembic migrations)
     create_tables()
     
     # Include routers
-    app.include_router(health_router, prefix=settings.api_prefix)
-    app.include_router(channels_router, prefix=settings.api_prefix)
-    app.include_router(scenes_router, prefix=settings.api_prefix)
-    app.include_router(admin_router, prefix=settings.api_prefix)
+    app.include_router(health_router, prefix=settings.api_prefix, tags=["health"])
+    app.include_router(channels_router, prefix=settings.api_prefix, tags=["channels"])
+    app.include_router(scenes_router, prefix=settings.api_prefix, tags=["scenes"])
+    app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])
     
     # Mount static files for channels
-    # TODO: This should be handled by the channel manager
-    # app.mount("/channels", StaticFiles(directory="channels"), name="channels")
+    # TODO: This should be handled by the channel manager service
+    try:
+        app.mount("/channels", StaticFiles(directory=settings.channels_directory), name="channels")
+    except RuntimeError as e:
+        if settings.debug:
+            print(f"Warning: Could not mount channels directory: {e}")
     
     return app
 
@@ -52,14 +62,21 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-# Add any additional startup events
+# Application lifecycle events
 @app.on_event("startup")
 async def startup_event():
     """Application startup event"""
-    print(f"🚀 Mimir API starting up...")
-    print(f"📊 Database URL: {settings.database_url}")
-    print(f"🌐 CORS Origins: {settings.cors_origins}")
+    print(f"🚀 Mimir API v2.1.0 starting up...")
+    print(f"📊 Database: {settings.database_url}")
+    print(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
     print(f"📁 Channels Directory: {settings.channels_directory}")
+    print(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
+    
+    if settings.redis_enabled:
+        print(f"🔴 Redis: enabled at {settings.redis_url}")
+    
+    if settings.distribution_enabled:
+        print(f"📡 Distribution: enabled (mode: {settings.distribution_default_mode})")
 
 
 @app.on_event("shutdown")
@@ -68,26 +85,28 @@ async def shutdown_event():
     print("🛑 Mimir API shutting down...")
 
 
-# For backward compatibility, we'll add a simple WebSocket endpoint
-# TODO: Move this to a dedicated WebSocket router
+# For backward compatibility, add basic WebSocket endpoint
+# TODO: Move this to a dedicated WebSocket router in Phase 3
 @app.websocket("/ws")
 async def websocket_endpoint(websocket):
     """Basic WebSocket endpoint for backward compatibility"""
-    # TODO: Implement using WebSocketManager
+    # TODO: Implement using proper WebSocketManager service
     await websocket.accept()
     try:
         while True:
             data = await websocket.receive_text()
             await websocket.send_text(f"Echo: {data}")
-    except:
+    except Exception:
         pass
 
 
+# Development server entry point
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app.main:app",
         host=settings.api_host,
         port=settings.api_port,
-        reload=settings.debug
+        reload=settings.debug,
+        log_level=settings.log_level.lower()
     )

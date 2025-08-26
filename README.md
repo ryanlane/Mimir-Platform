@@ -1,6 +1,8 @@
 # mimir-api
 
-## Install & Run (Linux)
+Multi-display content management system API with modular architecture.
+
+## Install & Run (Development)
 
 1. Clone the repository:
 	```bash
@@ -14,71 +16,76 @@
 	source .venv/bin/activate
 	```
 
-3. Install dependencies:
+3. Install dependencies (with development tools):
 	```bash
-	pip install -r requirements.txt
+	pip install -e ".[dev]"
 	```
 
-4. Run the API service:
+4. Set up environment configuration:
 	```bash
-	python main.py
+	cp .env.example .env
+	# Edit .env with your specific configuration
 	```
 
-# mimir-api
-
-## Install & Run (Linux)
-
-1. Clone the repository:
+5. Run the API service:
 	```bash
-	git clone https://github.com/ryanlane/mimir-api.git
-	cd mimir-api/api-service
-	```
-
-2. Create and activate a Python virtual environment:
-	```bash
-	python3 -m venv .venv
-	source .venv/bin/activate
-	```
-
-3. Install dependencies:
-	```bash
-	pip install -r requirements.txt
-	```
-
-4. Run the API service:
-	```bash
-	python main.py
+	# Option 1: Using the application factory
+	python -m app.main
+	
+	# Option 2: Using uvicorn directly
+	uvicorn app.main:app --reload --host 0.0.0.0 --port 5000
 	```
 
 The service will start on port 5000 by default.
 
-## Run as a Service (Autostart on Linux)
+## Run as a Service (Production Linux)
 
-1. Create a systemd service file (e.g. `/etc/systemd/system/mimir-api.service`):
-	```ini
-	[Unit]
-	Description=Mimir API Service
-	After=network.target
-
-	[Service]
-	Type=simple
-	User=YOUR_USERNAME
-	WorkingDirectory=/path/to/mimir-api/api-service
-	ExecStart=/path/to/mimir-api/api-service/.venv/bin/python main.py
-	Restart=always
-
-	[Install]
-	WantedBy=multi-user.target
+1. Copy and configure the systemd service file:
+	```bash
+	sudo cp mimir-api.service.example /etc/systemd/system/mimir-api.service
+	# Edit the service file with correct paths and user
+	sudo systemctl daemon-reload
 	```
 
-2. Reload systemd and enable the service:
+2. Enable and start the service:
 	```bash
-	sudo systemctl daemon-reload
 	sudo systemctl enable mimir-api
 	sudo systemctl start mimir-api
+	sudo systemctl status mimir-api
 	```
 
-The API service will now start automatically on boot.
+The API service will now start automatically on boot using the new modular architecture.
+
+## Development Tools
+
+This project includes comprehensive development tooling:
+
+- **Linting**: `ruff` for fast Python linting
+- **Formatting**: `black` and `isort` for code formatting  
+- **Type Checking**: `mypy` for static type analysis
+- **Testing**: `pytest` for unit and integration tests
+- **Pre-commit**: Automated code quality checks
+
+Install pre-commit hooks:
+```bash
+pre-commit install
+```
+
+Run development tools:
+```bash
+# Format code
+black .
+isort .
+
+# Lint code
+ruff check .
+
+# Type check
+mypy .
+
+# Run tests
+pytest
+```
 
 ## 📖 Documentation
 
