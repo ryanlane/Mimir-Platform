@@ -6,7 +6,6 @@ for the distributed content management system.
 """
 
 import redis
-import aioredis
 import json
 import logging
 import asyncio
