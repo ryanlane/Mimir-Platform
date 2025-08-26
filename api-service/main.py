@@ -3797,14 +3797,18 @@ async def discover_displays_mdns(
         import threading
         import time
         
+        print(f"🔍 Starting mDNS discovery with timeout={timeout}, auto_register={auto_register}")
+        
         discovered_displays = []
         auto_registered = []
         discovery_complete = threading.Event()
         
         class DisplayServiceListener(ServiceListener):
-            def add_service(self, zeroconf, type, name):
+            def add_service(self, zeroconf, service_type, name):
+                print(f"🔎 Found service: {name} of type: {service_type}")
                 if '_mimir-display._tcp.local.' in name:
-                    info = zeroconf.get_service_info(type, name)
+                    print(f"✅ Processing mimir display service: {name}")
+                    info = zeroconf.get_service_info(service_type, name)
                     if info:
                         # Extract service properties
                         properties = {}
