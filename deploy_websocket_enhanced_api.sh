@@ -29,7 +29,7 @@ scp test_websocket_events.py ${REMOTE_USER}@${REMOTE_HOST}:${API_PATH}/
 # 3. Update dependencies if needed
 echo "📦 Checking dependencies..."
 ssh ${REMOTE_USER}@${REMOTE_HOST} << 'EOF'
-cd /home/ryan/code/mimir-api
+cd /home/ryan/code/mimir-api/api-service
 source venv/bin/activate
 
 # Install websockets and requests for testing if not already installed
