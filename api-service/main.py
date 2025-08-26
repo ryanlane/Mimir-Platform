@@ -2964,6 +2964,7 @@ async def list_display_clients(
             name=client.name,
             description=client.description,
             location=client.location,
+            hostname=getattr(client, 'hostname', None),
             is_online=client.is_online,
             last_seen=client.last_seen.isoformat() if client.last_seen else None,
             assigned_scene_id=client.assigned_scene_id,
@@ -2973,6 +2974,10 @@ async def list_display_clients(
             refresh_rate_hz=client.refresh_rate_hz,
             tags=client.tags,
             client_version=client.client_version,
+            webhook_port=getattr(client, 'webhook_port', None),
+            webhook_url=f"http://{getattr(client, 'hostname', 'unknown')}:{getattr(client, 'webhook_port', 8080)}" if getattr(client, 'hostname', None) and getattr(client, 'webhook_port', None) else None,
+            redis_distribution=getattr(client, 'redis_distribution', None),
+            content_claiming=getattr(client, 'content_claiming', None),
             current_image_url=f"/api/displays/{client.id}/current_image" if client.assigned_scene_id else None
         ) for client in clients
     ]
