@@ -4503,8 +4503,10 @@ async def distribution_monitoring_task():
 @app.on_event("startup")
 async def start_background_tasks():
     """Start background tasks when the application starts"""
-    if DISTRIBUTION_AVAILABLE and REDIS_AVAILABLE:
-        asyncio.create_task(distribution_monitoring_task())
-        logger.info("Started distribution monitoring background task")
+    # Temporarily disable background monitoring until distribution service async client issues are resolved
+    logger.info("Background distribution monitoring temporarily disabled due to async client compatibility")
+    # if DISTRIBUTION_AVAILABLE and REDIS_AVAILABLE:
+    #     asyncio.create_task(distribution_monitoring_task())
+    #     logger.info("Started distribution monitoring background task")
 
 # =========================================================================
