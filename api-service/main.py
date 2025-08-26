@@ -892,14 +892,18 @@ class DisplayClientCapabilities(BaseModel):
     supported_formats: List[str]  # ["jpg", "png", "gif"]
     orientation: str = "landscape"  # "landscape" | "portrait"
     refresh_rate_hz: Optional[int] = 60  # Display refresh rate
+    redis_distribution: Optional[bool] = False  # Supports Redis distribution
+    content_claiming: Optional[bool] = False  # Supports content claiming workflow
 
 class DisplayClientRegistration(BaseModel):
     name: str
     description: Optional[str] = None
     location: Optional[str] = None
+    hostname: Optional[str] = None  # System hostname (e.g., "colorframe05")
     capabilities: DisplayClientCapabilities
     tags: Optional[List[str]] = None
     client_version: Optional[str] = "1.0.0"  # Client software version
+    webhook_port: Optional[int] = None  # Webhook server port for manual updates
 
 class DisplayClientUpdate(BaseModel):
     name: Optional[str] = None
@@ -913,6 +917,7 @@ class DisplayClientResponse(BaseModel):
     name: str
     description: Optional[str]
     location: Optional[str]
+    hostname: Optional[str]  # System hostname
     is_online: bool
     last_seen: Optional[str]
     assigned_scene_id: Optional[str]
@@ -922,6 +927,10 @@ class DisplayClientResponse(BaseModel):
     refresh_rate_hz: Optional[int]
     tags: Optional[List[str]]
     client_version: Optional[str]
+    webhook_port: Optional[int]  # Webhook server port
+    webhook_url: Optional[str]  # Full webhook URL for manual updates
+    redis_distribution: Optional[bool]  # Supports Redis distribution
+    content_claiming: Optional[bool]  # Supports content claiming
     current_image_url: Optional[str]  # URL to fetch latest image
 
 class SceneAssignment(BaseModel):
@@ -2869,11 +2878,15 @@ async def register_display_client(
         name=registration.name,
         description=registration.description,
         location=registration.location,
+        hostname=registration.hostname,
         resolution=registration.capabilities.resolution,
         supported_formats=registration.capabilities.supported_formats,
         orientation=registration.capabilities.orientation,
         refresh_rate_hz=registration.capabilities.refresh_rate_hz,
         client_version=registration.client_version,
+        webhook_port=registration.webhook_port,
+        redis_distribution=registration.capabilities.redis_distribution,
+        content_claiming=registration.capabilities.content_claiming,
         tags=registration.tags,
         is_online=False,
         created_at=datetime.datetime.now()
@@ -2896,6 +2909,7 @@ async def register_display_client(
         name=display_client.name,
         description=display_client.description,
         location=display_client.location,
+        hostname=display_client.hostname,
         is_online=display_client.is_online,
         last_seen=display_client.last_seen.isoformat() if display_client.last_seen else None,
         assigned_scene_id=display_client.assigned_scene_id,
@@ -2905,6 +2919,10 @@ async def register_display_client(
         refresh_rate_hz=display_client.refresh_rate_hz,
         tags=display_client.tags,
         client_version=display_client.client_version,
+        webhook_port=display_client.webhook_port,
+        webhook_url=f"http://{display_client.hostname}:{display_client.webhook_port}" if display_client.hostname and display_client.webhook_port else None,
+        redis_distribution=display_client.redis_distribution,
+        content_claiming=display_client.content_claiming,
         current_image_url=None
     )
 
@@ -3519,6 +3537,257 @@ async def delete_display_client(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to delete display client: {str(e)}")
+
+@app.post("/api/displays/{display_id}/update")
+async def trigger_display_update(
+    display_id: str,
+    reason: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Trigger immediate update on a display client via webhook"""
+    
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    if not display_client.hostname or not display_client.webhook_port:
+        raise HTTPException(
+            status_code=400, 
+            detail="Display client does not have webhook capability configured"
+        )
+    
+    webhook_url = f"http://{display_client.hostname}:{display_client.webhook_port}/update"
+    
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            payload = {"reason": reason or "API triggered update", "timestamp": datetime.datetime.now().isoformat()}
+            response = await client.post(webhook_url, json=payload, timeout=5.0)
+            response.raise_for_status()
+            
+            # Broadcast update event
+            await broadcast_event("display_manual_update", {
+                "displayId": display_id,
+                "displayName": display_client.name,
+                "action": "update",
+                "reason": reason,
+                "webhook_url": webhook_url,
+                "triggeredBy": {
+                    "source": "api",
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+            })
+            
+            return {
+                "message": f"Update triggered on display {display_client.name}",
+                "display_id": display_id,
+                "webhook_response": response.json() if response.content else None
+            }
+            
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, 
+            detail=f"Failed to reach display webhook: {str(e)}"
+        )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502, 
+            detail=f"Display webhook returned error: {e.response.status_code}"
+        )
+
+@app.post("/api/displays/{display_id}/refresh")
+async def trigger_display_refresh(
+    display_id: str,
+    reason: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Trigger immediate refresh (bypassing cache) on a display client via webhook"""
+    
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    if not display_client.hostname or not display_client.webhook_port:
+        raise HTTPException(
+            status_code=400, 
+            detail="Display client does not have webhook capability configured"
+        )
+    
+    webhook_url = f"http://{display_client.hostname}:{display_client.webhook_port}/refresh"
+    
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            payload = {"reason": reason or "API triggered refresh", "timestamp": datetime.datetime.now().isoformat()}
+            response = await client.post(webhook_url, json=payload, timeout=5.0)
+            response.raise_for_status()
+            
+            # Broadcast refresh event
+            await broadcast_event("display_manual_update", {
+                "displayId": display_id,
+                "displayName": display_client.name,
+                "action": "refresh",
+                "reason": reason,
+                "webhook_url": webhook_url,
+                "triggeredBy": {
+                    "source": "api",
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+            })
+            
+            return {
+                "message": f"Refresh triggered on display {display_client.name}",
+                "display_id": display_id,
+                "webhook_response": response.json() if response.content else None
+            }
+            
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, 
+            detail=f"Failed to reach display webhook: {str(e)}"
+        )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502, 
+            detail=f"Display webhook returned error: {e.response.status_code}"
+        )
+
+@app.get("/api/displays/{display_id}/webhook_status")
+async def get_display_webhook_status(
+    display_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """Get webhook status from a display client"""
+    
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    if not display_client.hostname or not display_client.webhook_port:
+        return {
+            "webhook_available": False,
+            "reason": "Display client does not have webhook capability configured"
+        }
+    
+    webhook_url = f"http://{display_client.hostname}:{display_client.webhook_port}/status"
+    
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            response = await client.get(webhook_url, timeout=5.0)
+            response.raise_for_status()
+            
+            return {
+                "webhook_available": True,
+                "webhook_url": webhook_url,
+                "display_status": response.json(),
+                "last_checked": datetime.datetime.now().isoformat()
+            }
+            
+    except httpx.RequestError as e:
+        return {
+            "webhook_available": False,
+            "webhook_url": webhook_url,
+            "error": f"Connection failed: {str(e)}",
+            "last_checked": datetime.datetime.now().isoformat()
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "webhook_available": False,
+            "webhook_url": webhook_url,
+            "error": f"HTTP error: {e.response.status_code}",
+            "last_checked": datetime.datetime.now().isoformat()
+        }
+
+@app.get("/api/displays/discover")
+async def discover_displays_mdns(
+    timeout: int = 5,
+    _: dict = Depends(check_rate_limit)
+):
+    """Discover displays on the network via mDNS"""
+    try:
+        from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
+        import threading
+        import time
+        
+        discovered_displays = []
+        discovery_complete = threading.Event()
+        
+        class DisplayServiceListener(ServiceListener):
+            def add_service(self, zeroconf, type, name):
+                if '_mimir-display._tcp.local.' in name:
+                    info = zeroconf.get_service_info(type, name)
+                    if info:
+                        # Extract service properties
+                        properties = {}
+                        if info.properties:
+                            for key, value in info.properties.items():
+                                try:
+                                    properties[key.decode('utf-8')] = value.decode('utf-8')
+                                except:
+                                    pass
+                        
+                        # Get IP addresses
+                        addresses = [addr for addr in info.addresses if addr]
+                        
+                        display_info = {
+                            "service_name": name,
+                            "hostname": properties.get("hostname", "unknown"),
+                            "display_name": properties.get("display_name", "Unknown Display"),
+                            "display_id": properties.get("display_id"),
+                            "location": properties.get("location"),
+                            "resolution": properties.get("resolution"),
+                            "client_version": properties.get("client_version"),
+                            "webhook_port": int(properties.get("webhook_port", 0)) if properties.get("webhook_port") else None,
+                            "addresses": [addr.decode('utf-8') if isinstance(addr, bytes) else str(addr) for addr in addresses],
+                            "port": info.port,
+                            "discovered_at": datetime.datetime.now().isoformat()
+                        }
+                        
+                        # Add webhook URL if available
+                        if display_info["addresses"] and display_info["webhook_port"]:
+                            display_info["webhook_url"] = f"http://{display_info['addresses'][0]}:{display_info['webhook_port']}"
+                        
+                        discovered_displays.append(display_info)
+            
+            def remove_service(self, zeroconf, type, name):
+                pass
+            
+            def update_service(self, zeroconf, type, name):
+                pass
+        
+        # Start discovery
+        zeroconf = Zeroconf()
+        listener = DisplayServiceListener()
+        browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", listener)
+        
+        # Wait for discovery timeout
+        time.sleep(timeout)
+        
+        # Cleanup
+        browser.cancel()
+        zeroconf.close()
+        
+        return {
+            "discovered_displays": discovered_displays,
+            "discovery_timeout": timeout,
+            "total_found": len(discovered_displays),
+            "discovery_completed_at": datetime.datetime.now().isoformat()
+        }
+        
+    except ImportError:
+        raise HTTPException(
+            status_code=501, 
+            detail="mDNS discovery not available (zeroconf library not installed)"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Discovery failed: {str(e)}"
+        )
 
 def calculate_poll_interval(update_interval_unit: str, update_interval_value: int) -> int:
     """Calculate poll interval in seconds from unit and value"""

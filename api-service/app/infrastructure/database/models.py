@@ -75,6 +75,7 @@ class DisplayClient(Base):
     name = Column(String, nullable=False)  # Human-readable name
     description = Column(String, nullable=True)
     location = Column(String, nullable=True)  # Physical location
+    hostname = Column(String, nullable=True)  # System hostname (e.g., "colorframe05")
     
     # Client capabilities
     resolution = Column(JSON, nullable=True)  # [width, height]
@@ -82,6 +83,11 @@ class DisplayClient(Base):
     orientation = Column(String, default="landscape")  # "landscape", "portrait"
     refresh_rate_hz = Column(Integer, nullable=True)  # Display refresh rate
     client_version = Column(String, nullable=True)  # Client software version
+    
+    # Network capabilities
+    webhook_port = Column(Integer, nullable=True)  # Webhook server port for manual updates
+    redis_distribution = Column(Boolean, default=False)  # Supports Redis distribution
+    content_claiming = Column(Boolean, default=False)  # Supports content claiming
     
     # Connection status
     is_online = Column(Boolean, default=False)
