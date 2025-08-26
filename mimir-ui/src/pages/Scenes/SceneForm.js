@@ -7,6 +7,7 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
   const [formData, setFormData] = useState({
     name: '',
     channels: [],
+    distribution_mode: 'MIRROR', // Default distribution mode
     overlay: {
       overlays: [],
       position: ['top', 'right'],
@@ -94,6 +95,7 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
       setFormData({
         name: scene.name || '',
         channels: singleChannel,
+        distribution_mode: scene.distribution_mode || 'MIRROR', // Include distribution mode from existing scene
         overlay: scene.overlay || {
           overlays: [],
           position: ['top', 'right'],
@@ -329,6 +331,51 @@ const SceneForm = ({ scene, channels, overlays, onClose }) => {
                   )}
                 </div>
               ))}
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Distribution Mode</label>
+            <div className="distribution-mode-selection">
+              <label className="radio-item">
+                <input
+                  type="radio"
+                  name="distribution_mode"
+                  value="MIRROR"
+                  checked={formData.distribution_mode === 'MIRROR'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, distribution_mode: e.target.value }))}
+                />
+                <div className="mode-info">
+                  <span className="mode-name">Mirror Mode</span>
+                  <span className="mode-description">All displays show the same content simultaneously</span>
+                </div>
+              </label>
+              <label className="radio-item">
+                <input
+                  type="radio"
+                  name="distribution_mode"
+                  value="SEQUENTIAL"
+                  checked={formData.distribution_mode === 'SEQUENTIAL'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, distribution_mode: e.target.value }))}
+                />
+                <div className="mode-info">
+                  <span className="mode-name">Sequential Mode</span>
+                  <span className="mode-description">Displays cycle through content in order</span>
+                </div>
+              </label>
+              <label className="radio-item">
+                <input
+                  type="radio"
+                  name="distribution_mode"
+                  value="RANDOM_UNIQUE"
+                  checked={formData.distribution_mode === 'RANDOM_UNIQUE'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, distribution_mode: e.target.value }))}
+                />
+                <div className="mode-info">
+                  <span className="mode-name">Random Unique Mode</span>
+                  <span className="mode-description">Displays get randomized content without duplication</span>
+                </div>
+              </label>
             </div>
           </div>
 

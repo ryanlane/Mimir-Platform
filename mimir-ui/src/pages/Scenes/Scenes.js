@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Monitor, Edit, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Monitor, Edit, Trash2, RefreshCw, Settings } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
+import DistributionManager from '../../components/DistributionManager/DistributionManager';
 import './Scenes.css';
 
 const Scenes = () => {
@@ -16,6 +17,8 @@ const Scenes = () => {
   const [showImageModal, setShowImageModal] = useState(false);
   const [currentImageData, setCurrentImageData] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
+  const [showDistributionManager, setShowDistributionManager] = useState(false);
+  const [selectedSceneForDistribution, setSelectedSceneForDistribution] = useState(null);
 
   // Initialize WebSocket connection with automatic state sync on mount
   const { isConnected, currentState, requestStateSync } = useEnsureFreshState();
@@ -167,6 +170,32 @@ const Scenes = () => {
     }
   };
 
+  const handleDistributionModeChange = async (sceneId, newMode) => {
+    try {
+      await api.updateSceneDistributionMode(sceneId, newMode);
+      // Update local state immediately
+      setScenes(prevScenes => 
+        prevScenes.map(scene => 
+          scene.id === sceneId 
+            ? { ...scene, distribution_mode: newMode }
+            : scene
+        )
+      );
+    } catch (error) {
+      console.error('Error updating distribution mode:', error);
+    }
+  };
+
+  const handleManageDistribution = (scene) => {
+    setSelectedSceneForDistribution(scene);
+    setShowDistributionManager(true);
+  };
+
+  const handleCloseDistributionManager = () => {
+    setShowDistributionManager(false);
+    setSelectedSceneForDistribution(null);
+  };
+
   const handleDisplayScene = async (sceneId) => {
     try {
       setImageLoading(true);
@@ -269,6 +298,19 @@ const Scenes = () => {
                 </div>
 
                 <div className="scene-card-body">
+                  <div className="scene-distribution-mode">
+                    <span className="distribution-label">Distribution:</span>
+                    <select
+                      value={scene.distribution_mode || 'MIRROR'}
+                      onChange={(e) => handleDistributionModeChange(scene.id, e.target.value)}
+                      className="distribution-mode-select"
+                    >
+                      <option value="MIRROR">Mirror</option>
+                      <option value="SEQUENTIAL">Sequential</option>
+                      <option value="RANDOM_UNIQUE">Random Unique</option>
+                    </select>
+                  </div>
+                  
                   {scene.channels && scene.channels.length > 0 && (
                     <div className="scene-channels">
                       <span className="channels-label">Channels:</span>
@@ -309,6 +351,14 @@ const Scenes = () => {
                   >
                     <Monitor size={16} />
                     {imageLoading ? 'Loading...' : 'Display'}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-info"
+                    onClick={() => handleManageDistribution(scene)}
+                    title="Manage Distribution"
+                  >
+                    <Settings size={16} />
+                    Distribution
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -392,6 +442,18 @@ const Scenes = () => {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showDistributionManager && selectedSceneForDistribution && (
+        <div className="modal-overlay" onClick={handleCloseDistributionManager}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <DistributionManager
+              sceneId={selectedSceneForDistribution.id}
+              sceneName={selectedSceneForDistribution.name}
+              onClose={handleCloseDistributionManager}
+            />
           </div>
         </div>
       )}

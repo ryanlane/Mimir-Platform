@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Activity, BarChart3, Settings, RefreshCw } from 'lucide-react';
+import { Database, Activity, BarChart3, Settings, RefreshCw, Zap } from 'lucide-react';
 import { api } from '../../services/api';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocket, useWebSocketEvent } from '../../hooks/useWebSocket';
 import DistributionMonitor from '../../components/DistributionMonitor/DistributionMonitor';
 import './Distribution.css';
 
@@ -73,6 +73,22 @@ const Distribution = () => {
     }
   };
 
+  // Listen for distribution performance updates via WebSocket
+  useWebSocketEvent('distribution_performance', (data) => {
+    console.log('📊 Distribution performance update:', data);
+    setDistributionStatus(prev => ({
+      ...prev,
+      ...data
+    }));
+  });
+
+  // Listen for scene content refresh events
+  useWebSocketEvent('scene_content_refreshed', (data) => {
+    console.log('🔄 Scene content refreshed:', data);
+    // Refresh the distribution data to see updated queue status
+    loadDistributionData();
+  });
+
   useEffect(() => {
     loadDistributionData();
   }, []);
@@ -135,6 +151,13 @@ const Distribution = () => {
               <BarChart3 size={20} />
               <h3>Distribution Overview</h3>
             </div>
+            <button 
+              className="btn btn-xs btn-secondary"
+              onClick={() => api.getRedisStatus().then(r => console.log('Redis status:', r.data))}
+              title="Check Redis status"
+            >
+              Redis Status
+            </button>
           </div>
           <div className="card-body">
             {distributionStatus ? (
@@ -146,6 +169,14 @@ const Distribution = () => {
                 <div className="stat-item">
                   <div className="stat-label">Active Displays</div>
                   <div className="stat-value">{distributionStatus.total_displays || 0}</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-label">Active Leases</div>
+                  <div className="stat-value">{distributionStatus.active_leases || 0}</div>
+                </div>
+                <div className="stat-item">
+                  <div className="stat-label">Queue Items</div>
+                  <div className="stat-value">{distributionStatus.total_queue_items || 0}</div>
                 </div>
                 <div className="stat-item">
                   <div className="stat-label">Redis Status</div>

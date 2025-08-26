@@ -235,6 +235,59 @@
   margin-bottom: var(--spacing-xs);
 }
 
+/* Distribution Mode Selection Styles */
+.distribution-mode-selection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.distribution-mode-selection .radio-item {
+  padding: var(--spacing-md);
+  background-color: var(--color-background);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+}
+
+.distribution-mode-selection .radio-item:hover {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface);
+}
+
+.distribution-mode-selection .radio-item input[type="radio"]:checked ~ .mode-info {
+  color: var(--color-accent);
+}
+
+.distribution-mode-selection .radio-item input[type="radio"]:checked {
+  ~ * {
+    border-color: var(--color-accent);
+  }
+}
+
+.distribution-mode-selection .radio-item:has(input[type="radio"]:checked) {
+  border-color: var(--color-accent);
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.mode-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.mode-name {
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+}
+
+.mode-description {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
 /* Subchannel requirement note styling */
 .subchannel-requirement-note {
   margin-top: var(--spacing-xs);
