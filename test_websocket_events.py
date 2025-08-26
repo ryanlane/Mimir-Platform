@@ -60,88 +60,131 @@ async def test_websocket_events():
             
             # Test 1: Get active scenes
             print("\n1. Getting active scenes...")
-            response = requests.get(f"{API_BASE}/api/scenes")
-            if response.status_code == 200:
-                scenes = response.json()
-                active_scenes = [s for s in scenes if s.get('is_active')]
-                print(f"   Found {len(active_scenes)} active scenes")
-                
-                if active_scenes:
-                    scene_id = active_scenes[0]['id']
-                    scene_name = active_scenes[0]['name']
-                    print(f"   Using scene: {scene_name} ({scene_id})")
-                    
-                    # Test 2: Refresh scene content (should trigger epoch_started and queue_status)
-                    print("\n2. Refreshing scene content...")
-                    refresh_response = requests.post(f"{API_BASE}/api/scenes/{scene_id}/refresh_content")
-                    if refresh_response.status_code == 200:
-                        print("   ✅ Content refresh triggered")
-                        print("   🔍 Watch for: epoch_started, queue_status events")
+            try:
+                response = requests.get(f"{API_BASE}/api/scenes")
+                if response.status_code == 200:
+                    scenes_data = response.json()
+                    # Handle both list and dict responses
+                    if isinstance(scenes_data, list):
+                        scenes = scenes_data
+                    elif isinstance(scenes_data, dict) and 'scenes' in scenes_data:
+                        scenes = scenes_data['scenes']
                     else:
-                        print(f"   ❌ Content refresh failed: {refresh_response.status_code}")
+                        scenes = []
                     
-                    # Test 3: Get distribution status
-                    print("\n3. Getting distribution status...")
-                    status_response = requests.get(f"{API_BASE}/api/scenes/{scene_id}/distribution_status")
-                    if status_response.status_code == 200:
-                        status = status_response.json()
-                        print(f"   Distribution mode: {status.get('distribution_mode', 'unknown')}")
-                        print(f"   Active leases: {status.get('active_leases', 0)}")
-                        print(f"   Queue items: {status.get('queue_status', {}).get('total_items', 0)}")
+                    active_scenes = [s for s in scenes if s.get('is_active')]
+                    print(f"   Found {len(active_scenes)} active scenes")
                     
-                    # Test 4: Check display clients for content claiming test
-                    print("\n4. Getting display clients...")
-                    clients_response = requests.get(f"{API_BASE}/api/display_clients")
-                    if clients_response.status_code == 200:
-                        clients = clients_response.json()
-                        assigned_clients = [c for c in clients if c.get('assigned_scene_id') == scene_id]
-                        print(f"   Found {len(assigned_clients)} clients assigned to scene")
+                    if active_scenes:
+                        scene_id = active_scenes[0]['id']
+                        scene_name = active_scenes[0]['name']
+                        print(f"   Using scene: {scene_name} ({scene_id})")
                         
-                        if assigned_clients:
-                            client_id = assigned_clients[0]['id']
-                            print(f"   Using client: {client_id}")
-                            
-                            # Test 5: Simulate content claim (should trigger content_assigned)
-                            print("\n5. Simulating content claim...")
-                            claim_data = {
-                                "client_version": "test-1.0",
-                                "capabilities": {"formats": ["image/jpeg", "image/png"]}
-                            }
-                            claim_response = requests.post(
-                                f"{API_BASE}/api/displays/{client_id}/claim_content",
-                                json=claim_data
-                            )
-                            if claim_response.status_code == 200:
-                                claim_result = claim_response.json()
-                                print("   ✅ Content claim successful")
-                                print(f"   Status: {claim_result.get('status')}")
-                                print("   🔍 Watch for: content_assigned event")
-                                
-                                # Test 6: Acknowledge assignment (should trigger content_released)
-                                if claim_result.get('assignment_id'):
-                                    print("\n6. Acknowledging assignment...")
-                                    ack_data = {
-                                        "assignment_id": claim_result['assignment_id'],
-                                        "status": "displayed",
-                                        "details": {"content_id": claim_result.get('content_id')}
-                                    }
-                                    ack_response = requests.post(
-                                        f"{API_BASE}/api/displays/{client_id}/acknowledge",
-                                        json=ack_data
-                                    )
-                                    if ack_response.status_code == 200:
-                                        print("   ✅ Assignment acknowledged")
-                                        print("   🔍 Watch for: content_released event")
-                                    else:
-                                        print(f"   ❌ Acknowledgment failed: {ack_response.status_code}")
+                        # Test 2: Refresh scene content (should trigger epoch_started and queue_status)
+                        print("\n2. Refreshing scene content...")
+                        try:
+                            refresh_response = requests.post(f"{API_BASE}/api/scenes/{scene_id}/refresh_content")
+                            if refresh_response.status_code == 200:
+                                print("   ✅ Content refresh triggered")
+                                print("   🔍 Watch for: epoch_started, queue_status events")
                             else:
-                                print(f"   ❌ Content claim failed: {claim_response.status_code}")
-                                print(f"   Response: {claim_response.text}")
-                        else:
-                            print("   ⚠️  No display clients assigned to scene for testing")
-                    
+                                print(f"   ❌ Content refresh failed: {refresh_response.status_code}")
+                                print(f"   Response: {refresh_response.text}")
+                        except Exception as e:
+                            print(f"   ❌ Content refresh error: {e}")
+                        
+                        # Test 3: Get distribution status
+                        print("\n3. Getting distribution status...")
+                        try:
+                            status_response = requests.get(f"{API_BASE}/api/scenes/{scene_id}/distribution_status")
+                            if status_response.status_code == 200:
+                                status = status_response.json()
+                                print(f"   Distribution mode: {status.get('distribution_mode', 'unknown')}")
+                                print(f"   Active leases: {status.get('active_leases', 0)}")
+                                print(f"   Queue items: {status.get('queue_status', {}).get('total_items', 0)}")
+                            else:
+                                print(f"   ⚠️  Distribution status: {status_response.status_code}")
+                        except Exception as e:
+                            print(f"   ❌ Distribution status error: {e}")
+                        
+                        # Test 4: Check display clients for content claiming test
+                        print("\n4. Getting display clients...")
+                        try:
+                            clients_response = requests.get(f"{API_BASE}/api/display_clients")
+                            if clients_response.status_code == 200:
+                                clients_data = clients_response.json()
+                                # Handle both list and dict responses
+                                if isinstance(clients_data, list):
+                                    clients = clients_data
+                                elif isinstance(clients_data, dict) and 'clients' in clients_data:
+                                    clients = clients_data['clients']
+                                else:
+                                    clients = []
+                                
+                                assigned_clients = [c for c in clients if c.get('assigned_scene_id') == scene_id]
+                                print(f"   Found {len(assigned_clients)} clients assigned to scene")
+                                
+                                if assigned_clients:
+                                    client_id = assigned_clients[0]['id']
+                                    print(f"   Using client: {client_id}")
+                                    
+                                    # Test 5: Simulate content claim (should trigger content_assigned)
+                                    print("\n5. Simulating content claim...")
+                                    claim_data = {
+                                        "client_version": "test-1.0",
+                                        "capabilities": {"formats": ["image/jpeg", "image/png"]}
+                                    }
+                                    try:
+                                        claim_response = requests.post(
+                                            f"{API_BASE}/api/displays/{client_id}/claim_content",
+                                            json=claim_data
+                                        )
+                                        if claim_response.status_code == 200:
+                                            claim_result = claim_response.json()
+                                            print("   ✅ Content claim successful")
+                                            print(f"   Status: {claim_result.get('status')}")
+                                            print("   🔍 Watch for: content_assigned event")
+                                            
+                                            # Test 6: Acknowledge assignment (should trigger content_released)
+                                            if claim_result.get('assignment_id'):
+                                                print("\n6. Acknowledging assignment...")
+                                                ack_data = {
+                                                    "assignment_id": claim_result['assignment_id'],
+                                                    "status": "displayed",
+                                                    "details": {"content_id": claim_result.get('content_id')}
+                                                }
+                                                try:
+                                                    ack_response = requests.post(
+                                                        f"{API_BASE}/api/displays/{client_id}/acknowledge",
+                                                        json=ack_data
+                                                    )
+                                                    if ack_response.status_code == 200:
+                                                        print("   ✅ Assignment acknowledged")
+                                                        print("   🔍 Watch for: content_released event")
+                                                    else:
+                                                        print(f"   ❌ Acknowledgment failed: {ack_response.status_code}")
+                                                        print(f"   Response: {ack_response.text}")
+                                                except Exception as e:
+                                                    print(f"   ❌ Acknowledgment error: {e}")
+                                        else:
+                                            print(f"   ❌ Content claim failed: {claim_response.status_code}")
+                                            print(f"   Response: {claim_response.text}")
+                                    except Exception as e:
+                                        print(f"   ❌ Content claim error: {e}")
+                                else:
+                                    print("   ⚠️  No display clients assigned to scene for testing")
+                            else:
+                                print(f"   ❌ Failed to get clients: {clients_response.status_code}")
+                        except Exception as e:
+                            print(f"   ❌ Display clients error: {e}")
+                        
+                    else:
+                        print("   ⚠️  No active scenes found for testing")
                 else:
-                    print("   ⚠️  No active scenes found for testing")
+                    print(f"   ❌ Failed to get scenes: {response.status_code}")
+                    print(f"   Response: {response.text}")
+            except Exception as e:
+                print(f"   ❌ Scenes API error: {e}")
             
             print("\n=== Monitoring for Events ===")
             print("Listening for distribution events for 60 seconds...")
