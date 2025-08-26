@@ -104,21 +104,36 @@ app/
    - Move engine/session creation to `app/db/session.py`
    - Create dependency injection for sessions
 
-### **🛣️ Phase 3: API Router Extraction (Priority 2)**
+### **🛣️ Phase 3: API Router Extraction (Priority 2) ✅ COMPLETED**
 
 **Goal**: Split monolithic endpoints into focused routers
 
-1. **Overlays Router** (extract from main.py ~lines 1500-2000)
-   - `/api/overlays/*` endpoints
-   - Move to `app/api/routers/overlays.py`
+1. **Overlays Router** ✅
+   - Created `app/api/routes/overlays.py` with full CRUD operations
+   - Extracted `/api/overlays/*` endpoints from legacy code
+   - Added pagination support and proper response schemas
 
-2. **Display Clients Router** (extract from main.py ~lines 2000-3000)
-   - Registration, update, assignment endpoints
-   - Move to `app/api/routers/displays.py`
+2. **Display Clients Router** ✅
+   - Created `app/api/routes/displays.py` with comprehensive display management
+   - Extracted registration, update, assignment, and status endpoints
+   - Added WebSocket support for display-specific connections
+   - Implemented content claiming and acknowledgment system
 
-3. **WebSocket Router** (extract from main.py ~lines 3500-4500)
-   - Connection management
-   - Move to `app/api/routers/websockets.py`
+3. **WebSocket Router** ✅
+   - Created `app/api/routes/websockets.py` with dedicated WebSocket handling
+   - Extracted connection management with proper message routing
+   - Added heartbeat mechanism and state synchronization
+   - Implemented display-specific WebSocket endpoints
+
+4. **Enhanced Channels Router** ✅
+   - Expanded existing channels router with 15+ additional endpoints
+   - Added image serving, health checks, testing, and subchannel support
+   - Implemented file serving for current content and static assets
+
+5. **Router Integration** ✅
+   - Updated `app/main.py` to include all new routers
+   - Removed legacy WebSocket endpoint from main app
+   - Proper prefix and tag organization for API documentation
 
 ### **📝 Phase 4: Schema Migration (Priority 3)**
 
