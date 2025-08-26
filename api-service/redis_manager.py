@@ -87,26 +87,10 @@ class RedisManager:
             self._health_status = "error"
     
     async def _initialize_async_connection(self):
-        """Initialize async Redis connection lazily"""
-        if self.async_redis is None:
-            try:
-                redis_url = f"redis://"
-                if self.password:
-                    redis_url += f":{self.password}@"
-                redis_url += f"{self.host}:{self.port}/{self.db}"
-                
-                self.async_redis = aioredis.from_url(
-                    redis_url,
-                    max_connections=self.max_connections,
-                    retry_on_timeout=True,
-                    decode_responses=True
-                )
-                
-                logger.info("Async Redis connection initialized")
-                
-            except Exception as e:
-                logger.error(f"Failed to initialize async Redis connection: {e}")
-                raise
+        """Initialize async Redis connection lazily - DISABLED"""
+        # Async Redis functionality disabled to avoid aioredis dependency issues
+        logger.warning("Async Redis connection initialization disabled - using sync client only")
+        self.async_redis = None
     
     async def is_healthy(self) -> bool:
         """
@@ -119,12 +103,8 @@ class RedisManager:
             if self.redis_client is None:
                 return False
             
-            # Sync ping test
+            # Sync ping test only (async client disabled)
             result = self.redis_client.ping()
-            
-            # Test async connection if available
-            if self.async_redis:
-                await self.async_redis.ping()
             
             self._is_connected = result
             self._last_health_check = datetime.now()
@@ -230,18 +210,13 @@ class RedisManager:
     
     async def get_async_client(self):
         """
-        Get async Redis client, initializing if necessary
+        Get async Redis client - DISABLED
         
         Returns:
-            aioredis.Redis: Async Redis client
+            None: Async Redis functionality disabled
         """
-        if self.async_redis is None:
-            await self._initialize_async_connection()
-        
-        if not await self.is_healthy():
-            raise ConnectionError("Redis is not available")
-        
-        return self.async_redis
+        logger.warning("Async Redis client requested but disabled - use sync client instead")
+        raise NotImplementedError("Async Redis client disabled - use get_sync_client() instead")
     
     def get_sync_client(self):
         """

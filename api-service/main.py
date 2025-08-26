@@ -4455,29 +4455,37 @@ async def distribution_monitoring_task():
                             # Get distribution service
                             dist_service = get_distribution_service(manager, SessionLocal)
                             
-                            # Get current distribution status
-                            status = await dist_service.get_distribution_status(scene.id)
-                            
-                            # Extract performance metrics
-                            performance_metrics = {
-                                "active_leases": status.get("active_leases", 0),
-                                "queue_size": status.get("queue_status", {}).get("total_items", 0),
-                                "assignments_last_minute": status.get("metrics", {}).get("assignments_last_minute", 0),
-                                "average_assignment_time": status.get("metrics", {}).get("avg_assignment_time", 0),
-                                "memory_usage": status.get("memory_usage", {}),
-                                "last_activity": status.get("last_activity")
-                            }
-                            
-                            # Broadcast performance metrics
-                            await manager.broadcast_distribution_performance(
-                                scene_id=scene.id,
-                                performance_metrics=performance_metrics
-                            )
-                            
-                            # Broadcast queue status if it's changed significantly
-                            queue_status = status.get("queue_status", {})
-                            if queue_status:
-                                await manager.broadcast_queue_status(scene.id, queue_status)
+                            # Get current distribution status with error handling
+                            try:
+                                status = await dist_service.get_distribution_status(scene.id)
+                                
+                                # Extract performance metrics
+                                performance_metrics = {
+                                    "active_leases": status.get("active_leases", 0),
+                                    "queue_size": status.get("queue_status", {}).get("total_items", 0),
+                                    "assignments_last_minute": status.get("metrics", {}).get("assignments_last_minute", 0),
+                                    "average_assignment_time": status.get("metrics", {}).get("avg_assignment_time", 0),
+                                    "memory_usage": status.get("memory_usage", {}),
+                                    "last_activity": status.get("last_activity")
+                                }
+                                
+                                # Broadcast performance metrics
+                                await manager.broadcast_distribution_performance(
+                                    scene_id=scene.id,
+                                    performance_metrics=performance_metrics
+                                )
+                                
+                                # Broadcast queue status if it's changed significantly
+                                queue_status = status.get("queue_status", {})
+                                if queue_status:
+                                    await manager.broadcast_queue_status(scene.id, queue_status)
+                                    
+                            except Exception as redis_error:
+                                # Log Redis-related errors but don't crash the monitoring task
+                                if "aioredis" in str(redis_error) or "get_async_client" in str(redis_error):
+                                    logger.warning(f"Redis async client error for scene {scene.id} (using sync fallback): {redis_error}")
+                                else:
+                                    logger.error(f"Error monitoring scene {scene.id}: {redis_error}")
                                 
                         except Exception as e:
                             logger.error(f"Error monitoring scene {scene.id}: {e}")
