@@ -114,6 +114,12 @@ class DisplayClient(Base):
     description = Column(String, nullable=True)
     location = Column(String, nullable=True)  # Physical location
     
+    # Enhanced networking fields
+    hostname = Column(String, nullable=True)  # System hostname for mDNS/networking
+    webhook_port = Column(Integer, nullable=True)  # Port for webhook server
+    redis_distribution = Column(Boolean, default=False)  # Supports Redis distribution
+    content_claiming = Column(Boolean, default=False)  # Supports content claiming
+    
     # Client capabilities
     resolution = Column(JSON, nullable=True)  # [width, height]
     supported_formats = Column(JSON, nullable=True)  # ["jpg", "png", "gif"]
