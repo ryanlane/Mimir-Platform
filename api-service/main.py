@@ -3793,11 +3793,102 @@ async def discover_displays_mdns(
 ):
     """Discover displays on the network via mDNS and optionally auto-register them"""
     try:
-        from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
-        import threading
-        import time
+        import subprocess
+        import json
+        import os
         
         print(f"🔍 Starting mDNS discovery with timeout={timeout}, auto_register={auto_register}")
+        
+        discovered_displays = []
+        auto_registered = []
+        
+        # Use our working standalone discovery script since ServiceBrowser doesn't work in async context
+        script_path = os.path.join(os.path.dirname(__file__), "test_discovery.py")
+        if os.path.exists(script_path):
+            print(f"🔧 Running standalone discovery script...")
+            try:
+                # Run the discovery script
+                result = subprocess.run(
+                    ["python3", script_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout + 5,
+                    cwd=os.path.dirname(__file__)
+                )
+                
+                if result.returncode == 0:
+                    # Parse JSON from the last line of output
+                    lines = result.stdout.strip().split('\n')
+                    for line in reversed(lines):
+                        if line.startswith('[') and line.endswith(']'):
+                            try:
+                                script_results = json.loads(line)
+                                print(f"✅ Found {len(script_results)} displays via script")
+                                
+                                for script_display in script_results:
+                                    # Convert address format
+                                    addresses = []
+                                    for addr_str in script_display.get("addresses", []):
+                                        if addr_str.startswith("b'\\x"):
+                                            # Convert hex bytes to IP
+                                            hex_str = addr_str[3:-1]  # Remove b'\ and '
+                                            bytes_parts = [hex_str[i:i+8] for i in range(0, len(hex_str), 8)]
+                                            ip_parts = []
+                                            for part in bytes_parts:
+                                                if len(part) == 8:
+                                                    # Convert \xc0\xa8\x01) format
+                                                    byte_vals = []
+                                                    i = 0
+                                                    while i < len(part):
+                                                        if part[i:i+2] == '\\x':
+                                                            byte_vals.append(int(part[i+2:i+4], 16))
+                                                            i += 4
+                                                        else:
+                                                            byte_vals.append(ord(part[i]))
+                                                            i += 1
+                                                    if len(byte_vals) >= 4:
+                                                        ip = ".".join(str(b) for b in byte_vals[:4])
+                                                        addresses.append(ip)
+                                    
+                                    if not addresses:
+                                        # Fallback - try to parse as 192.168.1.41 format
+                                        for addr_str in script_display.get("addresses", []):
+                                            if "192.168." in str(addr_str) or "10." in str(addr_str):
+                                                addresses.append(str(addr_str))
+                                    
+                                    display_info = {
+                                        "service_name": script_display["service_name"],
+                                        "hostname": script_display["hostname"],
+                                        "display_name": script_display["display_name"],
+                                        "display_id": script_display["display_id"],
+                                        "location": script_display["location"],
+                                        "resolution": script_display["resolution"],
+                                        "client_version": script_display["client_version"],
+                                        "webhook_port": int(script_display["webhook_port"]) if script_display["webhook_port"] else None,
+                                        "addresses": addresses,
+                                        "port": script_display["port"],
+                                        "discovered_at": datetime.datetime.now().isoformat()
+                                    }
+                                    
+                                    # Add webhook URL
+                                    if addresses and display_info["webhook_port"]:
+                                        display_info["webhook_url"] = f"http://{addresses[0]}:{display_info['webhook_port']}"
+                                    
+                                    discovered_displays.append(display_info)
+                                    print(f"✅ Added display: {display_info['display_name']} at {addresses}")
+                                
+                                break
+                            except json.JSONDecodeError:
+                                continue
+                else:
+                    print(f"❌ Discovery script failed: {result.stderr}")
+                    
+            except Exception as e:
+                print(f"❌ Script execution failed: {e}")
+        else:
+            print(f"❌ Discovery script not found at {script_path}")
+        
+        print(f"✅ Discovery complete. Found {len(discovered_displays)} displays.")
         
         discovered_displays = []
         auto_registered = []
