@@ -13,12 +13,31 @@ import asyncio
 import importlib.util
 import sys
 import os
+import logging
 from pathlib import Path
 import hashlib
 import base64
 import uuid
 from time import time
 from collections import defaultdict
+from enum import Enum
+
+# Setup logging
+logger = logging.getLogger(__name__)
+
+# Redis integration
+try:
+    from redis_manager import get_redis_manager, init_redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+
+# Distribution Mode Enum
+class DistributionMode(str, Enum):
+    """Content distribution modes for multi-display systems"""
+    MIRROR = "MIRROR"                    # All displays show the same content (default)
+    SEQUENTIAL = "SEQUENTIAL"            # Displays cycle through content in order
+    RANDOM_UNIQUE = "RANDOM_UNIQUE"      # Displays get randomized content without duplication
 
 # Database setup
 DATABASE_URL = "sqlite:///./app.db"
@@ -64,6 +83,11 @@ class Scene(Base):
     schedule = Column(JSON, nullable=True)
     theme = Column(String, nullable=True)
     is_active = Column(Boolean, default=False)
+    # Redis integration: distribution mode
+    distribution_mode = Column(String, default=DistributionMode.MIRROR.value)
+    # Content versioning for Redis integration
+    content_hash = Column(String, nullable=True)
+    content_epoch = Column(String, nullable=True)
 
 class Overlay(Base):
     __tablename__ = "overlays"
@@ -114,6 +138,45 @@ class DisplayClient(Base):
     # Metadata
     created_at = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, nullable=True)
+
+# Redis Integration: Distribution Queue for SQL Fallback
+class DistributionQueue(Base):
+    """SQL fallback table for content distribution when Redis is unavailable"""
+    __tablename__ = "distribution_queue"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    scene_id = Column(String, index=True)
+    content_id = Column(String)  # Content item identifier
+    queue_position = Column(Integer)  # Position in queue for sequential mode
+    
+    # Claim tracking
+    claimed_at = Column(DateTime, nullable=True)
+    claimed_by = Column(String, nullable=True)  # Display ID that claimed this content
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    epoch_id = Column(String, nullable=True)  # Content epoch for tracking updates
+
+# Redis Integration: Content Leases Audit Table
+class ContentLease(Base):
+    """Audit table for tracking content assignments and leases"""
+    __tablename__ = "content_leases"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    lease_id = Column(String, unique=True, index=True)  # Redis lease key
+    scene_id = Column(String, index=True)
+    display_id = Column(String, index=True)
+    content_id = Column(String)
+    
+    # Lease lifecycle
+    assigned_at = Column(DateTime, default=datetime.datetime.now)
+    acknowledged_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime)
+    
+    # Status tracking
+    status = Column(String, default="assigned")  # assigned, acknowledged, expired, released
+    distribution_mode = Column(String)
+    assignment_id = Column(String, nullable=True)  # Client-side assignment tracking
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -1150,18 +1213,40 @@ async def get_api_health():
     finally:
         db.close()
     
+    # Test Redis connection
+    redis_status = {"healthy": False, "available": REDIS_AVAILABLE}
+    if REDIS_AVAILABLE:
+        try:
+            redis_manager = get_redis_manager()
+            redis_health = await redis_manager.get_health_status()
+            redis_status = {
+                "healthy": redis_health["status"] == "healthy",
+                "available": True,
+                "details": redis_health
+            }
+        except Exception as e:
+            redis_status = {
+                "healthy": False,
+                "available": True,
+                "error": str(e)
+            }
+    
     # Get basic stats
     total_channels = len(channel_discovery.loaded_channels)
     websocket_connections = len(manager.active_connections)
     
+    # Overall health status
+    overall_healthy = db_healthy and (not REDIS_AVAILABLE or redis_status["healthy"])
+    
     health_status = {
-        "status": "healthy" if db_healthy else "unhealthy",
+        "status": "healthy" if overall_healthy else "unhealthy",
         "timestamp": datetime.datetime.now().isoformat(),
         "version": "1.0",
         "database": {
             "healthy": db_healthy,
             "error": db_error
         },
+        "redis": redis_status,
         "channels": {
             "loaded": total_channels,
             "available": list(channel_discovery.loaded_channels.keys())
@@ -3669,5 +3754,535 @@ async def get_subchannel_current_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error serving subchannel current image: {str(e)}")
 
+
+# =========================================================================
+# REDIS DISTRIBUTION ENDPOINTS
+# =========================================================================
+
+# Import distribution service
+try:
+    from distribution_service import get_distribution_service, DistributionStatus
+    from content_set_manager import get_content_set_manager
+    DISTRIBUTION_AVAILABLE = True
+except ImportError:
+    DISTRIBUTION_AVAILABLE = False
+
+# Pydantic models for distribution
+class ContentClaimRequest(BaseModel):
+    """Request model for content claims"""
+    client_version: Optional[str] = None
+    capabilities: Optional[Dict[str, Any]] = None
+
+class ContentClaimResponse(BaseModel):
+    """Response model for content claims"""
+    status: str
+    content_id: Optional[str] = None
+    assignment_id: Optional[str] = None
+    lease_expires_in: Optional[int] = None
+    method: Optional[str] = None
+    error: Optional[str] = None
+
+class AcknowledgmentRequest(BaseModel):
+    """Request model for assignment acknowledgments"""
+    assignment_id: str
+    status: str  # "displayed", "error", "skipped", etc.
+    details: Optional[Dict[str, Any]] = None
+
+class DistributionModeUpdate(BaseModel):
+    """Request model for updating scene distribution mode"""
+    distribution_mode: str  # "MIRROR", "SEQUENTIAL", "RANDOM_UNIQUE"
+
+@app.post("/api/displays/{display_id}/claim_content", response_model=ContentClaimResponse)
+async def claim_content_for_display(
+    display_id: str,
+    claim_request: ContentClaimRequest,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Claim next content for a display client
+    
+    This endpoint allows display clients to request their next content item
+    based on the scene's distribution mode (MIRROR, SEQUENTIAL, RANDOM_UNIQUE).
+    """
+    if not DISTRIBUTION_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Distribution service not available")
+    
+    # Get display client
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Check if display has assigned scene
+    if not display_client.assigned_scene_id:
+        raise HTTPException(status_code=400, detail="No scene assigned to this display")
+    
+    # Update display last seen
+    display_client.last_seen = datetime.datetime.now()
+    db.commit()
+    
+    # Get distribution service
+    dist_service = get_distribution_service(manager, SessionLocal)
+    
+    try:
+        # Claim content
+        result = await dist_service.claim_next_content(
+            display_client.assigned_scene_id, 
+            display_id
+        )
+        
+        return ContentClaimResponse(**result)
+        
+    except Exception as e:
+        logger.error(f"Error claiming content for display {display_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Content claim failed: {str(e)}")
+
+@app.post("/api/displays/{display_id}/acknowledge")
+async def acknowledge_content_assignment(
+    display_id: str,
+    ack_request: AcknowledgmentRequest,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Acknowledge content assignment completion
+    
+    Display clients use this endpoint to report completion of content assignments,
+    allowing the system to track performance and release leases.
+    """
+    if not DISTRIBUTION_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Distribution service not available")
+    
+    # Get display client
+    display_client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not display_client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Check if display has assigned scene
+    if not display_client.assigned_scene_id:
+        raise HTTPException(status_code=400, detail="No scene assigned to this display")
+    
+    # Get distribution service
+    dist_service = get_distribution_service(manager, SessionLocal)
+    
+    try:
+        # Acknowledge assignment
+        result = await dist_service.acknowledge_assignment(
+            display_client.assigned_scene_id,
+            display_id,
+            ack_request.assignment_id,
+            ack_request.status
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error acknowledging assignment for display {display_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Acknowledgment failed: {str(e)}")
+
+@app.put("/api/scenes/{scene_id}/distribution_mode")
+async def update_scene_distribution_mode(
+    scene_id: str,
+    mode_update: DistributionModeUpdate,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Update distribution mode for a scene
+    
+    Changes how content is distributed to displays assigned to this scene:
+    - MIRROR: All displays show the same content (default)
+    - SEQUENTIAL: Displays cycle through content in order
+    - RANDOM_UNIQUE: Displays get randomized content without duplication
+    """
+    # Get scene
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # Validate distribution mode
+    valid_modes = ["MIRROR", "SEQUENTIAL", "RANDOM_UNIQUE"]
+    if mode_update.distribution_mode not in valid_modes:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid distribution mode. Must be one of: {', '.join(valid_modes)}"
+        )
+    
+    # Update scene
+    old_mode = scene.distribution_mode
+    scene.distribution_mode = mode_update.distribution_mode
+    db.commit()
+    
+    # If Redis is available, update Redis metadata
+    if REDIS_AVAILABLE and DISTRIBUTION_AVAILABLE:
+        try:
+            redis_manager = get_redis_manager()
+            if await redis_manager.is_healthy():
+                meta_key = f"scene:{scene_id}:meta"
+                metadata = await redis_manager.get_json(meta_key) or {}
+                metadata.update({
+                    "mode": mode_update.distribution_mode,
+                    "last_updated": datetime.datetime.now().isoformat(),
+                    "previous_mode": old_mode
+                })
+                await redis_manager.set_with_ttl(meta_key, metadata, 86400)  # 24 hour TTL
+        except Exception as e:
+            logger.warning(f"Failed to update Redis metadata for scene {scene_id}: {e}")
+    
+    # Broadcast mode change
+    await broadcast_event("scene_distribution_mode_changed", {
+        "scene_id": scene_id,
+        "scene_name": scene.name,
+        "old_mode": old_mode,
+        "new_mode": mode_update.distribution_mode,
+        "timestamp": datetime.datetime.now().isoformat()
+    })
+    
+    return {
+        "message": f"Distribution mode updated to {mode_update.distribution_mode}",
+        "scene_id": scene_id,
+        "old_mode": old_mode,
+        "new_mode": mode_update.distribution_mode
+    }
+
+@app.get("/api/scenes/{scene_id}/distribution_status")
+async def get_scene_distribution_status(
+    scene_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Get current distribution status for a scene
+    
+    Returns information about active leases, queue status, and distribution metrics.
+    """
+    # Get scene
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    if not DISTRIBUTION_AVAILABLE:
+        return {
+            "scene_id": scene_id,
+            "scene_name": scene.name,
+            "distribution_mode": scene.distribution_mode,
+            "distribution_available": False,
+            "message": "Distribution service not available"
+        }
+    
+    # Get distribution service
+    dist_service = get_distribution_service(manager, SessionLocal)
+    
+    try:
+        # Get Redis status
+        redis_status = await dist_service.get_distribution_status(scene_id)
+        
+        # Add database information
+        redis_status.update({
+            "scene_name": scene.name,
+            "db_distribution_mode": scene.distribution_mode,
+            "distribution_available": True
+        })
+        
+        return redis_status
+        
+    except Exception as e:
+        logger.error(f"Error getting distribution status for scene {scene_id}: {e}")
+        return {
+            "scene_id": scene_id,
+            "scene_name": scene.name,
+            "distribution_mode": scene.distribution_mode,
+            "distribution_available": True,
+            "error": str(e)
+        }
+
+@app.get("/api/admin/distribution/overview")
+async def get_distribution_overview(
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Get system-wide distribution overview
+    
+    Provides metrics and status for all scenes using distribution features.
+    """
+    if not DISTRIBUTION_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Distribution service not available")
+    
+    try:
+        # Get all scenes with distribution info
+        scenes = db.query(Scene).all()
+        
+        overview = {
+            "total_scenes": len(scenes),
+            "redis_available": REDIS_AVAILABLE,
+            "distribution_available": DISTRIBUTION_AVAILABLE,
+            "scenes_by_mode": {
+                "MIRROR": 0,
+                "SEQUENTIAL": 0,
+                "RANDOM_UNIQUE": 0
+            },
+            "scene_details": [],
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        # Count scenes by distribution mode
+        for scene in scenes:
+            mode = scene.distribution_mode or "MIRROR"
+            overview["scenes_by_mode"][mode] += 1
+            
+            scene_info = {
+                "id": scene.id,
+                "name": scene.name,
+                "distribution_mode": mode,
+                "is_active": scene.is_active
+            }
+            
+            # Get Redis status if available
+            if REDIS_AVAILABLE:
+                try:
+                    dist_service = get_distribution_service(manager, SessionLocal)
+                    redis_status = await dist_service.get_distribution_status(scene.id)
+                    scene_info.update({
+                        "active_leases": redis_status.get("active_leases", 0),
+                        "queue_status": redis_status.get("queue_status", {})
+                    })
+                except Exception as e:
+                    scene_info["redis_error"] = str(e)
+            
+            overview["scene_details"].append(scene_info)
+        
+        return overview
+        
+    except Exception as e:
+        logger.error(f"Error getting distribution overview: {e}")
+        raise HTTPException(status_code=500, detail=f"Overview failed: {str(e)}")
+
+@app.post("/api/scenes/{scene_id}/refresh_content")
+async def refresh_scene_content(
+    scene_id: str,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Refresh content set for a scene from its channels
+    
+    Discovers content from all channels assigned to the scene and updates
+    the Redis queues/bags for distribution.
+    """
+    # Get scene
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    if not scene.channels:
+        raise HTTPException(status_code=400, detail="Scene has no channels assigned")
+    
+    if not DISTRIBUTION_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Distribution service not available")
+    
+    try:
+        # Get content set manager
+        content_manager = get_content_set_manager(channel_discovery)
+        
+        # Update content set
+        result = await content_manager.update_content_set(
+            scene_id, 
+            scene.channels, 
+            force_update=force
+        )
+        
+        # Broadcast content refresh event
+        await broadcast_event("scene_content_refreshed", {
+            "scene_id": scene_id,
+            "scene_name": scene.name,
+            "status": result["status"],
+            "item_count": result.get("item_count", 0),
+            "epoch_id": result.get("epoch_id"),
+            "force_refresh": force,
+            "timestamp": datetime.datetime.now().isoformat()
+        })
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error refreshing content for scene {scene_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Content refresh failed: {str(e)}")
+
+@app.get("/api/scenes/{scene_id}/content_info")
+async def get_scene_content_info(
+    scene_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Get detailed information about a scene's content set
+    
+    Returns content discovery info, Redis queue status, and metadata.
+    """
+    # Get scene
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    if not DISTRIBUTION_AVAILABLE:
+        return {
+            "scene_id": scene_id,
+            "scene_name": scene.name,
+            "distribution_available": False
+        }
+    
+    try:
+        # Get content set manager
+        content_manager = get_content_set_manager(channel_discovery)
+        
+        # Get content info
+        content_info = await content_manager.get_content_set_info(scene_id)
+        
+        # Add scene database info
+        content_info.update({
+            "scene_name": scene.name,
+            "scene_channels": scene.channels or [],
+            "distribution_mode": scene.distribution_mode,
+            "scene_active": scene.is_active
+        })
+        
+        return content_info
+        
+    except Exception as e:
+        logger.error(f"Error getting content info for scene {scene_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Content info failed: {str(e)}")
+
+@app.post("/api/scenes/{scene_id}/reset_distribution")
+async def reset_scene_distribution(
+    scene_id: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Reset distribution queues for a scene
+    
+    Clears current queues/bags and repopulates them from the content set.
+    Useful for testing or when content gets stuck.
+    """
+    # Get scene
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    if not DISTRIBUTION_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Distribution service not available")
+    
+    try:
+        # Get content set manager
+        content_manager = get_content_set_manager(channel_discovery)
+        
+        # Reset distribution queues
+        result = await content_manager.reset_distribution_queues(scene_id)
+        
+        # Broadcast reset event
+        if result.get("status") == "reset":
+            await broadcast_event("distribution_reset", {
+                "scene_id": scene_id,
+                "scene_name": scene.name,
+                "distribution_mode": scene.distribution_mode,
+                "epoch_id": result.get("epoch_id"),
+                "content_items": result.get("content_items", 0),
+                "timestamp": datetime.datetime.now().isoformat()
+            })
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error resetting distribution for scene {scene_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Distribution reset failed: {str(e)}")
+
+@app.get("/api/admin/redis/status")
+async def get_redis_admin_status(
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Get detailed Redis status for admin monitoring
+    
+    Provides comprehensive Redis health, memory usage, key counts, and performance metrics.
+    """
+    if not REDIS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Redis not available")
+    
+    try:
+        redis_manager = get_redis_manager()
+        
+        # Get basic health status
+        health_status = await redis_manager.get_health_status()
+        
+        # Get key distribution info
+        key_patterns = [
+            "scene:*:meta",
+            "scene:*:content_set", 
+            "scene:*:content_items",
+            "scene:*:sequential_queue",
+            "scene:*:shuffle_bag",
+            "scene:*:current_content",
+            "lease:*",
+            "completion:*"
+        ]
+        
+        key_info = {}
+        for pattern in key_patterns:
+            try:
+                info = await redis_manager.get_keys_info(pattern)
+                key_info[pattern] = info
+            except Exception as e:
+                key_info[pattern] = {"error": str(e)}
+        
+        return {
+            "health": health_status,
+            "key_distribution": key_info,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting Redis admin status: {e}")
+        raise HTTPException(status_code=500, detail=f"Redis status failed: {str(e)}")
+
+@app.post("/api/admin/redis/cleanup")
+async def cleanup_redis_data(
+    expired_only: bool = True,
+    _: dict = Depends(check_rate_limit)
+):
+    """
+    Cleanup Redis data
+    
+    Removes expired keys and optionally cleans up test data.
+    """
+    if not REDIS_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Redis not available")
+    
+    try:
+        redis_manager = get_redis_manager()
+        
+        cleanup_stats = await redis_manager.cleanup_expired_keys()
+        
+        # If not expired_only, clean up test data
+        if not expired_only:
+            test_patterns = [
+                "test:*",
+                "completion:*",  # Old completion records
+            ]
+            
+            for pattern in test_patterns:
+                deleted = await redis_manager.delete_pattern(pattern)
+                cleanup_stats[f"deleted_{pattern}"] = deleted
+        
+        return {
+            "cleanup_completed": True,
+            "stats": cleanup_stats,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during Redis cleanup: {e}")
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
 
 # =========================================================================
