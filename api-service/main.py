@@ -1135,6 +1135,7 @@ init_sample_data()
 
 # Health endpoint
 @app.get("/api/health")
+@app.head("/api/health")
 async def get_api_health():
     """Get overall API health status"""
     db = SessionLocal()
