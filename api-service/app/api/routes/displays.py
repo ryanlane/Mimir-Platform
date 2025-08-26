@@ -13,12 +13,16 @@ from app.schemas.displays import (
     DisplayClientRegistration, 
     DisplayClientResponse, 
     DisplayClientUpdate,
+    DisplayClientListResponse,
     DisplayStatusResponse,
+    DisplayCapabilities,
     SceneAssignment,
     ContentClaimRequest,
-    ContentClaimResponse
+    ContentClaimResponse,
+    AcknowledgmentRequest,
+    LegacyDisplayStatusResponse
 )
-from app.schemas.common import PaginationMeta
+from app.schemas.common import PaginationParams
 
 
 router = APIRouter(prefix="/displays", tags=["displays"])
@@ -102,7 +106,7 @@ async def register_display_client(
     return DisplayClientResponse.model_validate(display_client)
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=DisplayClientListResponse)
 async def list_display_clients(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -112,12 +116,14 @@ async def list_display_clients(
     total = db.query(DisplayClient).count()
     clients = db.query(DisplayClient).offset(offset).limit(limit).all()
     
-    result = [DisplayClientResponse.model_validate(client) for client in clients]
+    display_responses = [DisplayClientResponse.model_validate(client) for client in clients]
     
-    return {
-        "displays": result,
-        "meta": PaginationMeta(total=total, limit=limit, offset=offset)
-    }
+    return DisplayClientListResponse(
+        displays=display_responses,
+        total=total,
+        limit=limit,
+        offset=offset
+    )
 
 
 @router.get("/{display_id}", response_model=DisplayClientResponse)

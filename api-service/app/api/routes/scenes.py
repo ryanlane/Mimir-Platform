@@ -6,12 +6,21 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any
 from app.dependencies import get_scene_service
 from app.core.services.scene_service import SceneService
+from app.schemas.scenes import (
+    SceneResponse,
+    SceneCreate,
+    SceneUpdate,
+    SceneListResponse,
+    SceneActivation,
+    ChannelAssignment,
+    ScheduleConfig
+)
 
 
 router = APIRouter(prefix="/scenes", tags=["scenes"])
 
 
-@router.get("")
+@router.get("", response_model=SceneListResponse)
 async def list_scenes(
     scene_service: SceneService = Depends(get_scene_service)
 ):
@@ -19,7 +28,7 @@ async def list_scenes(
     return scene_service.get_scenes()
 
 
-@router.get("/{scene_id}")
+@router.get("/{scene_id}", response_model=SceneResponse)
 async def get_scene(
     scene_id: str,
     scene_service: SceneService = Depends(get_scene_service)

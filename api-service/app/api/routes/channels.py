@@ -7,12 +7,20 @@ from fastapi.responses import FileResponse, JSONResponse
 from typing import Dict, Any, List
 from app.dependencies import get_channel_service
 from app.core.services.channel_service import ChannelService
+from app.schemas.channels import (
+    ChannelResponse,
+    ChannelCreate,
+    ChannelUpdate,
+    ChannelListResponse,
+    SubchannelConfig,
+    ChannelHealth
+)
 
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
 
-@router.get("")
+@router.get("", response_model=ChannelListResponse)
 async def list_channels(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),

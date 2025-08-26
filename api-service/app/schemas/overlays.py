@@ -1,7 +1,7 @@
 """
 Overlay-related schemas
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from datetime import datetime
 from app.schemas.common import TimestampMixin
@@ -10,8 +10,11 @@ from app.schemas.common import TimestampMixin
 class OverlayBase(BaseModel):
     """Base overlay schema"""
     name: str
-    overlay_type: Optional[str] = None
+    overlay_type: Optional[str] = Field(None, alias="overlayType")
     config: Optional[Dict[str, Any]] = None
+    
+    class Config:
+        populate_by_name = True
 
 
 class OverlayCreate(OverlayBase):
@@ -22,8 +25,11 @@ class OverlayCreate(OverlayBase):
 class OverlayUpdate(BaseModel):
     """Schema for updating overlays"""
     name: Optional[str] = None
-    overlay_type: Optional[str] = None
+    overlay_type: Optional[str] = Field(None, alias="overlayType")
     config: Optional[Dict[str, Any]] = None
+    
+    class Config:
+        populate_by_name = True
 
 
 class OverlayResponse(OverlayBase, TimestampMixin):
@@ -32,3 +38,17 @@ class OverlayResponse(OverlayBase, TimestampMixin):
     
     class Config:
         from_attributes = True
+        populate_by_name = True
+
+
+# Legacy response format for backward compatibility
+class LegacyOverlayResponse(BaseModel):
+    """Legacy overlay response format"""
+    id: str
+    name: str
+    description: Optional[str] = None
+    channel: Optional[str] = None
+    path_root: Optional[str] = Field(None, alias="pathRoot")
+    
+    class Config:
+        populate_by_name = True

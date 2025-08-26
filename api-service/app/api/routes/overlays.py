@@ -8,8 +8,13 @@ from typing import List
 
 from app.db.base import SessionLocal
 from app.db.models import Overlay
-from app.schemas.overlays import OverlayResponse
-from app.schemas.common import PaginationMeta
+from app.schemas.overlays import (
+    OverlayResponse,
+    OverlayCreate,
+    OverlayUpdate,
+    OverlayListResponse
+)
+from app.schemas.common import PaginationParams
 
 
 router = APIRouter(prefix="/overlays", tags=["overlays"])
@@ -24,7 +29,7 @@ def get_db():
         db.close()
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=OverlayListResponse)
 async def list_overlays(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -34,21 +39,16 @@ async def list_overlays(
     total = db.query(Overlay).count()
     overlays = db.query(Overlay).offset(offset).limit(limit).all()
     
-    result = [
-        OverlayResponse(
-            id=overlay.id,
-            name=overlay.name,
-            overlay_type=overlay.overlay_type,
-            config=overlay.config,
-            created_at=overlay.created_at,
-            updated_at=overlay.updated_at
-        ) for overlay in overlays
+    overlay_responses = [
+        OverlayResponse.from_orm(overlay) for overlay in overlays
     ]
     
-    return {
-        "overlays": result,
-        "meta": PaginationMeta(total=total, limit=limit, offset=offset)
-    }
+    return OverlayListResponse(
+        overlays=overlay_responses,
+        total=total,
+        limit=limit,
+        offset=offset
+    )
 
 
 @router.get("/{overlay_id}", response_model=OverlayResponse)
@@ -61,47 +61,33 @@ async def get_overlay(
     if not overlay:
         raise HTTPException(status_code=404, detail="Overlay not found")
     
-    return OverlayResponse(
-        id=overlay.id,
-        name=overlay.name,
-        overlay_type=overlay.overlay_type,
-        config=overlay.config,
-        created_at=overlay.created_at,
-        updated_at=overlay.updated_at
-    )
+    return OverlayResponse.from_orm(overlay)
 
 
 @router.post("", response_model=OverlayResponse)
 async def create_overlay(
-    overlay_data: dict,
+    overlay_data: OverlayCreate,
     db: Session = Depends(get_db)
 ):
     """Create a new overlay"""
     overlay = Overlay(
-        id=overlay_data.get("id"),
-        name=overlay_data["name"],
-        overlay_type=overlay_data.get("overlay_type"),
-        config=overlay_data.get("config", {})
+        id=overlay_data.id,
+        name=overlay_data.name,
+        overlay_type=overlay_data.overlay_type,
+        config=overlay_data.config
     )
     
     db.add(overlay)
     db.commit()
     db.refresh(overlay)
     
-    return OverlayResponse(
-        id=overlay.id,
-        name=overlay.name,
-        overlay_type=overlay.overlay_type,
-        config=overlay.config,
-        created_at=overlay.created_at,
-        updated_at=overlay.updated_at
-    )
+    return OverlayResponse.from_orm(overlay)
 
 
 @router.put("/{overlay_id}", response_model=OverlayResponse)
 async def update_overlay(
     overlay_id: str,
-    overlay_data: dict,
+    overlay_data: OverlayUpdate,
     db: Session = Depends(get_db)
 ):
     """Update overlay by ID"""
@@ -109,21 +95,15 @@ async def update_overlay(
     if not overlay:
         raise HTTPException(status_code=404, detail="Overlay not found")
     
-    for key, value in overlay_data.items():
-        if hasattr(overlay, key):
-            setattr(overlay, key, value)
+    # Update only provided fields
+    update_data = overlay_data.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(overlay, key, value)
     
     db.commit()
     db.refresh(overlay)
     
-    return OverlayResponse(
-        id=overlay.id,
-        name=overlay.name,
-        overlay_type=overlay.overlay_type,
-        config=overlay.config,
-        created_at=overlay.created_at,
-        updated_at=overlay.updated_at
-    )
+    return OverlayResponse.from_orm(overlay)
 
 
 @router.delete("/{overlay_id}")
