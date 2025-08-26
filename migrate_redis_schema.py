@@ -57,18 +57,51 @@ def migrate_database(db_path: str):
         
         # Create distribution_queues table
         print("🔄 Creating distribution_queues table...")
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS distribution_queues (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                scene_id VARCHAR(36) NOT NULL,
-                display_id VARCHAR(100) NOT NULL,
-                content_id VARCHAR(100) NOT NULL,
-                distribution_mode VARCHAR(20) NOT NULL,
-                claimed_at DATETIME NOT NULL,
-                completed_at DATETIME,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS distribution_queues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scene_id VARCHAR(36) NOT NULL,
+                    display_id VARCHAR(100) NOT NULL,
+                    content_id VARCHAR(100) NOT NULL,
+                    distribution_mode VARCHAR(20) NOT NULL,
+                    claimed_at DATETIME NOT NULL,
+                    completed_at DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            print("   ✅ distribution_queues table created")
+        except sqlite3.Error as e:
+            if "already exists" in str(e):
+                print("   ⚠️  distribution_queues table already exists")
+            else:
+                raise e
+        
+        # Create content_leases table
+        print("🔄 Creating content_leases table...")
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS content_leases (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scene_id VARCHAR(36) NOT NULL,
+                    display_id VARCHAR(100) NOT NULL,
+                    content_id VARCHAR(100) NOT NULL,
+                    lease_start DATETIME NOT NULL,
+                    lease_end DATETIME NOT NULL,
+                    status VARCHAR(20) DEFAULT 'active',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            print("   ✅ content_leases table created")
+        except sqlite3.Error as e:
+            if "already exists" in str(e):
+                print("   ⚠️  content_leases table already exists")
+            else:
+                raise e
+        
+        # Commit table creation before creating indexes
+        conn.commit()
+        print("🔄 Creating indexes...")
         
         # Create indexes for distribution_queues
         indexes_dq = [
@@ -79,24 +112,10 @@ def migrate_database(db_path: str):
         ]
         
         for index_sql in indexes_dq:
-            cursor.execute(index_sql)
-        
-        print("   ✅ distribution_queues table created")
-        
-        # Create content_leases table
-        print("🔄 Creating content_leases table...")
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS content_leases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                scene_id VARCHAR(36) NOT NULL,
-                display_id VARCHAR(100) NOT NULL,
-                content_id VARCHAR(100) NOT NULL,
-                lease_start DATETIME NOT NULL,
-                lease_end DATETIME NOT NULL,
-                status VARCHAR(20) DEFAULT 'active',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+            try:
+                cursor.execute(index_sql)
+            except sqlite3.Error as e:
+                print(f"   ⚠️  Index creation warning: {e}")
         
         # Create indexes for content_leases
         indexes_cl = [
@@ -107,9 +126,12 @@ def migrate_database(db_path: str):
         ]
         
         for index_sql in indexes_cl:
-            cursor.execute(index_sql)
+            try:
+                cursor.execute(index_sql)
+            except sqlite3.Error as e:
+                print(f"   ⚠️  Index creation warning: {e}")
             
-        print("   ✅ content_leases table created")
+        print("   ✅ indexes created")
         
         # Commit changes
         conn.commit()
