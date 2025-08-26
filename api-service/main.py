@@ -3921,16 +3921,78 @@ async def discover_displays_mdns(
         # Start discovery
         print(f"🔧 Creating Zeroconf instance...")
         zeroconf = Zeroconf()
-        listener = DisplayServiceListener()
-        print(f"🔧 Starting ServiceBrowser for '_mimir-display._tcp.local.'...")
-        browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", listener)
         
-        print(f"⏳ Waiting for {timeout} seconds...")
-        # Wait for discovery timeout
+        print(f"🔧 Browsing for services...")
+        # Get service names first
+        import threading
+        
+        found_services = []
+        browse_complete = threading.Event()
+        
+        class ServiceCollector:
+            def add_service(self, zeroconf_instance, service_type, name):
+                print(f"🔎 ServiceCollector found: {name}")
+                found_services.append((service_type, name))
+            
+            def remove_service(self, zeroconf_instance, service_type, name):
+                pass
+            
+            def update_service(self, zeroconf_instance, service_type, name):
+                pass
+        
+        collector = ServiceCollector()
+        browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", collector)
+        
+        print(f"⏳ Waiting {timeout} seconds for services...")
         time.sleep(timeout)
         
+        print(f"🔍 Found {len(found_services)} services via browser")
+        
+        # Process found services
+        for service_type, name in found_services:
+            print(f"🔧 Getting info for: {name}")
+            info = zeroconf.get_service_info(service_type, name)
+            if info:
+                print(f"✅ Got service info for: {name}")
+                # Extract service properties
+                properties = {}
+                if info.properties:
+                    for key, value in info.properties.items():
+                        try:
+                            properties[key.decode('utf-8')] = value.decode('utf-8')
+                        except:
+                            pass
+                
+                # Get IP addresses
+                addresses = [addr for addr in info.addresses if addr]
+                
+                hostname = properties.get("hostname", "unknown")
+                display_name = properties.get("display_name", f"Auto-discovered Display ({hostname})")
+                
+                display_info = {
+                    "service_name": name,
+                    "hostname": hostname,
+                    "display_name": display_name,
+                    "display_id": properties.get("display_id"),
+                    "location": properties.get("location", "Auto-discovered"),
+                    "resolution": properties.get("resolution"),
+                    "client_version": properties.get("client_version"),
+                    "webhook_port": int(properties.get("webhook_port", 0)) if properties.get("webhook_port") else None,
+                    "addresses": [addr.decode('utf-8') if isinstance(addr, bytes) else str(addr) for addr in addresses],
+                    "port": info.port,
+                    "discovered_at": datetime.datetime.now().isoformat()
+                }
+                
+                # Add webhook URL if available
+                if display_info["addresses"] and display_info["webhook_port"]:
+                    display_info["webhook_url"] = f"http://{display_info['addresses'][0]}:{display_info['webhook_port']}"
+                
+                discovered_displays.append(display_info)
+                print(f"✅ Added display: {display_name} ({hostname})")
+            else:
+                print(f"❌ No service info for: {name}")
+        
         print(f"🔧 Cleaning up...")
-        # Cleanup
         browser.cancel()
         zeroconf.close()
         
