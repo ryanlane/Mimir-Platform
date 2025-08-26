@@ -202,11 +202,15 @@ app/
 - [x] Create .env.example for environment configuration
 
 ### **Phase 1 - Structure**
-- [ ] Create app/db/ directory structure
-- [ ] Create missing core modules (logging.py, security.py, middleware.py)
-- [ ] Create missing services modules
-- [ ] Create app/utils/ directory
-- [ ] Create app/api/deps.py
+- [x] Create app/db/ directory structure
+- [x] Create missing core modules (logging.py, security.py, middleware.py)
+- [x] Create missing services modules
+- [x] Create app/utils/ directory (sri.py, files.py, pagination.py)
+- [x] Create app/api/deps.py
+- [x] Setup Alembic migrations infrastructure
+- [x] Extract database models to app/db/models.py
+- [x] Create app/db/base.py and session.py
+- [x] Update app factory to use new structure
 
 ### **Phase 2 - Database**
 - [ ] Extract models to app/db/models.py
