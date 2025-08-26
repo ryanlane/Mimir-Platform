@@ -110,7 +110,7 @@ async def test_websocket_events():
                         # Test 4: Check display clients for content claiming test
                         print("\n4. Getting display clients...")
                         try:
-                            clients_response = requests.get(f"{API_BASE}/api/display_clients")
+                            clients_response = requests.get(f"{API_BASE}/api/displays")
                             if clients_response.status_code == 200:
                                 clients_data = clients_response.json()
                                 # Handle both list and dict responses
