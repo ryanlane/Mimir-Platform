@@ -25,7 +25,5 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Import the base from models to avoid circular imports
 from app.db.models import Base
 
-# Function to create all tables (will be replaced by Alembic)
-def create_tables():
-    """Create all database tables - will be replaced by Alembic migrations"""
-    Base.metadata.create_all(bind=engine)
+# Database is now managed by Alembic migrations
+# Run `alembic upgrade head` to apply latest database schema

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 
 # Import infrastructure components
-from app.db.base import create_tables
+from app.db.base import engine
 from app.core.logging import setup_logging, get_logger
 
 # Import routers
@@ -43,8 +43,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Create database tables (this will be replaced by Alembic migrations)
-    create_tables()
+    # Database is managed by Alembic migrations
+    # Run `alembic upgrade head` to ensure latest schema
     
     # Include routers
     app.include_router(health_router, prefix=settings.api_prefix, tags=["health"])
