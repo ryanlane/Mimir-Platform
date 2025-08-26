@@ -22,9 +22,11 @@ echo "📡 Connecting to $REMOTE_HOST..."
 echo "📁 Uploading enhanced API files..."
 scp -r api-service/ ${REMOTE_USER}@${REMOTE_HOST}:${API_PATH}/
 
-# 2. Upload test script
-echo "📋 Uploading WebSocket test script..."
+# 2. Upload test script and dashboard
+echo "📋 Uploading WebSocket test script and dashboard..."
 scp test_websocket_events.py ${REMOTE_USER}@${REMOTE_HOST}:${API_PATH}/
+scp distribution_dashboard.html ${REMOTE_USER}@${REMOTE_HOST}:${API_PATH}/
+scp serve_dashboard.py ${REMOTE_USER}@${REMOTE_HOST}:${API_PATH}/
 
 # 3. Update dependencies if needed
 echo "📦 Checking dependencies..."
@@ -76,13 +78,17 @@ if curl -f http://oak:5000/api/health > /dev/null 2>&1; then
     echo "1. Run WebSocket event test:"
     echo "   ssh ryan@oak 'cd /home/ryan/code/mimir-api && python test_websocket_events.py'"
     echo ""
-    echo "2. Monitor distribution events in browser:"
+    echo "2. Launch real-time distribution dashboard:"
+    echo "   ssh ryan@oak 'cd /home/ryan/code/mimir-api && python serve_dashboard.py'"
+    echo "   Then visit: http://oak:8080/distribution_dashboard.html"
+    echo ""
+    echo "3. Monitor distribution events in browser:"
     echo "   Connect to ws://oak:5000/ws"
     echo ""
-    echo "3. Check real-time performance metrics:"
+    echo "4. Check real-time performance metrics:"
     echo "   Watch for distribution_performance events every 30 seconds"
     echo ""
-    echo "4. Test content assignment events:"
+    echo "5. Test content assignment events:"
     echo "   Use display clients to claim content and watch for events"
     
 else
