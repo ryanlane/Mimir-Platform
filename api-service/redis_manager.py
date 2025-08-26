@@ -257,7 +257,7 @@ class RedisManager:
     
     async def set_with_ttl(self, key: str, value: Any, ttl_seconds: int) -> bool:
         """
-        Set a key with TTL using async client
+        Set a key with TTL using sync client
         
         Args:
             key: Redis key
@@ -268,14 +268,14 @@ class RedisManager:
             bool: True if successful
         """
         try:
-            client = await self.get_async_client()
+            client = self.get_sync_client()
             
             # JSON encode if not string
             if not isinstance(value, str):
                 value = json.dumps(value)
             
-            result = await client.setex(key, ttl_seconds, value)
-            return result
+            result = client.setex(key, ttl_seconds, value)
+            return bool(result)
             
         except Exception as e:
             logger.error(f"Error setting key {key} with TTL: {e}")
@@ -292,11 +292,15 @@ class RedisManager:
             Decoded JSON value or None if not found
         """
         try:
-            client = await self.get_async_client()
-            value = await client.get(key)
+            client = self.get_sync_client()
+            value = client.get(key)
             
             if value is None:
                 return None
+            
+            # Decode bytes to string if needed
+            if isinstance(value, bytes):
+                value = value.decode('utf-8')
             
             # Try to JSON decode
             try:
@@ -320,13 +324,13 @@ class RedisManager:
             Number of keys deleted
         """
         try:
-            client = await self.get_async_client()
-            keys = await client.keys(pattern)
+            client = self.get_sync_client()
+            keys = client.keys(pattern)
             
             if not keys:
                 return 0
             
-            deleted_count = await client.delete(*keys)
+            deleted_count = client.delete(*keys)
             logger.info(f"Deleted {deleted_count} keys matching pattern: {pattern}")
             return deleted_count
             
@@ -345,8 +349,8 @@ class RedisManager:
             Dict with key information and statistics
         """
         try:
-            client = await self.get_async_client()
-            keys = await client.keys(pattern)
+            client = self.get_sync_client()
+            keys = client.keys(pattern)
             
             key_info = {
                 "pattern": pattern,
@@ -358,8 +362,15 @@ class RedisManager:
             
             # Analyze keys
             for key in keys[:100]:  # Limit to first 100 for performance
-                key_type = await client.type(key)
-                ttl = await client.ttl(key)
+                # Decode bytes to string if needed
+                if isinstance(key, bytes):
+                    key = key.decode('utf-8')
+                    
+                key_type = client.type(key)
+                if isinstance(key_type, bytes):
+                    key_type = key_type.decode('utf-8')
+                    
+                ttl = client.ttl(key)
                 
                 key_data = {
                     "key": key,
@@ -369,13 +380,13 @@ class RedisManager:
                 
                 # Add size information based on type
                 if key_type == "string":
-                    key_data["size"] = await client.strlen(key)
+                    key_data["size"] = client.strlen(key)
                 elif key_type == "list":
-                    key_data["length"] = await client.llen(key)
+                    key_data["length"] = client.llen(key)
                 elif key_type == "hash":
-                    key_data["fields"] = await client.hlen(key)
+                    key_data["fields"] = client.hlen(key)
                 elif key_type == "set":
-                    key_data["members"] = await client.scard(key)
+                    key_data["members"] = client.scard(key)
                 
                 key_info["keys"].append(key_data)
                 
@@ -411,15 +422,18 @@ class RedisManager:
                 "errors": 0
             }
             
-            client = await self.get_async_client()
+            client = self.get_sync_client()
             
             # Check lease keys specifically
-            lease_keys = await client.keys("lease:*")
+            lease_keys = client.keys("lease:*")
             stats["checked"] = len(lease_keys)
             
             for key in lease_keys:
                 try:
-                    ttl = await client.ttl(key)
+                    # Decode bytes to string if needed
+                    if isinstance(key, bytes):
+                        key = key.decode('utf-8')
+                    ttl = client.ttl(key)
                     if ttl == -2:  # Key doesn't exist (expired)
                         stats["expired"] += 1
                 except Exception:
