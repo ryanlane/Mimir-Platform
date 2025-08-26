@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Activity, Database, Zap, Clock, TrendingUp, Users } from 'lucide-react';
 import { useWebSocketEvent } from '../../hooks/useWebSocket';
+import { api } from '../../services/api';
 import './DistributionMonitor.css';
 
 const DistributionMonitor = ({ compact = false }) => {
@@ -14,6 +15,26 @@ const DistributionMonitor = ({ compact = false }) => {
   });
   const [eventCount, setEventCount] = useState(0);
   const [isMonitoring, setIsMonitoring] = useState(true);
+
+  // Check Redis status on component mount
+  useEffect(() => {
+    const checkRedisStatus = async () => {
+      try {
+        const response = await api.getRedisStatus();
+        if (response.data && response.data.redis_available) {
+          setPerformanceMetrics(prev => ({
+            ...prev,
+            redisConnected: true
+          }));
+        }
+      } catch (error) {
+        console.warn('Could not check Redis status:', error);
+        // Keep default false state
+      }
+    };
+
+    checkRedisStatus();
+  }, []);
 
   // Listen to distribution events via WebSocket
   useWebSocketEvent('message', (data) => {
