@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Monitor, Layers, Settings, Activity } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
+import DistributionMonitor from '../../components/DistributionMonitor/DistributionMonitor';
 // import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import './Dashboard.css';
 
@@ -389,6 +390,11 @@ const Dashboard = () => {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Distribution Monitoring */}
+        <div className="dashboard-card">
+          <DistributionMonitor compact={true} />
         </div>
       </div>
     </div>

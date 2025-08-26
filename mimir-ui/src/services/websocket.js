@@ -285,6 +285,35 @@ class WebSocketService {
     return this.on('scene_displayed', callback);
   }
 
+  // Distribution event handlers
+  onContentAssigned(callback) {
+    return this.on('content_assigned', callback);
+  }
+
+  onContentReleased(callback) {
+    return this.on('content_released', callback);
+  }
+
+  onLeaseRenewed(callback) {
+    return this.on('lease_renewed', callback);
+  }
+
+  onEpochStarted(callback) {
+    return this.on('epoch_started', callback);
+  }
+
+  onQueueStatus(callback) {
+    return this.on('queue_status', callback);
+  }
+
+  onDistributionPerformance(callback) {
+    return this.on('distribution_performance', callback);
+  }
+
+  onSceneContentRefreshed(callback) {
+    return this.on('scene_content_refreshed', callback);
+  }
+
   onConnection(callback) {
     return this.on('connection', callback);
   }

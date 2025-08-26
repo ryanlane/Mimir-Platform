@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Settings, Tv, Layers, Home, MonitorSpeaker } from 'lucide-react';
+import { Settings, Tv, Layers, Home, MonitorSpeaker, Database } from 'lucide-react';
 import './MobileNavigation.css';
 
 const MobileNavigation = () => {
@@ -9,6 +9,7 @@ const MobileNavigation = () => {
     { path: '/scenes', label: 'Scenes', icon: Layers },
     { path: '/channels', label: 'Channels', icon: Tv },
     { path: '/displays', label: 'Displays', icon: MonitorSpeaker },
+    { path: '/distribution', label: 'Distribution', icon: Database },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];
 

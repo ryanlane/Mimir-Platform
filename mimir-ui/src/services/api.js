@@ -323,6 +323,19 @@ export const api = {
   removeChannelFromDatabase: (channelId) => apiClient.delete(`/admin/channels/${channelId}`),
   resetChannelsDatabase: () => apiClient.post('/admin/channels/reset'),
 
+  // Distribution System Operations
+  getDistributionOverview: () => apiClient.get('/admin/distribution/overview'),
+  refreshSceneContent: (sceneId) => apiClient.post(`/scenes/${sceneId}/refresh_content`),
+  resetSceneDistribution: (sceneId) => apiClient.post(`/scenes/${sceneId}/reset_distribution`),
+  getSceneContentInfo: (sceneId) => apiClient.get(`/scenes/${sceneId}/content_info`),
+  getRedisStatus: () => apiClient.get('/admin/redis/status'),
+  cleanupRedis: () => apiClient.post('/admin/redis/cleanup'),
+
+  // Display Content Claims (for testing distribution)
+  claimContent: (displayId) => apiClient.post(`/displays/${displayId}/claim_content`),
+  acknowledgeCompletion: (displayId, assignmentId) => 
+    apiClient.post(`/displays/${displayId}/acknowledge_completion`, { assignment_id: assignmentId }),
+
   // Cache Management Utilities
   cache: {
     clear: () => {
