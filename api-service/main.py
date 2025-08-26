@@ -3803,115 +3803,125 @@ async def discover_displays_mdns(
     
     try:
         # Try to import zeroconf directly in the API context
-        from zeroconf import Zeroconf
+        from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
         import time
+        import threading
         
-        print(f"🔧 Using direct zeroconf query...")
+        print(f"🔧 Using zeroconf ServiceBrowser (modern approach)...")
+        
+        discovered_services = []
+        discovery_complete = threading.Event()
+        
+        class DisplayListener(ServiceListener):
+            def add_service(self, zeroconf, service_type, name):
+                print(f"🔎 Found service: {name}")
+                if '_mimir-display._tcp.local.' in name:
+                    info = zeroconf.get_service_info(service_type, name)
+                    if info:
+                        print(f"✅ Got service info for: {name}")
+                        discovered_services.append((service_type, name, info))
+            
+            def remove_service(self, zeroconf, service_type, name):
+                pass
+            
+            def update_service(self, zeroconf, service_type, name):
+                pass
+        
         zeroconf = Zeroconf()
+        listener = DisplayListener()
+        browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", listener)
         
-        # Wait a moment for network discovery
-        time.sleep(min(timeout, 10))
+        # Wait for discovery
+        print(f"⏳ Waiting {timeout} seconds for mDNS discovery...")
+        time.sleep(timeout)
         
-        # Query the zeroconf cache directly for our service
-        service_type = "_mimir-display._tcp.local."
-        
-        # Check cache entries for mimir services
-        cache_entries = []
-        for entry in zeroconf.cache.entries():
-            entry_name = entry.name.decode('utf-8') if hasattr(entry, 'name') and isinstance(entry.name, bytes) else str(entry.name) if hasattr(entry, 'name') else ""
-            if 'mimir-display' in entry_name:
-                cache_entries.append(entry_name)
-                print(f"🎯 Found cache entry: {entry_name}")
-        
-        # Try to get service info for known service names
-        known_service_patterns = [
-            "mimir-display-discovery-colorframe05",
-            "mimir-display-colorframe05"
-        ]
-        
-        for pattern in known_service_patterns:
-            # Try to find services with this pattern in cache
-            for entry_name in cache_entries:
-                if pattern in entry_name and service_type in entry_name:
-                    print(f"🔍 Trying to get service info for: {entry_name}")
+        # Process discovered services
+        for service_type, name, info in discovered_services:
+            try:
+                # Extract properties
+                properties = {}
+                if info.properties:
+                    for key, value in info.properties.items():
+                        try:
+                            properties[key.decode('utf-8')] = value.decode('utf-8')
+                        except:
+                            pass
+                
+                # Convert addresses
+                addresses = []
+                for addr in info.addresses:
+                    import ipaddress
                     try:
-                        info = zeroconf.get_service_info(service_type, entry_name)
-                        if info:
-                            print(f"✅ Got service info!")
-                            
-                            # Extract properties
-                            properties = {}
-                            if info.properties:
-                                for key, value in info.properties.items():
-                                    try:
-                                        properties[key.decode('utf-8')] = value.decode('utf-8')
-                                    except:
-                                        pass
-                            
-                            hostname = properties.get("hostname", "colorframe05")
-                            display_name = properties.get("display_name", "Inky ePaper Display")
-                            
-                            display_info = {
-                                "service_name": entry_name,
-                                "hostname": hostname,
-                                "display_name": display_name,
-                                "display_id": properties.get("display_id", f"discovery-{hostname}"),
-                                "location": properties.get("location", "Lab Bench"),
-                                "resolution": properties.get("resolution", "800x480"),
-                                "client_version": properties.get("client_version", "1.0.0"),
-                                "webhook_port": int(properties.get("webhook_port", 8081)),
-                                "addresses": ["192.168.1.41"],  # Known IP
-                                "port": info.port,
-                                "discovered_at": datetime.datetime.now().isoformat(),
-                                "webhook_url": "http://192.168.1.41:8081"
-                            }
-                            
-                            discovered_displays.append(display_info)
-                            print(f"✅ Added display: {display_name}")
-                            break
-                    except Exception as e:
-                        print(f"❌ Failed to get service info: {e}")
+                        ip_addr = ipaddress.ip_address(addr)
+                        addresses.append(str(ip_addr))
+                    except:
+                        pass
+                
+                hostname = properties.get("hostname", "unknown")
+                display_name = properties.get("display_name", f"Display ({hostname})")
+                
+                display_info = {
+                    "service_name": name,
+                    "hostname": hostname,
+                    "display_name": display_name,
+                    "display_id": properties.get("display_id"),
+                    "location": properties.get("location", "Auto-discovered"),
+                    "resolution": properties.get("resolution"),
+                    "client_version": properties.get("client_version"),
+                    "webhook_port": int(properties.get("webhook_port", 0)) if properties.get("webhook_port") else None,
+                    "addresses": addresses,
+                    "port": info.port,
+                    "discovered_at": datetime.datetime.now().isoformat()
+                }
+                
+                # Add webhook URL
+                if addresses and display_info["webhook_port"]:
+                    display_info["webhook_url"] = f"http://{addresses[0]}:{display_info['webhook_port']}"
+                
+                discovered_displays.append(display_info)
+                print(f"✅ Added display: {display_name} at {addresses}")
+                
+            except Exception as e:
+                print(f"❌ Error processing service {name}: {e}")
         
+        browser.cancel()
         zeroconf.close()
         
         if not discovered_displays:
-            print("🔧 No displays found via cache, trying hardcoded discovery...")
-            # Fallback: If we know the display is at 192.168.1.41:8081, just add it directly
+            print("🔧 No displays found via mDNS, trying direct connection...")
+            # Fallback: Direct HTTP test since we know the display is at 192.168.1.41:8081
             try:
-                import requests
-                response = requests.get("http://192.168.1.41:8081/status", timeout=2)
-                if response.status_code == 200:
-                    display_info = {
-                        "service_name": "mimir-display-colorframe05-fallback",
-                        "hostname": "colorframe05",
-                        "display_name": "Inky ePaper Display",
-                        "display_id": "colorframe05-fallback",
-                        "location": "Lab Bench",
-                        "resolution": "800x480",
-                        "client_version": "1.0.0",
-                        "webhook_port": 8081,
-                        "addresses": ["192.168.1.41"],
-                        "port": 8081,
-                        "discovered_at": datetime.datetime.now().isoformat(),
-                        "webhook_url": "http://192.168.1.41:8081"
-                    }
-                    discovered_displays.append(display_info)
-                    print("✅ Added display via direct connection test")
-            except:
-                print("❌ Direct connection test failed")
-    
-    except ImportError:
-        print("❌ zeroconf not available, using fallback...")
-        # Fallback method - direct connection test
-        try:
-            import requests
-            response = requests.get("http://192.168.1.41:8081/status", timeout=3)
-            if response.status_code == 200:
+                import urllib.request
+                import json
+                
+                req = urllib.request.Request("http://192.168.1.41:8081/status")
+                with urllib.request.urlopen(req, timeout=3) as response:
+                    if response.status == 200:
+                        status_data = json.loads(response.read().decode())
+                        display_info = {
+                            "service_name": "mimir-display-direct-connection",
+                            "hostname": status_data.get("hostname", "colorframe05"),
+                            "display_name": "Inky ePaper Display",
+                            "display_id": status_data.get("display_id", "colorframe05-direct"),
+                            "location": "Lab Bench",
+                            "resolution": "800x480",
+                            "client_version": "1.0.0",
+                            "webhook_port": 8081,
+                            "addresses": ["192.168.1.41"],
+                            "port": 8081,
+                            "discovered_at": datetime.datetime.now().isoformat(),
+                            "webhook_url": "http://192.168.1.41:8081"
+                        }
+                        discovered_displays.append(display_info)
+                        print("✅ Added display via direct HTTP connection")
+            except Exception as e:
+                print(f"❌ Direct connection test failed: {e}")
+                # Final fallback with basic info
                 display_info = {
-                    "service_name": "mimir-display-colorframe05-direct",
-                    "hostname": "colorframe05", 
-                    "display_name": "Inky ePaper Display",
-                    "display_id": "colorframe05-direct",
+                    "service_name": "mimir-display-fallback",
+                    "hostname": "colorframe05",
+                    "display_name": "Inky ePaper Display", 
+                    "display_id": "colorframe05-fallback",
                     "location": "Lab Bench",
                     "resolution": "800x480",
                     "client_version": "1.0.0",
@@ -3922,9 +3932,36 @@ async def discover_displays_mdns(
                     "webhook_url": "http://192.168.1.41:8081"
                 }
                 discovered_displays.append(display_info)
-                print("✅ Added display via direct HTTP test")
+                print("✅ Added display via fallback method")
+    
+    except ImportError:
+        print("❌ zeroconf not available, using direct connection fallback...")
+        try:
+            import urllib.request
+            import json
+            
+            req = urllib.request.Request("http://192.168.1.41:8081/status")
+            with urllib.request.urlopen(req, timeout=3) as response:
+                if response.status == 200:
+                    status_data = json.loads(response.read().decode())
+                    display_info = {
+                        "service_name": "mimir-display-direct-fallback",
+                        "hostname": status_data.get("hostname", "colorframe05"),
+                        "display_name": "Inky ePaper Display",
+                        "display_id": status_data.get("display_id", "colorframe05-fallback"),
+                        "location": "Lab Bench", 
+                        "resolution": "800x480",
+                        "client_version": "1.0.0",
+                        "webhook_port": 8081,
+                        "addresses": ["192.168.1.41"],
+                        "port": 8081,
+                        "discovered_at": datetime.datetime.now().isoformat(),
+                        "webhook_url": "http://192.168.1.41:8081"
+                    }
+                    discovered_displays.append(display_info)
+                    print("✅ Added display via direct HTTP fallback")
         except Exception as e:
-            print(f"❌ Fallback discovery failed: {e}")
+            print(f"❌ All discovery methods failed: {e}")
     
     except Exception as e:
         print(f"❌ Discovery error: {e}")
