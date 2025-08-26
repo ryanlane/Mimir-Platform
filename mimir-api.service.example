@@ -1,0 +1,24 @@
+# /etc/systemd/system/mimir-api.service
+[Unit]
+Description=Mimir API Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ryan
+WorkingDirectory=/home/ryan/code/mimir-api/api-service
+Environment=PYTHONUNBUFFERED=1
+# EnvironmentFile=/home/ryan/code/mimir-api/api-service/.env   # (optional)
+ExecStart=/home/ryan/code/mimir-api/api-service/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 5000
+Restart=always
+RestartSec=3
+
+# Optional hardening that will NOT hide /home
+# ProtectSystem=full
+# PrivateTmp=true
+# NoNewPrivileges=true
+# (Avoid ProtectHome until venv is not under /home)
+
+[Install]
+WantedBy=multi-user.target
