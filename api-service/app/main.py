@@ -11,6 +11,12 @@ from app.config import settings
 from app.db.base import engine
 from app.core.logging import setup_logging, get_logger
 
+# Import services
+from app.services.channel_discovery import channel_discovery_service
+from app.services.websocket import websocket_service
+from app.services.distribution import distribution_service
+from app.services.caching import cache_service
+
 # Import routers
 from app.api.routes.channels import router as channels_router
 from app.api.routes.scenes import router as scenes_router
@@ -18,6 +24,25 @@ from app.api.routes.overlays import router as overlays_router
 from app.api.routes.displays import router as displays_router
 from app.api.routes.websockets import router as websockets_router
 from app.api.routes.admin import health_router, admin_router
+
+
+def _initialize_services(app: FastAPI, logger):
+    """Initialize all services"""
+    logger.info("Initializing services...")
+    
+    # Initialize channel discovery and discover channels
+    discovered_channels = channel_discovery_service.discover_channels(app)
+    logger.info(f"Discovered {len(discovered_channels)} channels")
+    
+    # Start distribution monitoring if enabled
+    if settings.distribution_enabled:
+        import asyncio
+        asyncio.create_task(distribution_service.start_distribution_monitoring())
+        logger.info("Distribution monitoring started")
+    
+    # Log service status
+    capabilities = distribution_service.get_capability_flags()
+    logger.info(f"Service capabilities: {capabilities}")
 
 
 def create_app() -> FastAPI:
@@ -45,6 +70,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # Initialize services
+    _initialize_services(app, logger)
     
     # Database is managed by Alembic migrations
     # Run `alembic upgrade head` to ensure latest schema

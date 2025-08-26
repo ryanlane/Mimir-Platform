@@ -182,22 +182,45 @@ app/
    - Added proper validation and error handling
    - Maintained backward compatibility with `populate_by_name = True`
 
-### **⚙️ Phase 5: Service Layer (Priority 3)**
+### **⚙️ Phase 5: Service Layer (Priority 3) ✅ COMPLETED**
 
 **Goal**: Extract business logic into services
 
-1. **Channel Discovery Service** (extract from main.py ~lines 500-1000)
-   - SRI hashing logic
-   - Static file mounting
-   - Configuration injection
+1. **Channel Discovery Service** ✅
+   - Extracted SRI hashing logic from main.py (~500-1000 lines)
+   - Moved static file mounting functionality
+   - Added configuration injection and proper logging
+   - Created `app/services/channel_discovery.py` with comprehensive channel management
 
-2. **WebSocket Connection Manager** (extract from main.py ~lines 4000-4500)
-   - Connection lifecycle
-   - Database status updates
+2. **WebSocket Connection Manager** ✅
+   - Extracted ConnectionManager class from main.py (~4000-4500 lines)
+   - Moved database status updates and connection lifecycle management
+   - Created `app/services/websocket.py` with real-time communication infrastructure
+   - Added proper heartbeat, broadcasting, and display-specific messaging
 
-3. **Redis/Distribution Service**
-   - Capability flags
-   - Clean import handling
+3. **Distribution Service** ✅
+   - Created Redis/Distribution service with capability flags
+   - Implemented clean import handling with graceful fallbacks
+   - Added support for MIRROR, SEQUENTIAL, and RANDOM_UNIQUE distribution modes
+   - Created `app/services/distribution.py` with performance monitoring
+
+4. **Caching Service** ✅
+   - Extracted rate limiting functionality (global + websocket status cache)
+   - Created centralized short-TTL cache helper
+   - Implemented comprehensive rate limiting for API and WebSocket endpoints
+   - Created `app/services/caching.py` with cleanup and statistics
+
+5. **Content Service** ✅
+   - Created media file management and processing service
+   - Added file validation, security checks, and MIME type detection
+   - Implemented content hashing and metadata extraction
+   - Created `app/services/content.py` for safe file serving
+
+6. **Service Integration** ✅
+   - Created `app/services/deps.py` for dependency injection
+   - Updated app factory to initialize all services
+   - Integrated services into existing routers (channels router example)
+   - Added proper error handling and logging throughout
 
 ## **🎯 Immediate Action Items (Next 2 weeks)**
 
@@ -288,25 +311,38 @@ app/
 - [x] Implement inheritance hierarchy with TimestampMixin
 - [x] Update all routers to use centralized schemas
 
-### **Phase 5 - Services**
-- [ ] Extract ChannelDiscovery to services/channel_discovery.py
-- [ ] Extract ConnectionManager to services/websockets.py
-- [ ] Create distribution service with feature flags
-- [ ] Create caching service
+### **Phase 5 - Services** ✅ COMPLETED
+- [x] Extract ChannelDiscovery to services/channel_discovery.py
+- [x] Extract ConnectionManager to services/websocket.py
+- [x] Create distribution service with feature flags
+- [x] Create caching service
+- [x] Create content management service
+- [x] Implement service dependency injection
+- [x] Update app factory to initialize services
+- [x] Integrate services into routers
 
-**Next Steps**: ✅ **PHASES 0-4 COMPLETED** 
+**Next Steps**: ✅ **PHASES 0-5 COMPLETED** 
+
+**Phase 5 Service Layer Achievements:**
+- **Extracted 5 comprehensive services** from monolithic legacy code
+- **ChannelDiscovery Service**: SRI hashing, static mounting, configuration management
+- **WebSocket Service**: Connection management, broadcasting, real-time communication
+- **Distribution Service**: Redis integration, multi-display content distribution
+- **Caching Service**: Rate limiting, temporary storage, performance optimization
+- **Content Service**: File management, validation, secure media serving
 
 **Major Accomplishments:**
-- Reduced monolithic main.py from 5,198 lines to 111 lines (98% reduction)
-- Successfully extracted 4 new routers (overlays, displays, websockets, enhanced channels)
+- Reduced monolithic main.py from 5,198 lines to 120 lines (98% reduction)
+- Successfully extracted 4 comprehensive routers + 5 service classes
 - Created comprehensive schema system with 40+ Pydantic model classes
 - Established clean modular architecture with proper separation of concerns
 - Added camelCase aliases for seamless frontend integration
 - Implemented professional-grade database migration system with Alembic
+- **Completed service layer with dependency injection and proper abstraction**
 
-**Current State:** Ready to proceed with Phase 5 (Service Layer) to extract business logic into service classes, then Phase 6 (Testing Infrastructure) for comprehensive test coverage.
+**Current State:** Ready to proceed with Phase 6 (Testing Infrastructure) to add comprehensive test coverage with proper mocking and fixtures.
 
-We have successfully transformed the monolithic legacy codebase into a clean, maintainable, and scalable FastAPI application following modern best practices.
+We have successfully transformed the monolithic legacy codebase into a clean, maintainable, and scalable FastAPI application following modern best practices with proper service layer architecture.
 
 Below is a plan to take care of the two main.py files and create a new better easier way to manage this project.
 

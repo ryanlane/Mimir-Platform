@@ -1,0 +1,62 @@
+"""
+Service Dependencies
+Provides dependency injection for all services
+"""
+from typing import Generator
+
+from app.services.channel_discovery import ChannelDiscoveryService, channel_discovery_service
+from app.services.websocket import WebSocketService, websocket_service
+from app.services.distribution import DistributionService, distribution_service
+from app.services.caching import CacheService, cache_service
+from app.services.content import ContentService, content_service
+
+
+def get_channel_discovery_service() -> ChannelDiscoveryService:
+    """Get channel discovery service instance"""
+    return channel_discovery_service
+
+
+def get_websocket_service() -> WebSocketService:
+    """Get WebSocket service instance"""
+    return websocket_service
+
+
+def get_distribution_service() -> DistributionService:
+    """Get distribution service instance"""
+    return distribution_service
+
+
+def get_cache_service() -> CacheService:
+    """Get cache service instance"""
+    return cache_service
+
+
+def get_content_service() -> ContentService:
+    """Get content service instance"""
+    return content_service
+
+
+# Alternative dependency functions for FastAPI dependency injection
+def websocket_service_dependency() -> Generator[WebSocketService, None, None]:
+    """FastAPI dependency for WebSocket service"""
+    yield websocket_service
+
+
+def channel_discovery_dependency() -> Generator[ChannelDiscoveryService, None, None]:
+    """FastAPI dependency for channel discovery service"""
+    yield channel_discovery_service
+
+
+def distribution_dependency() -> Generator[DistributionService, None, None]:
+    """FastAPI dependency for distribution service"""
+    yield distribution_service
+
+
+def cache_dependency() -> Generator[CacheService, None, None]:
+    """FastAPI dependency for cache service"""
+    yield cache_service
+
+
+def content_dependency() -> Generator[ContentService, None, None]:
+    """FastAPI dependency for content service"""
+    yield content_service

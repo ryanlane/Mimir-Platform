@@ -5,8 +5,15 @@ FastAPI router for channel-related endpoints
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from fastapi.responses import FileResponse, JSONResponse
 from typing import Dict, Any, List
-from app.dependencies import get_channel_service
-from app.core.services.channel_service import ChannelService
+
+from app.services.deps import (
+    get_channel_discovery_service,
+    get_content_service,
+    get_cache_service
+)
+from app.services.channel_discovery import ChannelDiscoveryService
+from app.services.content import ContentService
+from app.services.caching import CacheService
 from app.schemas.channels import (
     ChannelResponse,
     ChannelCreate,
@@ -24,27 +31,70 @@ router = APIRouter(prefix="/channels", tags=["channels"])
 async def list_channels(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    channel_service: ChannelService = Depends(get_channel_service)
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
 ):
     """Get paginated list of channels"""
-    return channel_service.get_channels(limit=limit, offset=offset)
+    all_channels = channel_discovery.get_all_channels()
+    
+    # Simple pagination
+    total = len(all_channels)
+    start = offset
+    end = min(offset + limit, total)
+    channels_slice = all_channels[start:end]
+    
+    channel_responses = []
+    for channel_data in channels_slice:
+        config = channel_data['config']
+        channel_responses.append(ChannelResponse(
+            id=channel_data['id'],
+            name=config['name'],
+            description=config['description'],
+            version=config['version'],
+            schemaVersion=config.get('schemaVersion', '2.1'),
+            settingsType=config.get('settingsType', 'simple'),
+            permissions=config.get('permissions', {}),
+            uiConfig=config.get('ui', []),
+            assetsConfig=config.get('assets', {}),
+            currentSettings=config.get('currentSettings', {}),
+            status=config.get('status', {}),
+            channelDir=str(channel_data['path'])
+        ))
+    
+    return ChannelListResponse(
+        channels=channel_responses,
+        total=total,
+        limit=limit,
+        offset=offset
+    )
 
 
 @router.get("/manifest")
 async def get_channels_manifest(
-    channel_service: ChannelService = Depends(get_channel_service)
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Get manifest of all available channels"""
-    return channel_service.get_channels_manifest()
+    # Check cache first
+    cached_manifest = cache_service.get_cache("channels_manifest")
+    if cached_manifest:
+        return cached_manifest
+    
+    # Generate manifest
+    manifest = channel_discovery.get_channels_manifest()
+    
+    # Cache for 5 minutes
+    cache_service.set_cache("channels_manifest", manifest, 300)
+    
+    return manifest
 
 
 @router.get("/{channel_id}/config")
 async def get_channel_config(
     channel_id: str,
-    channel_service: ChannelService = Depends(get_channel_service)
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
 ):
     """Get channel configuration"""
-    config = channel_service.get_channel_config(channel_id)
+    config = channel_discovery.get_channel_config(channel_id)
     if not config:
         raise HTTPException(status_code=404, detail="Channel not found")
     return config
@@ -128,16 +178,25 @@ async def get_channel_current_content(
 @router.get("/{channel_id}/current.jpg")
 async def get_channel_current_image(
     channel_id: str,
-    channel_service: ChannelService = Depends(get_channel_service)
+    content_service: ContentService = Depends(get_content_service),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Get current image for channel"""
-    image_path = channel_service.get_current_image_path(channel_id)
-    if not image_path:
+    # Check rate limiting for content requests
+    rate_limit = cache_service.check_rate_limit(f"content:{channel_id}", max_requests=30, window_seconds=60)
+    if not rate_limit['allowed']:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    
+    # Get current content
+    content_result = content_service.get_current_content(channel_id)
+    if not content_result:
         raise HTTPException(status_code=404, detail="Channel not found or no image available")
     
+    file_path, file_info = content_result
+    
     return FileResponse(
-        image_path,
-        media_type="image/jpeg",
+        file_path,
+        media_type=file_info.get("mime_type", "image/jpeg"),
         filename=f"{channel_id}_current.jpg"
     )
 
@@ -147,11 +206,32 @@ async def get_channel_content_file(
     channel_id: str,
     resolution: str,
     filename: str,
-    channel_service: ChannelService = Depends(get_channel_service)
+    content_service: ContentService = Depends(get_content_service),
+    cache_service: CacheService = Depends(get_cache_service)
 ):
     """Get specific content file for channel"""
-    file_path = channel_service.get_content_file_path(channel_id, resolution, filename)
-    if not file_path:
+    # Rate limiting
+    rate_limit = cache_service.check_rate_limit(f"content:{channel_id}:{resolution}", max_requests=50, window_seconds=60)
+    if not rate_limit['allowed']:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+    
+    # Get content with resolution
+    content_result = content_service.get_current_content(channel_id, resolution=resolution)
+    if not content_result:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path, file_info = content_result
+    
+    # Validate file for security
+    validation = content_service.validate_content_file(file_path)
+    if not validation['valid']:
+        raise HTTPException(status_code=400, detail="Invalid file")
+    
+    return FileResponse(
+        file_path,
+        media_type=file_info.get("mime_type", "application/octet-stream"),
+        filename=filename
+    )
         raise HTTPException(status_code=404, detail="File not found")
     
     return FileResponse(file_path)
