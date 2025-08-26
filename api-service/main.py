@@ -2875,36 +2875,80 @@ async def register_display_client(
 ):
     """Register a new display client"""
     
-    # Generate unique ID
-    display_id = str(uuid.uuid4())
+    # Check for existing display client with same hostname or name+location
+    existing_client = None
     
-    # Create display client record
-    display_client = DisplayClient(
-        id=display_id,
-        name=registration.name,
-        description=registration.description,
-        location=registration.location,
-        hostname=registration.hostname,
-        resolution=registration.capabilities.resolution,
-        supported_formats=registration.capabilities.supported_formats,
-        orientation=registration.capabilities.orientation,
-        refresh_rate_hz=registration.capabilities.refresh_rate_hz,
-        client_version=registration.client_version,
-        webhook_port=registration.webhook_port,
-        redis_distribution=registration.capabilities.redis_distribution,
-        content_claiming=registration.capabilities.content_claiming,
-        tags=registration.tags,
-        is_online=False,
-        created_at=datetime.datetime.now()
-    )
+    # First try to find by hostname if provided (most reliable)
+    if registration.hostname:
+        existing_client = db.query(DisplayClient).filter(
+            DisplayClient.hostname == registration.hostname
+        ).first()
     
-    db.add(display_client)
-    db.commit()
-    db.refresh(display_client)
+    # If not found by hostname, try name + location combination
+    if not existing_client:
+        existing_client = db.query(DisplayClient).filter(
+            DisplayClient.name == registration.name,
+            DisplayClient.location == registration.location
+        ).first()
     
-    # Broadcast new display registration
+    if existing_client:
+        # Update existing client instead of creating new one
+        print(f"🔄 Updating existing display client: {existing_client.id}")
+        
+        # Update fields
+        existing_client.description = registration.description
+        existing_client.hostname = registration.hostname
+        existing_client.resolution = registration.capabilities.resolution
+        existing_client.supported_formats = registration.capabilities.supported_formats
+        existing_client.orientation = registration.capabilities.orientation
+        existing_client.refresh_rate_hz = registration.capabilities.refresh_rate_hz
+        existing_client.client_version = registration.client_version
+        existing_client.webhook_port = registration.webhook_port
+        existing_client.redis_distribution = registration.capabilities.redis_distribution
+        existing_client.content_claiming = registration.capabilities.content_claiming
+        existing_client.tags = registration.tags
+        existing_client.updated_at = datetime.datetime.now()
+        
+        db.commit()
+        db.refresh(existing_client)
+        
+        display_client = existing_client
+        print(f"✅ Updated existing display client: {display_client.id}")
+    else:
+        # Generate unique ID for new client
+        display_id = str(uuid.uuid4())
+        
+        print(f"➕ Creating new display client: {display_id}")
+        
+        # Create display client record
+        display_client = DisplayClient(
+            id=display_id,
+            name=registration.name,
+            description=registration.description,
+            location=registration.location,
+            hostname=registration.hostname,
+            resolution=registration.capabilities.resolution,
+            supported_formats=registration.capabilities.supported_formats,
+            orientation=registration.capabilities.orientation,
+            refresh_rate_hz=registration.capabilities.refresh_rate_hz,
+            client_version=registration.client_version,
+            webhook_port=registration.webhook_port,
+            redis_distribution=registration.capabilities.redis_distribution,
+            content_claiming=registration.capabilities.content_claiming,
+            tags=registration.tags,
+            is_online=False,
+            created_at=datetime.datetime.now()
+        )
+        
+        db.add(display_client)
+        db.commit()
+        db.refresh(display_client)
+        
+        print(f"✅ Created new display client: {display_client.id}")
+    
+    # Broadcast display registration/update
     await broadcast_event("display_client_registered", {
-        "displayId": display_id,
+        "displayId": display_client.id,
         "name": registration.name,
         "location": registration.location,
         "capabilities": registration.capabilities.model_dump()
