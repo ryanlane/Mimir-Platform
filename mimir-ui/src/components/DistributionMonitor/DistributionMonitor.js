@@ -32,10 +32,35 @@ const DistributionMonitor = ({ compact = false }) => {
     }
   });
 
+  const updatePerformanceMetrics = (data) => {
+    setPerformanceMetrics(prev => ({
+      ...prev,
+      totalScenes: data.total_scenes ?? prev.totalScenes,
+      activeLeases: data.active_leases ?? prev.activeLeases,
+      queueItems: data.total_queue_items ?? prev.queueItems,
+      assignmentsRate: data.assignments_per_minute ?? prev.assignmentsRate,
+      redisConnected: data.redis_connected ?? prev.redisConnected
+    }));
+  };
+
   const addDistributionEvent = (eventData) => {
     if (!isMonitoring) return;
 
     setEventCount(prev => prev + 1);
+    
+    // If we're receiving distribution events, Redis must be connected
+    if (eventData.event && (
+      eventData.event.includes('distribution') ||
+      eventData.event.includes('content_') ||
+      eventData.event.includes('epoch') ||
+      eventData.event.includes('queue') ||
+      eventData.event.includes('scene_')
+    )) {
+      setPerformanceMetrics(prev => ({
+        ...prev,
+        redisConnected: true
+      }));
+    }
     
     const newEvent = {
       id: Date.now() + Math.random(),
@@ -62,17 +87,6 @@ const DistributionMonitor = ({ compact = false }) => {
     if (eventName.includes('queue') || eventName.includes('epoch')) return 'queue';
     if (eventName.includes('lease')) return 'lease';
     return 'other';
-  };
-
-  const updatePerformanceMetrics = (data) => {
-    setPerformanceMetrics(prev => ({
-      ...prev,
-      totalScenes: data.total_scenes ?? prev.totalScenes,
-      activeLeases: data.active_leases ?? prev.activeLeases,
-      queueItems: data.total_queue_items ?? prev.queueItems,
-      assignmentsRate: data.assignments_per_minute ?? prev.assignmentsRate,
-      redisConnected: data.redis_connected ?? prev.redisConnected
-    }));
   };
 
   const clearEvents = () => {
