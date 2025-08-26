@@ -643,6 +643,106 @@ class ConnectionManager:
         finally:
             db.close()
 
+    # Redis-Powered Distribution Event Methods
+    async def broadcast_content_assigned(self, content_id: str, display_client_id: str, lease_data: dict):
+        """Broadcast when content is assigned to a display client"""
+        event_data = {
+            "event": "content_assigned",
+            "data": {
+                "content_id": content_id,
+                "display_client_id": display_client_id,
+                "lease": lease_data,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "sequenceId": self.get_next_sequence_id()
+        }
+        
+        # Send to dashboard clients for monitoring
+        await self.broadcast_to_dashboard_clients(event_data)
+        
+        # Send assignment to specific display client
+        await self.send_to_display_client(display_client_id, {
+            "event": "content_assignment",
+            "data": {
+                "content_id": content_id,
+                "lease": lease_data,
+                "action": "display_content"
+            }
+        })
+
+    async def broadcast_lease_renewed(self, content_id: str, display_client_id: str, new_expiry: str):
+        """Broadcast when a content lease is renewed"""
+        event_data = {
+            "event": "lease_renewed",
+            "data": {
+                "content_id": content_id,
+                "display_client_id": display_client_id,
+                "new_expiry": new_expiry,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "sequenceId": self.get_next_sequence_id()
+        }
+        
+        await self.broadcast_to_dashboard_clients(event_data)
+
+    async def broadcast_content_released(self, content_id: str, display_client_id: str, reason: str = "lease_expired"):
+        """Broadcast when content is released from a display client"""
+        event_data = {
+            "event": "content_released",
+            "data": {
+                "content_id": content_id,
+                "display_client_id": display_client_id,
+                "reason": reason,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "sequenceId": self.get_next_sequence_id()
+        }
+        
+        await self.broadcast_to_dashboard_clients(event_data)
+
+    async def broadcast_epoch_started(self, scene_id: str, epoch_number: int, distribution_stats: dict):
+        """Broadcast when a new content distribution epoch begins"""
+        event_data = {
+            "event": "epoch_started",
+            "data": {
+                "scene_id": scene_id,
+                "epoch": epoch_number,
+                "stats": distribution_stats,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "sequenceId": self.get_next_sequence_id()
+        }
+        
+        await self.broadcast_to_dashboard_clients(event_data)
+
+    async def broadcast_queue_status(self, scene_id: str, queue_stats: dict):
+        """Broadcast current queue status for a scene"""
+        event_data = {
+            "event": "queue_status",
+            "data": {
+                "scene_id": scene_id,
+                "queue": queue_stats,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "sequenceId": self.get_next_sequence_id()
+        }
+        
+        await self.broadcast_to_dashboard_clients(event_data)
+
+    async def broadcast_distribution_performance(self, scene_id: str, performance_metrics: dict):
+        """Broadcast distribution performance metrics"""
+        event_data = {
+            "event": "distribution_performance",
+            "data": {
+                "scene_id": scene_id,
+                "metrics": performance_metrics,
+                "timestamp": datetime.datetime.now().isoformat()
+            },
+            "sequenceId": self.get_next_sequence_id()
+        }
+        
+        await self.broadcast_to_dashboard_clients(event_data)
+
 async def broadcast_error(error_code: str, message: str, context: Dict[str, Any] = None):
     """Broadcast error events to all connected clients"""
     await broadcast_event("error", {
@@ -3831,6 +3931,19 @@ async def claim_content_for_display(
             display_id
         )
         
+        # Broadcast content assignment event if successful
+        if result.get("status") == "assigned" and result.get("content_id"):
+            await manager.broadcast_content_assigned(
+                content_id=result["content_id"],
+                display_client_id=display_id,
+                lease_data={
+                    "assignment_id": result.get("assignment_id"),
+                    "lease_expires_in": result.get("lease_expires_in"),
+                    "method": result.get("method"),
+                    "scene_id": display_client.assigned_scene_id
+                }
+            )
+        
         return ContentClaimResponse(**result)
         
     except Exception as e:
@@ -3873,6 +3986,17 @@ async def acknowledge_content_assignment(
             ack_request.assignment_id,
             ack_request.status
         )
+        
+        # Broadcast content release event if assignment is completed
+        if ack_request.status in ["displayed", "error", "skipped"]:
+            # Try to get content_id from the assignment details
+            content_id = result.get("content_id") or ack_request.details.get("content_id") if ack_request.details else None
+            if content_id:
+                await manager.broadcast_content_released(
+                    content_id=content_id,
+                    display_client_id=display_id,
+                    reason=f"assignment_{ack_request.status}"
+                )
         
         return result
         
@@ -4093,7 +4217,16 @@ async def refresh_scene_content(
             force_update=force
         )
         
-        # Broadcast content refresh event
+        # Get distribution service to check queue status
+        dist_service = get_distribution_service(manager, SessionLocal)
+        queue_stats = {}
+        try:
+            status = await dist_service.get_distribution_status(scene_id)
+            queue_stats = status.get("queue_status", {})
+        except Exception as e:
+            logger.warning(f"Failed to get queue status for scene {scene_id}: {e}")
+        
+        # Broadcast content refresh event with queue stats
         await broadcast_event("scene_content_refreshed", {
             "scene_id": scene_id,
             "scene_name": scene.name,
@@ -4103,6 +4236,22 @@ async def refresh_scene_content(
             "force_refresh": force,
             "timestamp": datetime.datetime.now().isoformat()
         })
+        
+        # Broadcast queue status update
+        if queue_stats:
+            await manager.broadcast_queue_status(scene_id, queue_stats)
+        
+        # Broadcast new epoch started if epoch changed
+        if result.get("epoch_id"):
+            await manager.broadcast_epoch_started(
+                scene_id=scene_id,
+                epoch_number=int(result["epoch_id"]),
+                distribution_stats={
+                    "content_count": result.get("item_count", 0),
+                    "distribution_mode": scene.distribution_mode,
+                    "force_refresh": force
+                }
+            )
         
         return result
         
@@ -4284,5 +4433,70 @@ async def cleanup_redis_data(
     except Exception as e:
         logger.error(f"Error during Redis cleanup: {e}")
         raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
+
+# =========================================================================
+# BACKGROUND TASKS: Distribution Performance Monitoring
+# =========================================================================
+
+import asyncio
+
+async def distribution_monitoring_task():
+    """Background task to monitor and broadcast distribution performance metrics"""
+    while True:
+        try:
+            if DISTRIBUTION_AVAILABLE and REDIS_AVAILABLE:
+                # Get all active scenes with distribution
+                db = SessionLocal()
+                try:
+                    scenes = db.query(Scene).filter(Scene.is_active == True).all()
+                    
+                    for scene in scenes:
+                        try:
+                            # Get distribution service
+                            dist_service = get_distribution_service(manager, SessionLocal)
+                            
+                            # Get current distribution status
+                            status = await dist_service.get_distribution_status(scene.id)
+                            
+                            # Extract performance metrics
+                            performance_metrics = {
+                                "active_leases": status.get("active_leases", 0),
+                                "queue_size": status.get("queue_status", {}).get("total_items", 0),
+                                "assignments_last_minute": status.get("metrics", {}).get("assignments_last_minute", 0),
+                                "average_assignment_time": status.get("metrics", {}).get("avg_assignment_time", 0),
+                                "memory_usage": status.get("memory_usage", {}),
+                                "last_activity": status.get("last_activity")
+                            }
+                            
+                            # Broadcast performance metrics
+                            await manager.broadcast_distribution_performance(
+                                scene_id=scene.id,
+                                performance_metrics=performance_metrics
+                            )
+                            
+                            # Broadcast queue status if it's changed significantly
+                            queue_status = status.get("queue_status", {})
+                            if queue_status:
+                                await manager.broadcast_queue_status(scene.id, queue_status)
+                                
+                        except Exception as e:
+                            logger.error(f"Error monitoring scene {scene.id}: {e}")
+                            
+                finally:
+                    db.close()
+                    
+        except Exception as e:
+            logger.error(f"Error in distribution monitoring task: {e}")
+            
+        # Wait 30 seconds before next monitoring cycle
+        await asyncio.sleep(30)
+
+# Start background monitoring task
+@app.on_event("startup")
+async def start_background_tasks():
+    """Start background tasks when the application starts"""
+    if DISTRIBUTION_AVAILABLE and REDIS_AVAILABLE:
+        asyncio.create_task(distribution_monitoring_task())
+        logger.info("Started distribution monitoring background task")
 
 # =========================================================================
