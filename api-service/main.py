@@ -114,6 +114,11 @@ class DisplayClient(Base):
     description = Column(String, nullable=True)
     location = Column(String, nullable=True)  # Physical location
     
+    # Display type and discovery
+    display_type = Column(String, default="registered")  # "registered" or "discovered"
+    discovery_method = Column(String, nullable=True)  # "manual", "mdns", "webhook"
+    auto_discovered = Column(Boolean, default=False)  # True for mDNS discovered displays
+    
     # Enhanced networking fields
     hostname = Column(String, nullable=True)  # System hostname for mDNS/networking
     webhook_port = Column(Integer, nullable=True)  # Port for webhook server
@@ -924,6 +929,9 @@ class DisplayClientResponse(BaseModel):
     description: Optional[str]
     location: Optional[str]
     hostname: Optional[str]  # System hostname
+    display_type: str  # "registered" or "discovered"
+    discovery_method: Optional[str]  # "manual", "mdns", "webhook"
+    auto_discovered: bool  # True for auto-discovered displays
     is_online: bool
     last_seen: Optional[str]
     assigned_scene_id: Optional[str]
@@ -2907,6 +2915,9 @@ async def register_display_client(
         existing_client.redis_distribution = registration.capabilities.redis_distribution
         existing_client.content_claiming = registration.capabilities.content_claiming
         existing_client.tags = registration.tags
+        existing_client.display_type = "registered"  # Explicitly registered
+        existing_client.discovery_method = "manual"
+        existing_client.auto_discovered = False
         existing_client.updated_at = datetime.datetime.now()
         
         db.commit()
@@ -2927,6 +2938,9 @@ async def register_display_client(
             description=registration.description,
             location=registration.location,
             hostname=registration.hostname,
+            display_type="registered",  # Explicitly registered
+            discovery_method="manual",
+            auto_discovered=False,
             resolution=registration.capabilities.resolution,
             supported_formats=registration.capabilities.supported_formats,
             orientation=registration.capabilities.orientation,
@@ -2960,6 +2974,9 @@ async def register_display_client(
         description=display_client.description,
         location=display_client.location,
         hostname=display_client.hostname,
+        display_type=display_client.display_type,
+        discovery_method=display_client.discovery_method,
+        auto_discovered=display_client.auto_discovered,
         is_online=display_client.is_online,
         last_seen=display_client.last_seen.isoformat() if display_client.last_seen else None,
         assigned_scene_id=display_client.assigned_scene_id,
@@ -2981,6 +2998,7 @@ async def list_display_clients(
     online_only: bool = False,
     location: Optional[str] = None,
     tag: Optional[str] = None,
+    display_type: Optional[str] = None,  # Filter by "registered" or "discovered"
     db: Session = Depends(get_db),
     _: dict = Depends(check_rate_limit)
 ):
@@ -2997,6 +3015,12 @@ async def list_display_clients(
     if tag and tag.strip():
         # Simple tag filtering - check if tag exists in the tags JSON array
         query = query.filter(DisplayClient.tags.contains([tag]))
+    
+    # Filter by display type if specified
+    if display_type:
+        if display_type not in ["registered", "discovered"]:
+            raise HTTPException(status_code=400, detail="display_type must be 'registered' or 'discovered'")
+        query = query.filter(DisplayClient.display_type == display_type)
     
     clients = query.all()
     
@@ -3015,6 +3039,9 @@ async def list_display_clients(
             description=client.description,
             location=client.location,
             hostname=getattr(client, 'hostname', None),
+            display_type=getattr(client, 'display_type', 'registered'),
+            discovery_method=getattr(client, 'discovery_method', 'manual'),
+            auto_discovered=getattr(client, 'auto_discovered', False),
             is_online=client.is_online,
             last_seen=client.last_seen.isoformat() if client.last_seen else None,
             assigned_scene_id=client.assigned_scene_id,
@@ -3760,15 +3787,18 @@ async def get_display_webhook_status(
 @app.get("/api/displays/discover")
 async def discover_displays_mdns(
     timeout: int = 5,
+    auto_register: bool = True,  # Auto-register discovered displays
+    db: Session = Depends(get_db),
     _: dict = Depends(check_rate_limit)
 ):
-    """Discover displays on the network via mDNS"""
+    """Discover displays on the network via mDNS and optionally auto-register them"""
     try:
         from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
         import threading
         import time
         
         discovered_displays = []
+        auto_registered = []
         discovery_complete = threading.Event()
         
         class DisplayServiceListener(ServiceListener):
@@ -3788,12 +3818,15 @@ async def discover_displays_mdns(
                         # Get IP addresses
                         addresses = [addr for addr in info.addresses if addr]
                         
+                        hostname = properties.get("hostname", "unknown")
+                        display_name = properties.get("display_name", f"Auto-discovered Display ({hostname})")
+                        
                         display_info = {
                             "service_name": name,
-                            "hostname": properties.get("hostname", "unknown"),
-                            "display_name": properties.get("display_name", "Unknown Display"),
+                            "hostname": hostname,
+                            "display_name": display_name,
                             "display_id": properties.get("display_id"),
-                            "location": properties.get("location"),
+                            "location": properties.get("location", "Auto-discovered"),
                             "resolution": properties.get("resolution"),
                             "client_version": properties.get("client_version"),
                             "webhook_port": int(properties.get("webhook_port", 0)) if properties.get("webhook_port") else None,
@@ -3807,6 +3840,73 @@ async def discover_displays_mdns(
                             display_info["webhook_url"] = f"http://{display_info['addresses'][0]}:{display_info['webhook_port']}"
                         
                         discovered_displays.append(display_info)
+                        
+                        # Auto-register if enabled and hostname is available
+                        if auto_register and hostname and hostname != "unknown":
+                            try:
+                                # Check if already exists
+                                existing = db.query(DisplayClient).filter(
+                                    DisplayClient.hostname == hostname
+                                ).first()
+                                
+                                if not existing:
+                                    # Create auto-discovered display
+                                    auto_display_id = str(uuid.uuid4())
+                                    
+                                    # Parse resolution if available
+                                    resolution = None
+                                    if display_info["resolution"]:
+                                        try:
+                                            res_parts = display_info["resolution"].split('x')
+                                            if len(res_parts) == 2:
+                                                resolution = [int(res_parts[0]), int(res_parts[1])]
+                                        except:
+                                            pass
+                                    
+                                    auto_display = DisplayClient(
+                                        id=auto_display_id,
+                                        name=display_name,
+                                        description=f"Auto-discovered via mDNS from {hostname}",
+                                        location=display_info["location"],
+                                        hostname=hostname,
+                                        display_type="discovered",  # Auto-discovered type
+                                        discovery_method="mdns",
+                                        auto_discovered=True,
+                                        resolution=resolution,
+                                        supported_formats=["jpg", "png"],  # Default formats
+                                        orientation="landscape",  # Default orientation
+                                        client_version=display_info["client_version"],
+                                        webhook_port=display_info["webhook_port"],
+                                        redis_distribution=True,  # Assume modern capabilities
+                                        content_claiming=True,
+                                        tags=["auto-discovered", "mdns"],
+                                        is_online=True,  # Just discovered, so online
+                                        last_seen=datetime.datetime.now(),
+                                        created_at=datetime.datetime.now()
+                                    )
+                                    
+                                    db.add(auto_display)
+                                    db.commit()
+                                    
+                                    auto_registered.append({
+                                        "id": auto_display_id,
+                                        "name": display_name,
+                                        "hostname": hostname,
+                                        "auto_registered": True
+                                    })
+                                    
+                                    print(f"🔍 Auto-registered discovered display: {display_name} ({hostname})")
+                                else:
+                                    # Update existing discovered display
+                                    existing.is_online = True
+                                    existing.last_seen = datetime.datetime.now()
+                                    existing.webhook_port = display_info["webhook_port"]
+                                    db.commit()
+                                    
+                                    print(f"🔄 Updated existing discovered display: {existing.name} ({hostname})")
+                            
+                            except Exception as e:
+                                print(f"❌ Failed to auto-register {hostname}: {e}")
             
             def remove_service(self, zeroconf, type, name):
                 pass
@@ -3828,10 +3928,23 @@ async def discover_displays_mdns(
         
         return {
             "discovered_displays": discovered_displays,
+            "auto_registered": auto_registered if auto_register else [],
             "discovery_timeout": timeout,
             "total_found": len(discovered_displays),
+            "total_auto_registered": len(auto_registered) if auto_register else 0,
             "discovery_completed_at": datetime.datetime.now().isoformat()
         }
+        
+    except ImportError:
+        raise HTTPException(
+            status_code=501, 
+            detail="mDNS discovery not available (zeroconf library not installed)"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Discovery failed: {str(e)}"
+        )
         
     except ImportError:
         raise HTTPException(
