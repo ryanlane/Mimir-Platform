@@ -3912,23 +3912,29 @@ async def discover_displays_mdns(
                             except Exception as e:
                                 print(f"❌ Failed to auto-register {hostname}: {e}")
             
-            def remove_service(self, zeroconf, type, name):
+            def remove_service(self, zeroconf, service_type, name):
                 pass
             
-            def update_service(self, zeroconf, type, name):
+            def update_service(self, zeroconf, service_type, name):
                 pass
         
         # Start discovery
+        print(f"🔧 Creating Zeroconf instance...")
         zeroconf = Zeroconf()
         listener = DisplayServiceListener()
+        print(f"🔧 Starting ServiceBrowser for '_mimir-display._tcp.local.'...")
         browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", listener)
         
+        print(f"⏳ Waiting for {timeout} seconds...")
         # Wait for discovery timeout
         time.sleep(timeout)
         
+        print(f"🔧 Cleaning up...")
         # Cleanup
         browser.cancel()
         zeroconf.close()
+        
+        print(f"✅ Discovery complete. Found {len(discovered_displays)} displays.")
         
         return {
             "discovered_displays": discovered_displays,
