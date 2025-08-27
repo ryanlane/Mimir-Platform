@@ -23,35 +23,26 @@ class DistributionMode(str, Enum):
 
 
 class Channel(Base):
-    """Channel configuration and metadata"""
+    """Channel configuration and metadata - simplified to match actual database schema"""
     __tablename__ = "channels"
     
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False, index=True)
     description = Column(String)
-    version = Column(String, default="1.0.0")
-    settings_type = Column(String, default="simple")
-    config_schema = Column(JSON, nullable=True)
-    current_settings = Column(JSON, nullable=True)
-    status = Column(JSON, nullable=True)
-    rel_logo_image_path = Column(String, nullable=True)
-    
-    # v2.1 additions
-    schema_version = Column(String, default="2.1", index=True)
-    permissions = Column(JSON, nullable=True)
-    ui_config = Column(JSON, nullable=True)
-    assets_config = Column(JSON, nullable=True)
-    integrity_hashes = Column(JSON, nullable=True)
-    channel_dir = Column(String, nullable=True)
-    
-    # Metadata
-    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
-    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+    version = Column(String)
+    schema_version = Column(String, index=True)
+    author = Column(String)
+    license = Column(String)
+    repo_url = Column(String)
+    config = Column(JSON)
+    manifest = Column(JSON)
+    created_at = Column(DateTime, index=True)
     
     # Indexes
     __table_args__ = (
         Index('ix_channels_name_version', 'name', 'version'),
         Index('ix_channels_created_at', 'created_at'),
+        Index('ix_channels_schema_version', 'schema_version'),
     )
 
 
@@ -126,7 +117,6 @@ class DisplayClient(Base):
     location = Column(String, nullable=True, index=True)  # Physical location
     
     # Display type and discovery
-    device_type = Column(String, nullable=True)  # Device type
     display_type = Column(String, default="registered", index=True)  # "registered" or "discovered"
     discovery_method = Column(String, nullable=True, index=True)  # "manual", "mdns", "webhook"
     auto_discovered = Column(Boolean, default=False, index=True)  # True for mDNS discovered displays
