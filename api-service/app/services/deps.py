@@ -3,6 +3,7 @@ Service Dependencies
 Provides dependency injection for all services
 """
 from typing import Generator
+from fastapi import Depends
 
 from app.services.channel_discovery import ChannelDiscoveryService, channel_discovery_service
 from app.services.websocket import WebSocketService, websocket_service
@@ -10,9 +11,11 @@ from app.services.distribution import DistributionService, distribution_service
 from app.services.caching import CacheService, cache_service
 from app.services.content import ContentService, content_service
 from app.core.services.channel_service import ChannelService
+from app.core.services.scene_service import SceneService
+from app.db.session import get_session
+from sqlalchemy.orm import Session
 
-# Global service instances
-channel_service = ChannelService()
+# Global service instances (for services that don't need per-request state)
 
 
 def get_channel_discovery_service() -> ChannelDiscoveryService:
@@ -40,9 +43,14 @@ def get_content_service() -> ContentService:
     return content_service
 
 
-def get_channel_service() -> ChannelService:
-    """Get channel service instance"""
-    return channel_service
+def get_channel_service(db: Session = Depends(get_session)) -> ChannelService:
+    """Get channel service instance with database dependency"""
+    return ChannelService(db)
+
+
+def get_scene_service(db: Session = Depends(get_session)) -> SceneService:
+    """Get scene service instance with database dependency"""
+    return SceneService(db)
 
 
 # Alternative dependency functions for FastAPI dependency injection

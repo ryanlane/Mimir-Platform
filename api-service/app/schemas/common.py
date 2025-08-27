@@ -98,6 +98,15 @@ class FilterParams(BaseModel):
         populate_by_name = True
 
 
+class PaginationParams(BaseModel):
+    """Common pagination parameters"""
+    limit: int = Field(default=20, ge=1, le=100, description="Number of items per page")
+    offset: int = Field(default=0, ge=0, description="Number of items to skip")
+    
+    class Config:
+        populate_by_name = True
+
+
 class BulkOperation(BaseModel):
     """Bulk operation request"""
     operation: str  # "create", "update", "delete"

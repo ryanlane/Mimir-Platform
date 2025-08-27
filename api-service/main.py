@@ -2,6 +2,7 @@
 Mimir API Application Factory
 Creates and configures the FastAPI application with modular architecture
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -45,6 +46,28 @@ def _initialize_services(app: FastAPI, logger):
     logger.info(f"Service capabilities: {capabilities}")
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    # Startup
+    print(f"🚀 Mimir API v2.1.0 starting up...")
+    print(f"📊 Database: {settings.database_url}")
+    print(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
+    print(f"📁 Channels Directory: {settings.channels_directory}")
+    print(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
+    
+    if settings.redis_enabled:
+        print(f"🔴 Redis: enabled at {settings.redis_url}")
+    
+    if settings.distribution_enabled:
+        print(f"📡 Distribution: enabled (mode: {settings.distribution_default_mode})")
+    
+    yield
+    
+    # Shutdown
+    print("🛑 Mimir API shutting down...")
+
+
 def create_app() -> FastAPI:
     """Application factory function"""
     
@@ -60,6 +83,7 @@ def create_app() -> FastAPI:
         debug=settings.debug,
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
+        lifespan=lifespan
     )
     
     # Configure CORS
@@ -101,29 +125,6 @@ def create_app() -> FastAPI:
 
 # Create app instance
 app = create_app()
-
-
-# Application lifecycle events
-@app.on_event("startup")
-async def startup_event():
-    """Application startup event"""
-    print(f"🚀 Mimir API v2.1.0 starting up...")
-    print(f"📊 Database: {settings.database_url}")
-    print(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
-    print(f"📁 Channels Directory: {settings.channels_directory}")
-    print(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
-    
-    if settings.redis_enabled:
-        print(f"🔴 Redis: enabled at {settings.redis_url}")
-    
-    if settings.distribution_enabled:
-        print(f"📡 Distribution: enabled (mode: {settings.distribution_default_mode})")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Application shutdown event"""
-    print("🛑 Mimir API shutting down...")
 
 
 # Development server entry point

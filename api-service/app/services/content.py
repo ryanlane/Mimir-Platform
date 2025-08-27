@@ -19,7 +19,7 @@ class ContentService:
     """Service for managing content, media files, and processing"""
     
     def __init__(self):
-        self.content_root = Path(settings.channels_dir)
+        self.content_root = Path(settings.channels_directory)
         self.supported_image_formats = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
         self.supported_video_formats = {'.mp4', '.webm', '.avi', '.mov', '.mkv'}
         self.max_file_size = 50 * 1024 * 1024  # 50MB default

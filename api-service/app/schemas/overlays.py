@@ -2,7 +2,7 @@
 Overlay-related schemas
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from app.schemas.common import TimestampMixin
 
@@ -52,3 +52,11 @@ class LegacyOverlayResponse(BaseModel):
     
     class Config:
         populate_by_name = True
+
+
+class OverlayListResponse(BaseModel):
+    """Response for listing overlays"""
+    overlays: List[OverlayResponse]
+    total: int
+    limit: int
+    offset: int

@@ -120,3 +120,26 @@ class SceneStatusResponse(BaseModel):
     assigned_displays: List[str]
     last_updated: Optional[datetime] = None
     distribution_status: Optional[Dict[str, Any]] = None
+
+
+class SceneListResponse(BaseModel):
+    """Response for listing scenes"""
+    scenes: List[SceneResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class SceneActivation(BaseModel):
+    """Scene activation configuration"""
+    scene_id: str
+    display_ids: Optional[List[str]] = None
+    force: Optional[bool] = False
+
+
+class ScheduleConfig(BaseModel):
+    """Legacy schedule configuration for backward compatibility"""
+    days: List[str]
+    start: str
+    end: str
+    timezone: Optional[str] = None
