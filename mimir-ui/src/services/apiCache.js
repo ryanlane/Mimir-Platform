@@ -149,7 +149,7 @@ export const CACHE_CONFIGS = {
   // Display status changes frequently
   DISPLAY_STATUS: {
     ttl: 30 * 1000, // 30 seconds
-    pattern: '/display/status'
+    pattern: '/displays/status'
   },
   
   // Content lists change when files are added/removed

@@ -238,7 +238,7 @@ export const api = {
   getOverlays: (params = {}) => apiClient.get('/overlays', { params }),
 
   // Display
-  getDisplayStatus: () => apiClient.get('/display/status'),
+  getDisplayStatus: () => apiClient.get('/displays/status'),
   clearDisplay: () => apiClient.post('/display/clear'),
 
   // v2.1 Channel System
