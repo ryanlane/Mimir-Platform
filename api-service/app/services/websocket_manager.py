@@ -24,6 +24,9 @@ class ConnectionManager:
         
         # Connection metadata
         self.connection_metadata: Dict[WebSocket, dict] = {}
+        
+        # Sequence ID for message ordering
+        self.current_sequence_id: int = 0
 
 
     async def connect(self, websocket: WebSocket):
@@ -242,3 +245,19 @@ class ConnectionManager:
         }
         
         await self.broadcast(json.dumps(message))
+
+
+    def get_connected_clients_count(self) -> int:
+        """Get total number of connected clients"""
+        return len(self.active_connections) + len(self.display_connections)
+
+
+    def get_current_sequence_id(self) -> int:
+        """Get current sequence ID"""
+        return self.current_sequence_id
+
+
+    def increment_sequence_id(self) -> int:
+        """Increment and return the next sequence ID"""
+        self.current_sequence_id += 1
+        return self.current_sequence_id

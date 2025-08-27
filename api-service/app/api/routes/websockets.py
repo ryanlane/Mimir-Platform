@@ -28,6 +28,23 @@ def get_db():
         db.close()
 
 
+@router.get("/api/websocket/status")
+async def get_websocket_status():
+    """Get current WebSocket connection status and information"""
+    return {
+        "connected_clients": manager.get_connected_clients_count(),
+        "websocket_url": "ws://localhost:5000/ws",  # This should be dynamic based on server config
+        "current_sequence_id": manager.get_current_sequence_id(),
+        "features": {
+            "full_state_on_connect": True,
+            "heartbeat_support": True,
+            "enhanced_events": True,
+            "error_broadcasting": True,
+            "channel_status_updates": True
+        }
+    }
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket endpoint for real-time communication"""
