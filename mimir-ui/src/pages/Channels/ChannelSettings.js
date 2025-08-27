@@ -90,6 +90,8 @@ const getServerBaseUrl = () => {
 const ChannelSettings = ({ channel, onClose }) => {
   const [config, setConfig] = useState(null);
   const [settings, setSettings] = useState({});
+  const [settingsSchema, setSettingsSchema] = useState(null);
+  const [settingsType, setSettingsType] = useState('simple');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [channelManifest, setChannelManifest] = useState(null);
@@ -117,16 +119,13 @@ const ChannelSettings = ({ channel, onClose }) => {
         setConfig(configResponse.data);
         
         // Initialize settings state with current values from settings response
-        // Note: Settings endpoint returns simple key-value pairs, not detailed schema
-        const currentSettings = {};
+        // Use the structured settings response instead of parsing config
         if (settingsResponse.data) {
-          // Handle simple key-value response format
-          Object.entries(settingsResponse.data).forEach(([key, value]) => {
-            currentSettings[key] = value;
-          });
+          const settingsData = settingsResponse.data;
+          setSettingsSchema(settingsData.schema || null);
+          setSettingsType(settingsData.settingsType || 'simple');
+          setSettings(settingsData.current || {});
         }
-        
-        setSettings(currentSettings);
 
         // Find the manifest for this channel
         const manifest = manifestsResponse.data.find(m => m.id === channel.id);
@@ -658,12 +657,12 @@ const ChannelSettings = ({ channel, onClose }) => {
           ) : null}
 
           {/* Show basic settings only if no management interface is available */}
-          {config?.settings && !hasManagementInterface() ? (
+          {settingsSchema?.properties && !hasManagementInterface() ? (
             <div className="settings-form">
-              {Object.entries(config.settings).map(([key, setting]) => (
+              {Object.entries(settingsSchema.properties).map(([key, setting]) => (
                 <div key={key} className="form-group">
                   <label className="form-label">
-                    {setting.label || key}
+                    {setting.title || setting.label || key}
                     {setting.required && <span className="required">*</span>}
                   </label>
                   {setting.description && (
@@ -673,12 +672,12 @@ const ChannelSettings = ({ channel, onClose }) => {
                 </div>
               ))}
             </div>
-          ) : config?.settings && hasManagementInterface() ? (
+          ) : settingsSchema?.properties && hasManagementInterface() ? (
             <div />
           ) : (
             <div className="no-settings">
               <p className="text-tertiary">
-                {config?.settingsType === 'complex' ? 
+                {settingsType === 'advanced' ? 
                   'This channel uses a custom settings interface.' :
                   'No configurable settings available for this channel.'
                 }
@@ -689,7 +688,7 @@ const ChannelSettings = ({ channel, onClose }) => {
           )}
         </div>
 
-        {config?.settings && !hasManagementInterface() && (
+        {settingsSchema?.properties && !hasManagementInterface() && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
               {channel.hasUI ? 'Close' : 'Cancel'}
@@ -705,7 +704,7 @@ const ChannelSettings = ({ channel, onClose }) => {
           </div>
         )}
 
-        {(!config?.settings || hasManagementInterface()) && (
+        {(!settingsSchema?.properties || hasManagementInterface()) && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
               Close
