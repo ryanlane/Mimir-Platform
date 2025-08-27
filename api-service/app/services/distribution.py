@@ -6,7 +6,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
-from app.core.config import settings
+from app.config import settings
 from app.core.logging import get_logger
 
 

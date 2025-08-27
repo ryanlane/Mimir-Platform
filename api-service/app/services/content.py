@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 
-from app.core.config import settings
+from app.config import settings
 from app.core.logging import get_logger
 
 

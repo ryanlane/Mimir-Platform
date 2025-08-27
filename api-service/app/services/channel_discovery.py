@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.core.config import settings
+from app.config import settings
 from app.core.logging import get_logger
 
 
@@ -23,7 +23,7 @@ class ChannelDiscoveryService:
     """Service for discovering, loading, and managing channels dynamically"""
     
     def __init__(self, channels_dir: Optional[str] = None):
-        self.channels_dir = Path(channels_dir or settings.channels_dir)
+        self.channels_dir = Path(channels_dir or settings.channels_directory)
         self.loaded_channels: Dict[str, Dict[str, Any]] = {}
         self.static_mounts: Dict[str, str] = {}
         
