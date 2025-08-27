@@ -22,10 +22,12 @@ router = APIRouter(prefix="/scenes", tags=["scenes"])
 
 @router.get("", response_model=SceneListResponse)
 async def list_scenes(
+    limit: int = 100,
+    offset: int = 0,
     scene_service: SceneService = Depends(get_scene_service)
 ):
     """Get all scenes"""
-    return scene_service.get_scenes()
+    return scene_service.get_scenes(limit=limit, offset=offset)
 
 
 @router.get("/{scene_id}", response_model=SceneResponse)

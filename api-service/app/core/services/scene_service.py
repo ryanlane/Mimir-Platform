@@ -2,9 +2,9 @@
 Scene Service
 Business logic for scene management operations
 """
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
-from app.infrastructure.database.models import Scene
+from app.db.models import Scene
 
 
 class SceneService:
@@ -13,13 +13,17 @@ class SceneService:
     def __init__(self, db: Session):
         self.db = db
     
-    def get_scenes(self) -> List[Dict[str, Any]]:
-        """Get all scenes"""
-        scenes = self.db.query(Scene).all()
+    def get_scenes(self, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+        """Get all scenes with pagination support"""
+        # Get total count
+        total = self.db.query(Scene).count()
         
-        result = []
+        # Get scenes with pagination
+        scenes = self.db.query(Scene).offset(offset).limit(limit).all()
+        
+        scene_list = []
         for scene in scenes:
-            result.append({
+            scene_list.append({
                 "id": scene.id,
                 "name": scene.name,
                 "channels": scene.channels,
@@ -27,10 +31,17 @@ class SceneService:
                 "overlay": scene.overlay,
                 "schedule": scene.schedule,
                 "theme": scene.theme,
-                "is_active": scene.is_active
+                "is_active": scene.is_active,
+                "created_at": scene.created_at,
+                "updated_at": scene.updated_at
             })
         
-        return result
+        return {
+            "scenes": scene_list,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
     
     def get_scene_by_id(self, scene_id: str) -> Optional[Scene]:
         """Get scene by ID"""
