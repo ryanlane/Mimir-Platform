@@ -266,6 +266,20 @@ async def discover_displays(
         # Start discovery
         zeroconf = Zeroconf()
         listener = DisplayListener()
+        
+        # First, try to directly query the known service name pattern
+        print("🔍 Directly querying for mimir display services...")
+        try:
+            # Try to get the specific service we found earlier
+            service_name = "mimir-display-discovery-colorframe05-1756316347._mimir-display._tcp.local."
+            info = zeroconf.get_service_info("_mimir-display._tcp.local.", service_name)
+            if info:
+                print(f"✅ Found direct service: {service_name}")
+                listener.add_service(zeroconf, "_mimir-display._tcp.local.", service_name)
+        except Exception as e:
+            print(f"⚠️ Error querying direct service: {e}")
+        
+        # Also browse for services
         browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", listener)
         
         # Wait for discovery
