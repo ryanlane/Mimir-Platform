@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
     from app.db.base import engine
     from app.db.models import Base
     print("🗄️  Ensuring database schema exists...")
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
     print("✅ Database schema ready")
     
     if settings.redis_enabled:
@@ -104,6 +104,12 @@ def create_app() -> FastAPI:
     
     # Initialize services
     _initialize_services(app, logger)
+    
+    # Ensure database schema exists for clean installs
+    logger.info("🗄️ Ensuring database schema exists...")
+    from app.db.models import Base
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+    logger.info("✅ Database schema ready")
     
     # Database is managed by Alembic migrations
     # Run `alembic upgrade head` to ensure latest schema
