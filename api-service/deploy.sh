@@ -26,8 +26,8 @@ error() {
 # Get configuration
 read -p "Enter remote server hostname or IP: " REMOTE_HOST
 read -p "Enter remote username: " REMOTE_USER
-read -p "Enter remote path [/home/$REMOTE_USER/services/mimir-api]: " REMOTE_PATH
-REMOTE_PATH="${REMOTE_PATH:-/home/$REMOTE_USER/services/mimir-api}"
+read -p "Enter remote path [ /opt/mimir/mimir-api]: " REMOTE_PATH
+REMOTE_PATH="${REMOTE_PATH:-/opt/mimir/mimir-api/}"
 
 echo
 echo "Configuration:"

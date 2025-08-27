@@ -117,11 +117,13 @@ if PYDANTIC_AVAILABLE:
         
         # Channels Configuration
         channels_directory: str = Field(default="channels", description="Channels directory path")
+        channels_dir: str = Field(default="channels", description="Alternative channels directory path")
         max_channel_instances: int = Field(default=50, description="Maximum channel instances")
         
         # Logging Configuration
         log_level: str = Field(default="INFO", description="Logging level")
         log_format: str = Field(default="json", description="Log format (json or text)")
+        log_file: str = Field(default="", description="Log file path")
         
         # WebSocket Configuration
         websocket_ping_interval: int = Field(default=20, description="WebSocket ping interval in seconds")
@@ -130,7 +132,18 @@ if PYDANTIC_AVAILABLE:
         # Redis Configuration (optional)
         redis_enabled: bool = Field(default=False, description="Enable Redis for caching and distribution")
         redis_url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
+        redis_host: str = Field(default="localhost", description="Redis host")
+        redis_port: int = Field(default=6379, description="Redis port")
         redis_db: int = Field(default=0, description="Redis database number")
+        
+        # Database Pool Configuration (alternative field names)
+        pool_size: int = Field(default=20, description="Database connection pool size (alt name)")
+        max_overflow: int = Field(default=30, description="Database max overflow connections (alt name)")
+        pool_timeout: int = Field(default=60, description="Database pool timeout in seconds (alt name)")
+        pool_recycle: int = Field(default=3600, description="Database pool recycle time in seconds (alt name)")
+        
+        # Health Checks
+        enable_health_checks: bool = Field(default=True, description="Enable health check endpoints")
         
         # Distribution Configuration
         distribution_enabled: bool = Field(default=False, description="Enable content distribution features")
@@ -144,6 +157,7 @@ if PYDANTIC_AVAILABLE:
             env_file = ".env"
             env_file_encoding = "utf-8"
             case_sensitive = False
+            extra = "ignore"  # Allow extra fields without validation errors
 
 
 # Global settings instance
