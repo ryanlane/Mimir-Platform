@@ -102,12 +102,17 @@ const Scenes = () => {
     }
   });
 
-  // Handle full state received on connection
+  useEffect(() => {
+    // Load data immediately when component mounts
+    // Don't wait for WebSocket - it will update state when available
+    loadData();
+  }, [loadData]);
+
+  // Handle WebSocket state updates when they arrive
   useEffect(() => {
     if (currentState?.displayStatus) {
-      console.log('🚀 Initializing from full state:', currentState.displayStatus);
+      console.log('🚀 Updating from WebSocket state:', currentState.displayStatus);
       setDisplayStatus(currentState.displayStatus);
-      setLoading(false); // Mark as loaded from WebSocket
       
       // Also update scenes if provided
       if (currentState.allScenes) {
@@ -120,28 +125,8 @@ const Scenes = () => {
         console.log('🔌 Setting channels from WebSocket:', currentState.channels);
         setChannels(currentState.channels);
       }
-      
-      // Force re-render to ensure UI updates
-      console.log('🔄 Forcing component re-render after WebSocket state update');
     }
   }, [currentState]);
-
-  useEffect(() => {
-    // Wait a bit for WebSocket to potentially connect and provide state
-    const timer = setTimeout(() => {
-      if (!currentState && !isConnected) {
-        console.log('⏰ WebSocket not connected after timeout, loading via API as fallback');
-        loadData();
-      } else if (!currentState && isConnected) {
-        console.log('⏰ WebSocket connected but no state received, loading via API');
-        loadData();
-      } else {
-        console.log('✅ Using WebSocket state, skipping API load');
-      }
-    }, 1000); // Give WebSocket 1 second to connect and send state
-
-    return () => clearTimeout(timer);
-  }, [currentState, isConnected, loadData]);
 
   // Debug useEffect to monitor activeScene changes
   useEffect(() => {
@@ -256,9 +241,7 @@ const Scenes = () => {
     return (
       <div className="loading">
         <div className="loading-spinner"></div>
-        <span>
-          {isConnected ? 'Loading from WebSocket...' : 'Connecting and loading...'}
-        </span>
+        <span>Loading scenes...</span>
       </div>
     );
   }
