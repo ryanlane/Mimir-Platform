@@ -127,6 +127,168 @@ async def list_display_clients(
     )
 
 
+@router.get("/discover")
+async def discover_displays(
+    timeout: int = Query(5, ge=1, le=30),
+    auto_register: bool = Query(True),
+    db: Session = Depends(get_db)
+):
+    """Discover available displays on network via mDNS"""
+    try:
+        from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
+        import time
+        import threading
+        import socket
+        
+        print(f"🔍 Starting mDNS discovery with timeout={timeout}, auto_register={auto_register}")
+        
+        discovered_displays = []
+        auto_registered = []
+        
+        class DisplayListener(ServiceListener):
+            def add_service(self, zeroconf, service_type, name):
+                print(f"🔎 Found service: {name}")
+                if '_mimir-display._tcp.local.' in name:
+                    info = zeroconf.get_service_info(service_type, name)
+                    if info:
+                        print(f"✅ Got service info for: {name}")
+                        
+                        # Extract service properties
+                        properties = {}
+                        if info.properties:
+                            for key, value in info.properties.items():
+                                try:
+                                    properties[key.decode('utf-8')] = value.decode('utf-8')
+                                except:
+                                    pass
+                        
+                        # Convert IP addresses to readable format
+                        addresses = []
+                        for addr in info.addresses:
+                            try:
+                                addresses.append(socket.inet_ntoa(addr))
+                            except:
+                                addresses.append(str(addr))
+                        
+                        hostname = properties.get("hostname", "unknown")
+                        display_name = properties.get("display_name", f"Display ({hostname})")
+                        display_id = properties.get("display_id", f"unknown-{hostname}")
+                        
+                        display_info = {
+                            "service_name": name,
+                            "hostname": hostname,
+                            "display_name": display_name,
+                            "display_id": display_id,
+                            "location": properties.get("location", "Auto-discovered"),
+                            "resolution": properties.get("resolution"),
+                            "client_version": properties.get("client_version"),
+                            "webhook_port": properties.get("webhook_port"),
+                            "addresses": addresses,
+                            "port": info.port,
+                            "properties": properties,
+                            "discovered_at": datetime.datetime.now().isoformat()
+                        }
+                        
+                        # Add webhook URL if we have an address and port
+                        if addresses and properties.get("webhook_port"):
+                            display_info["webhook_url"] = f"http://{addresses[0]}:{properties.get('webhook_port')}"
+                        
+                        discovered_displays.append(display_info)
+                        print(f"✅ Added display: {display_name} ({hostname}) at {addresses}")
+                        
+                        # Auto-register the display if requested
+                        if auto_register:
+                            try:
+                                # Check if display already exists
+                                existing = db.query(DisplayClient).filter(
+                                    DisplayClient.hostname == hostname
+                                ).first()
+                                
+                                if not existing:
+                                    # Create new display client
+                                    new_client = DisplayClient(
+                                        id=display_id,
+                                        name=display_name,
+                                        location=properties.get("location", "Auto-discovered"),
+                                        hostname=hostname,
+                                        webhook_port=int(properties.get("webhook_port", 0)) if properties.get("webhook_port") else None,
+                                        width=int(properties.get("resolution", "800x480").split("x")[0]) if properties.get("resolution") else 800,
+                                        height=int(properties.get("resolution", "800x480").split("x")[1]) if properties.get("resolution") else 480,
+                                        client_version=properties.get("client_version", "unknown"),
+                                        redis_distribution=properties.get("redis_distribution") == "true",
+                                        content_claiming=properties.get("content_claiming") == "true",
+                                        display_type="discovered",
+                                        discovery_method="mdns",
+                                        auto_discovered=True,
+                                        is_online=True,
+                                        last_seen=datetime.datetime.now()
+                                    )
+                                    
+                                    db.add(new_client)
+                                    db.commit()
+                                    db.refresh(new_client)
+                                    
+                                    auto_registered.append({
+                                        "display_id": display_id,
+                                        "display_name": display_name,
+                                        "hostname": hostname
+                                    })
+                                    print(f"✅ Auto-registered display: {display_name}")
+                                else:
+                                    # Update existing display
+                                    existing.is_online = True
+                                    existing.last_seen = datetime.datetime.now()
+                                    existing.display_type = "discovered"
+                                    existing.discovery_method = "mdns"
+                                    db.commit()
+                                    print(f"🔄 Updated existing display: {display_name}")
+                                    
+                            except Exception as e:
+                                print(f"❌ Failed to auto-register {display_name}: {e}")
+            
+            def remove_service(self, zeroconf, service_type, name):
+                pass
+            
+            def update_service(self, zeroconf, service_type, name):
+                pass
+        
+        # Start discovery
+        zeroconf = Zeroconf()
+        listener = DisplayListener()
+        browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", listener)
+        
+        # Wait for discovery
+        print(f"⏳ Waiting {timeout} seconds for services...")
+        time.sleep(timeout)
+        
+        # Cleanup
+        browser.cancel()
+        zeroconf.close()
+        
+        print(f"✅ Discovery complete. Found {len(discovered_displays)} displays.")
+        
+        return {
+            "discovered_displays": discovered_displays,
+            "auto_registered": auto_registered if auto_register else [],
+            "discovery_timeout": timeout,
+            "total_found": len(discovered_displays),
+            "total_auto_registered": len(auto_registered) if auto_register else 0,
+            "discovery_completed_at": datetime.datetime.now().isoformat()
+        }
+        
+    except ImportError:
+        raise HTTPException(
+            status_code=501, 
+            detail="mDNS discovery not available (zeroconf library not installed)"
+        )
+    except Exception as e:
+        print(f"❌ Discovery failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Discovery failed: {str(e)}"
+        )
+
+
 @router.get("/{display_id}", response_model=DisplayClientResponse)
 async def get_display_client(
     display_id: str,
@@ -285,14 +447,6 @@ async def acknowledge_content(
             db.commit()
     
     return {"message": "Content acknowledged"}
-
-
-@router.get("/discover")
-async def discover_displays():
-    """Discover available displays on network"""
-    # This would implement network discovery logic
-    # For now, return empty list
-    return {"discovered_displays": []}
 
 
 @router.post("/{display_id}/refresh")
