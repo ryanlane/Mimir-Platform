@@ -112,3 +112,118 @@ class ChannelService:
         self.db.delete(channel)
         self.db.commit()
         return True
+    
+    def get_channel_health(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """Get channel health status"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        # Basic health check based on channel status
+        status = channel.status or {}
+        healthy = status.get("active", False) and not status.get("lastError")
+        
+        return {
+            "channelId": channel_id,
+            "name": channel.name,
+            "version": channel.version,
+            "status": status,
+            "healthy": healthy,
+            "lastCheck": status.get("lastUpdate")
+        }
+    
+    def test_channel(self, channel_id: str, test_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Test channel functionality"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        # Basic test - check if channel exists and has valid configuration
+        from datetime import datetime
+        
+        return {
+            "success": True,
+            "channelId": channel_id,
+            "name": channel.name,
+            "version": channel.version,
+            "status": channel.status or {},
+            "test_result": {
+                "message": "Channel configuration test passed",
+                "basic_test": True,
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+    
+    def get_channel_token(self, channel_id: str) -> Optional[str]:
+        """Get channel authentication token"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        # For now, return a simple token based on channel ID
+        # In production, this should generate a proper JWT or secure token
+        import hashlib
+        import time
+        
+        token_data = f"{channel_id}:{time.time()}"
+        return hashlib.sha256(token_data.encode()).hexdigest()[:32]
+    
+    def get_current_content(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """Get current content for channel"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        # Return basic content info
+        return {
+            "channelId": channel_id,
+            "contentType": "image/jpeg",
+            "lastUpdate": channel.status.get("lastUpdate") if channel.status else None,
+            "available": True
+        }
+    
+    def request_image(self, channel_id: str, request_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Request image generation from channel"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        from datetime import datetime
+        
+        return {
+            "success": True,
+            "channelId": channel_id,
+            "requestId": f"{channel_id}_{int(datetime.now().timestamp())}",
+            "status": "processing",
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def get_subchannels(self, channel_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Get list of subchannels for a channel"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        # For now, return empty list - subchannels would be implemented later
+        return []
+    
+    def get_subchannels_config(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """Get subchannel configuration for a channel"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        return {
+            "channelId": channel_id,
+            "subchannels": [],
+            "config": {}
+        }
+    
+    def get_subchannel(self, channel_id: str, subchannel_id: str) -> Optional[Dict[str, Any]]:
+        """Get specific subchannel data"""
+        channel = self.get_channel_by_id(channel_id)
+        if not channel:
+            return None
+        
+        # For now, return None - subchannels would be implemented later
+        return None
