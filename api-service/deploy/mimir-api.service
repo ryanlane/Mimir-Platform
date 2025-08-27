@@ -1,5 +1,4 @@
 # /etc/systemd/system/mimir-api.service
-# UPDATED FOR REFACTORED DEPLOYMENT
 [Unit]
 Description=Mimir API Service - Multi-display content management system (Refactored)
 Documentation=https://github.com/your-org/mimir-api
@@ -8,29 +7,32 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ryan
-Group=ryan
-# UPDATED: New deployment path
-WorkingDirectory=/home/ryan/services/mimir-api
+User=${REMOTE_USER}
+Group=${REMOTE_USER}
+WorkingDirectory=${REMOTE_PATH}
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/home/ryan/services/mimir-api
+Environment=PYTHONPATH=${REMOTE_PATH}
 
 # Load environment variables from .env file
-EnvironmentFile=-/home/ryan/services/mimir-api/.env
+EnvironmentFile=-${REMOTE_PATH}/.env
 
-# UPDATED: Entry point for refactored app factory with production workers
-ExecStart=/home/ryan/services/mimir-api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 5000 --workers 2
+# Updated entry point to use refactored app factory
+ExecStart=${REMOTE_PATH}/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 5000 --workers 2
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
 Restart=always
 RestartSec=5
 
-# Enhanced security hardening
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/home/ryan/services/mimir-api/logs
-ReadWritePaths=/home/ryan/services/mimir-api/app.db
+ReadWritePaths=${REMOTE_PATH}/logs
+ReadWritePaths=${REMOTE_PATH}/app.db
 ReadWritePaths=/tmp
 PrivateTmp=true
 ProtectKernelTunables=true
