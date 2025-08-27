@@ -41,7 +41,9 @@ const Channels = () => {
     
     try {
       const response = await api.getChannelsManifest();
-      setManifest(response.data || []);
+      // Extract the channels array from the response object
+      const manifestData = response.data?.channels || [];
+      setManifest(manifestData);
       console.log('📋 Loaded channel manifest:', response.data);
     } catch (error) {
       console.error('Error loading channel manifest:', error);
