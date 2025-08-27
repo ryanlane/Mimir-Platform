@@ -66,8 +66,8 @@ async def register_display_client(
         existing_client.location = registration.location
         existing_client.hostname = registration.hostname
         existing_client.webhook_port = registration.webhook_port
-        existing_client.resolution = registration.capabilities.resolution
-        existing_client.supported_formats = registration.capabilities.supported_formats
+        existing_client.width = registration.capabilities.resolution[0] if registration.capabilities.resolution else None
+        existing_client.height = registration.capabilities.resolution[1] if registration.capabilities.resolution and len(registration.capabilities.resolution) > 1 else None
         existing_client.orientation = registration.capabilities.orientation
         existing_client.client_version = registration.client_version
         existing_client.redis_distribution = registration.capabilities.redis_distribution
@@ -86,8 +86,8 @@ async def register_display_client(
             location=registration.location,
             hostname=registration.hostname,
             webhook_port=registration.webhook_port,
-            resolution=registration.capabilities.resolution,
-            supported_formats=registration.capabilities.supported_formats,
+            width=registration.capabilities.resolution[0] if registration.capabilities.resolution else None,
+            height=registration.capabilities.resolution[1] if registration.capabilities.resolution and len(registration.capabilities.resolution) > 1 else None,
             orientation=registration.capabilities.orientation,
             client_version=registration.client_version,
             redis_distribution=registration.capabilities.redis_distribution,
@@ -209,8 +209,11 @@ async def discover_displays(
                                     resolution_str = properties.get("resolution", "800x480")
                                     try:
                                         resolution = [int(x) for x in resolution_str.split("x")]
+                                        width = resolution[0]
+                                        height = resolution[1]
                                     except:
-                                        resolution = [800, 480]
+                                        width = 800
+                                        height = 480
                                     
                                     # Create new display client
                                     new_client = DisplayClient(
@@ -219,8 +222,8 @@ async def discover_displays(
                                         location=properties.get("location", "Auto-discovered"),
                                         hostname=hostname,
                                         webhook_port=int(properties.get("webhook_port", 0)) if properties.get("webhook_port") else None,
-                                        resolution=resolution,
-                                        supported_formats=["png", "jpg"],  # Default formats
+                                        width=width,
+                                        height=height,
                                         orientation=properties.get("orientation", "landscape"),
                                         client_version=properties.get("client_version", "unknown"),
                                         redis_distribution=properties.get("redis_distribution") == "true",

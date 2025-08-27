@@ -36,11 +36,10 @@ def register_display_manually():
             id=display_id,
             name="Inky ePaper Display",
             location="Lab Bench",
-            description="Auto-discovered Inky display",
             hostname="colorframe05",
             webhook_port=8081,
-            resolution=[800, 480],
-            supported_formats=["png", "jpg"],
+            width=800,
+            height=480,
             orientation="landscape",
             client_version="1.0.0",
             redis_distribution=True,
@@ -49,8 +48,7 @@ def register_display_manually():
             discovery_method="manual",
             auto_discovered=False,
             is_online=True,
-            last_seen=datetime.datetime.now(),
-            tags=["inky", "pi-zero", "lab"]
+            last_seen=datetime.datetime.now()
         )
         
         db.add(new_display)
@@ -62,7 +60,7 @@ def register_display_manually():
         print(f"   Name: {new_display.name}")
         print(f"   Location: {new_display.location}")
         print(f"   Hostname: {new_display.hostname}")
-        print(f"   Resolution: {new_display.resolution}")
+        print(f"   Resolution: {new_display.width}x{new_display.height}")
         print(f"   Webhook: http://192.168.1.41:8081")
         
         return new_display.id

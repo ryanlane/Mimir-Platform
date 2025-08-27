@@ -123,10 +123,10 @@ class DisplayClient(Base):
     # Primary identification
     id = Column(String, primary_key=True, index=True)  # UUID
     name = Column(String, nullable=False, index=True)  # Human-readable name
-    description = Column(String, nullable=True)
     location = Column(String, nullable=True, index=True)  # Physical location
     
     # Display type and discovery
+    device_type = Column(String, nullable=True)  # Device type
     display_type = Column(String, default="registered", index=True)  # "registered" or "discovered"
     discovery_method = Column(String, nullable=True, index=True)  # "manual", "mdns", "webhook"
     auto_discovered = Column(Boolean, default=False, index=True)  # True for mDNS discovered displays
@@ -137,30 +137,23 @@ class DisplayClient(Base):
     redis_distribution = Column(Boolean, default=False, index=True)  # Supports Redis distribution
     content_claiming = Column(Boolean, default=False, index=True)  # Supports content claiming
     
-    # Client capabilities
-    resolution = Column(JSON, nullable=True)  # [width, height]
-    supported_formats = Column(JSON, nullable=True)  # ["jpg", "png", "gif"]
+    # Client capabilities - using old schema fields
+    width = Column(Integer, nullable=True)  # Display width
+    height = Column(Integer, nullable=True)  # Display height
     orientation = Column(String, default="landscape", index=True)  # "landscape", "portrait"
-    refresh_rate_hz = Column(Integer, nullable=True)  # Display refresh rate
     client_version = Column(String, nullable=True, index=True)  # Client software version
     
     # Connection status
     is_online = Column(Boolean, default=False, index=True)
     last_seen = Column(DateTime, nullable=True, index=True)
-    last_image_fetch = Column(DateTime, nullable=True)  # When client last fetched image
     websocket_connection_id = Column(String, nullable=True, index=True)
     
     # Current assignment - Add proper foreign key relationship in future migration
     assigned_scene_id = Column(String, nullable=True, index=True)  # Will be ForeignKey('scenes.id')
-    current_image_path = Column(String, nullable=True)  # Path to current scene image
-    
-    # Configuration
-    settings = Column(JSON, nullable=True)  # Display-specific settings
-    tags = Column(JSON, nullable=True)  # ["lobby", "conference-room", "kiosk"]
+    current_content_hash = Column(String, nullable=True)  # Current content hash
     
     # Metadata
     created_at = Column(DateTime, default=datetime.datetime.now, index=True)
-    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
     
     # Indexes and constraints
     __table_args__ = (
