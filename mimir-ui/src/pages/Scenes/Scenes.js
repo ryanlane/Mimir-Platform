@@ -25,15 +25,29 @@ const Scenes = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [scenesResponse, channelsResponse, overlaysResponse, displayResponse] = await Promise.all([
+      const [scenesResponse, channelsResponse, overlaysResponse] = await Promise.all([
         api.getScenes(),
         api.getChannels(),
-        api.getOverlays(),
-        api.getDisplayStatus()
+        api.getOverlays()
       ]);
 
-      console.log('Display response:', displayResponse.data);
-      console.log('Current scene from API:', displayResponse.data.currentScene);
+      // Handle display status separately to gracefully handle "no displays" case
+      let displayResponse = null;
+      try {
+        displayResponse = await api.getDisplayStatus();
+        console.log('Display response:', displayResponse.data);
+      } catch (displayError) {
+        // If 404 or "Display client not found", that's expected when no displays are connected
+        if (displayError.response?.status === 404 || displayError.message?.includes('Display client not found')) {
+          console.log('No displays currently connected');
+          displayResponse = { data: null }; // Set to null to indicate no displays
+        } else {
+          // Re-throw other errors
+          throw displayError;
+        }
+      }
+
+      console.log('Current scene from API:', displayResponse?.data?.currentScene);
 
       setScenes(scenesResponse.data.scenes || []);
       setChannels(channelsResponse.data.channels || []);
@@ -41,8 +55,8 @@ const Scenes = () => {
       
       // Only set display status if we don't have WebSocket state
       if (!currentState?.displayStatus) {
-        setDisplayStatus(displayResponse.data);
-        console.log('Set displayStatus from API to:', displayResponse.data);
+        setDisplayStatus(displayResponse?.data || null);
+        console.log('Set displayStatus from API to:', displayResponse?.data || null);
       } else {
         console.log('🚫 Skipping display status update - using WebSocket state');
       }
