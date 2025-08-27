@@ -49,25 +49,32 @@ fi
 
 log "� Preparing files for copy..."
 
-# Create remote directory
-ssh "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_PATH"
+# Set up SSH connection multiplexing to avoid multiple password prompts
+SSH_CONTROL_PATH="/tmp/ssh_mux_%h_%p_%r"
+SSH_OPTS="-o ControlMaster=auto -o ControlPath=$SSH_CONTROL_PATH -o ControlPersist=10m"
 
-# Copy files using scp
+# Create remote directory (this will prompt for password once)
+ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_PATH"
+
+# Copy files using scp with shared connection
 log "📤 Copying files to remote server..."
 
-scp -r app/ "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
-scp main.py "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
-scp requirements.txt "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+scp $SSH_OPTS -r app/ "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+scp $SSH_OPTS main.py "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+scp $SSH_OPTS requirements.txt "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
 
 # Copy optional files if they exist
-[ -f "pyproject.toml" ] && scp pyproject.toml "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
-[ -d "alembic" ] && scp -r alembic/ "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
-[ -f "alembic.ini" ] && scp alembic.ini "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+[ -f "pyproject.toml" ] && scp $SSH_OPTS pyproject.toml "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+[ -d "alembic" ] && scp $SSH_OPTS -r alembic/ "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+[ -f "alembic.ini" ] && scp $SSH_OPTS alembic.ini "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
 
 # Copy deployment files if they exist
 if [ -d "deploy" ]; then
-    scp -r deploy/ "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+    scp $SSH_OPTS -r deploy/ "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
 fi
+
+# Clean up SSH connection
+ssh $SSH_OPTS -O exit "$REMOTE_USER@$REMOTE_HOST" 2>/dev/null || true
 
 success "Files copied to $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH"
 
