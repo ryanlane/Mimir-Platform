@@ -102,10 +102,10 @@ async def get_channel_config(
 @router.get("/{channel_id}/settings")
 async def get_channel_settings(
     channel_id: str,
-    channel_service: ChannelService = Depends(get_channel_service)
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
 ):
     """Get channel settings"""
-    settings = channel_service.get_channel_settings(channel_id)
+    settings = channel_discovery.get_channel_settings(channel_id)
     if settings is None:
         raise HTTPException(status_code=404, detail="Channel not found")
     return settings
@@ -115,10 +115,10 @@ async def get_channel_settings(
 async def update_channel_settings(
     channel_id: str,
     settings: Dict[str, Any],
-    channel_service: ChannelService = Depends(get_channel_service)
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
 ):
     """Update channel settings"""
-    success = channel_service.update_channel_settings(channel_id, settings)
+    success = channel_discovery.update_channel_settings(channel_id, settings)
     if not success:
         raise HTTPException(status_code=404, detail="Channel not found")
     

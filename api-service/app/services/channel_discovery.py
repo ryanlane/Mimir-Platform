@@ -254,6 +254,84 @@ class ChannelDiscoveryService:
         """Get all loaded channels"""
         return list(self.loaded_channels.values())
     
+    def get_channel_settings(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """Get channel settings configuration and current values"""
+        channel_data = self.loaded_channels.get(channel_id)
+        if not channel_data:
+            return None
+            
+        config = channel_data['config']
+        settings_config = config.get('settings', {})
+        
+        # If settings has 'schema' and 'defaults' structure (like photo_frame)
+        if 'schema' in settings_config and 'defaults' in settings_config:
+            return {
+                'schema': settings_config['schema'],
+                'current': settings_config['defaults'],  # For now, use defaults as current
+                'settingsType': config.get('settingsType', 'simple')
+            }
+        
+        # If settings are directly defined (like example_channel and weather_channel)
+        elif settings_config:
+            # Convert settings definition to a proper schema format
+            schema_properties = {}
+            current_values = {}
+            
+            for key, setting_def in settings_config.items():
+                if isinstance(setting_def, dict):
+                    schema_properties[key] = {
+                        'type': setting_def.get('type', 'string'),
+                        'title': setting_def.get('label', key.replace('_', ' ').title()),
+                        'description': setting_def.get('description', ''),
+                        'default': setting_def.get('default')
+                    }
+                    
+                    # Add enum options if present
+                    if 'enum' in setting_def:
+                        schema_properties[key]['enum'] = setting_def['enum']
+                    elif 'options' in setting_def:
+                        schema_properties[key]['enum'] = setting_def['options']
+                    
+                    # Add validation constraints
+                    if 'minimum' in setting_def:
+                        schema_properties[key]['minimum'] = setting_def['minimum']
+                    if 'required' in setting_def and setting_def['required']:
+                        schema_properties[key]['required'] = True
+                    
+                    # Set current value to default for now
+                    current_values[key] = setting_def.get('default')
+            
+            return {
+                'schema': {
+                    'type': 'object',
+                    'properties': schema_properties
+                },
+                'current': current_values,
+                'settingsType': config.get('settingsType', 'simple')
+            }
+        
+        # No settings defined
+        return {
+            'schema': {'type': 'object', 'properties': {}},
+            'current': {},
+            'settingsType': config.get('settingsType', 'simple')
+        }
+    
+    def update_channel_settings(self, channel_id: str, settings: Dict[str, Any]) -> bool:
+        """Update channel settings (for now, just validate they exist)"""
+        channel_data = self.loaded_channels.get(channel_id)
+        if not channel_data:
+            return False
+        
+        # For now, we'll just return True to indicate the channel exists
+        # In a full implementation, you might want to:
+        # 1. Store settings in a separate file (e.g., channel_settings.json)
+        # 2. Pass settings to the channel instance
+        # 3. Persist to a lightweight storage mechanism
+        
+        logger.info(f"Settings update requested for channel {channel_id}: {settings}")
+        return True
+
     def get_channels_manifest(self) -> Dict[str, Any]:
         """Get manifest of all channels for frontend consumption"""
         channels_data = []

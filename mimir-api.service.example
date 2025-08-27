@@ -2,35 +2,40 @@
 # UPDATED FOR REFACTORED DEPLOYMENT
 [Unit]
 Description=Mimir API Service - Multi-display content management system (Refactored)
-Documentation=https://github.com/your-org/mimir-api
+Documentation=https://github.com/ryanlane/mimir-api
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=ryan
-Group=ryan
-# UPDATED: New deployment path
-WorkingDirectory=/home/ryan/services/mimir-api
+User=mimir
+Group=mimir
+# CORRECTED: Actual deployment path
+WorkingDirectory=/opt/mimir/mimir-api
 Environment=PYTHONUNBUFFERED=1
-Environment=PYTHONPATH=/home/ryan/services/mimir-api
+Environment=PYTHONPATH=/opt/mimir/mimir-api
 
 # Load environment variables from .env file
-EnvironmentFile=-/home/ryan/services/mimir-api/.env
+EnvironmentFile=-/opt/mimir/mimir-api/.env
 
 # UPDATED: Entry point for refactored app factory with production workers
-ExecStart=/home/ryan/services/mimir-api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 5000 --workers 2
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 5000 --workers 2
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
 Restart=always
 RestartSec=5
 
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
 # Enhanced security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/home/ryan/services/mimir-api/logs
-ReadWritePaths=/home/ryan/services/mimir-api/app.db
+ReadWritePaths=/opt/mimir/mimir-api/logs
+ReadWritePaths=/opt/mimir/mimir-api/app.db
+ReadWritePaths=/opt/mimir/mimir-api/channels
 ReadWritePaths=/tmp
 PrivateTmp=true
 ProtectKernelTunables=true
