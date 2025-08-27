@@ -118,11 +118,12 @@ async def list_display_clients(
     
     display_responses = [DisplayClientResponse.model_validate(client) for client in clients]
     
+    from app.schemas.common import PaginationMeta
+    
     return DisplayClientListResponse(
-        displays=display_responses,
-        total=total,
-        limit=limit,
-        offset=offset
+        data=display_responses,
+        meta=PaginationMeta(total=total, limit=limit, offset=offset),
+        total=total
     )
 
 

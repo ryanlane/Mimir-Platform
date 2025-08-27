@@ -78,7 +78,7 @@ class DisplayClientResponse(DisplayClientBase, TimestampMixin):
 
 class DisplayClientListResponse(PaginatedResponse):
     """Paginated display client list response"""
-    displays: List[DisplayClientResponse]
+    data: List[DisplayClientResponse]
 
 
 class DisplayStatusResponse(BaseModel):
