@@ -81,7 +81,9 @@ async def register_display_client(
         display_client = existing_client
     else:
         # Create new display client
+        import uuid
         display_client = DisplayClient(
+            id=str(uuid.uuid4()),  # Generate a UUID for the new display
             name=registration.name,
             location=registration.location,
             hostname=registration.hostname,
