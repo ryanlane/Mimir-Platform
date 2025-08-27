@@ -9,6 +9,10 @@ from app.services.websocket import WebSocketService, websocket_service
 from app.services.distribution import DistributionService, distribution_service
 from app.services.caching import CacheService, cache_service
 from app.services.content import ContentService, content_service
+from app.core.services.channel_service import ChannelService
+
+# Global service instances
+channel_service = ChannelService()
 
 
 def get_channel_discovery_service() -> ChannelDiscoveryService:
@@ -34,6 +38,11 @@ def get_cache_service() -> CacheService:
 def get_content_service() -> ContentService:
     """Get content service instance"""
     return content_service
+
+
+def get_channel_service() -> ChannelService:
+    """Get channel service instance"""
+    return channel_service
 
 
 # Alternative dependency functions for FastAPI dependency injection

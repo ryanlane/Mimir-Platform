@@ -9,25 +9,24 @@ from typing import Dict, Any, List
 from app.services.deps import (
     get_channel_discovery_service,
     get_content_service,
-    get_cache_service
+    get_cache_service,
+    get_channel_service
 )
 from app.services.channel_discovery import ChannelDiscoveryService
 from app.services.content import ContentService
 from app.services.caching import CacheService
+from app.core.services.channel_service import ChannelService
 from app.schemas.channels import (
-    ChannelResponse,
-    ChannelCreate,
-    ChannelUpdate,
-    ChannelListResponse,
-    SubchannelConfig,
-    ChannelHealth
+    ChannelResponse
 )
+# TODO: Add these schemas when they're created in the schemas file
+# from app.schemas.channels import ChannelListResponse
 
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
 
-@router.get("", response_model=ChannelListResponse)
+@router.get("")
 async def list_channels(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -60,12 +59,12 @@ async def list_channels(
             channelDir=str(channel_data['path'])
         ))
     
-    return ChannelListResponse(
-        channels=channel_responses,
-        total=total,
-        limit=limit,
-        offset=offset
-    )
+    return {
+        "channels": channel_responses,
+        "total": total,
+        "limit": limit,
+        "offset": offset
+    }
 
 
 @router.get("/manifest")
@@ -232,9 +231,6 @@ async def get_channel_content_file(
         media_type=file_info.get("mime_type", "application/octet-stream"),
         filename=filename
     )
-        raise HTTPException(status_code=404, detail="File not found")
-    
-    return FileResponse(file_path)
 
 
 @router.post("/{channel_id}/image_request")
