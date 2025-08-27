@@ -47,33 +47,32 @@ class Channel(Base):
 
 
 class Scene(Base):
-    """Scene configuration with channel assignments"""
+    """Scene configuration with channel assignments - simplified to match actual database schema"""
     __tablename__ = "scenes"
     
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False, index=True)
     channels = Column(JSON, nullable=False)  # List of channel configurations
-    image_fit = Column(String, default="cover")
-    overlay = Column(JSON, nullable=True)
-    schedule = Column(JSON, nullable=True)
-    theme = Column(String, nullable=True)
-    is_active = Column(Boolean, default=False, index=True)
+    overlays = Column(JSON, nullable=True)  # Changed from 'overlay' to match DB
+    timing_config = Column(JSON, nullable=True)  # Changed from 'schedule' to match DB
+    is_active = Column(Boolean, index=True)
     
     # Redis integration: distribution mode
-    distribution_mode = Column(String, default=DistributionMode.MIRROR.value, index=True)
+    distribution_mode = Column(String, index=True)
     
     # Content versioning for Redis integration
     content_hash = Column(String, nullable=True, index=True)
-    content_epoch = Column(String, nullable=True, index=True)
+    content_epoch = Column(Integer, nullable=True, index=True)  # INTEGER not String
     
     # Metadata
-    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
-    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+    created_at = Column(DateTime, index=True)
+    updated_at = Column(DateTime)
     
     # Indexes
     __table_args__ = (
         Index('ix_scenes_active_distribution', 'is_active', 'distribution_mode'),
         Index('ix_scenes_content_hash_epoch', 'content_hash', 'content_epoch'),
+        Index('ix_scenes_content_epoch', 'content_epoch'),
     )
 
 
