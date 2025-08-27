@@ -265,10 +265,11 @@ class ChannelDiscoveryService:
         
         # If settings has 'schema' and 'defaults' structure (like photo_frame)
         if 'schema' in settings_config and 'defaults' in settings_config:
+            # This is an advanced/schema-based settings structure
             return {
                 'schema': settings_config['schema'],
                 'current': settings_config['defaults'],  # For now, use defaults as current
-                'settingsType': config.get('settingsType', 'simple')
+                'settingsType': config.get('settingsType', config.get('settings_type', 'advanced'))
             }
         
         # If settings are directly defined (like example_channel and weather_channel)
@@ -307,14 +308,14 @@ class ChannelDiscoveryService:
                     'properties': schema_properties
                 },
                 'current': current_values,
-                'settingsType': config.get('settingsType', 'simple')
+                'settingsType': config.get('settingsType', config.get('settings_type', 'simple'))
             }
         
         # No settings defined
         return {
             'schema': {'type': 'object', 'properties': {}},
             'current': {},
-            'settingsType': config.get('settingsType', 'simple')
+            'settingsType': config.get('settingsType', config.get('settings_type', 'simple'))
         }
     
     def update_channel_settings(self, channel_id: str, settings: Dict[str, Any]) -> bool:
@@ -338,6 +339,16 @@ class ChannelDiscoveryService:
         
         for channel_data in self.loaded_channels.values():
             config = channel_data['config']
+            
+            # Determine settings type based on structure
+            settings_config = config.get('settings', {})
+            if 'schema' in settings_config and 'defaults' in settings_config:
+                # Advanced schema-based settings
+                settings_type = config.get('settingsType', config.get('settings_type', 'advanced'))
+            else:
+                # Simple or no settings
+                settings_type = config.get('settingsType', config.get('settings_type', 'simple'))
+            
             manifest_entry = {
                 'id': channel_data['id'],
                 'name': config['name'],
@@ -347,7 +358,7 @@ class ChannelDiscoveryService:
                 'ui': config.get('ui', []),
                 'permissions': config.get('permissions', {}),
                 'assets': config.get('assets', {}),
-                'settingsType': config.get('settingsType', 'simple')
+                'settingsType': settings_type
             }
             channels_data.append(manifest_entry)
         
