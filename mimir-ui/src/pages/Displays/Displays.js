@@ -66,7 +66,7 @@ const Displays = () => {
       }
 
       const response = await api.getDisplays(params);
-      const displaysData = response.data || [];
+      const displaysData = response.data?.data || response.data || [];
 
       // Update cache
       displaysCache = displaysData;
@@ -153,7 +153,7 @@ const Displays = () => {
   };
 
   // Filter displays based on search and filters
-  const filteredDisplays = displays.filter(display => {
+  const filteredDisplays = (Array.isArray(displays) ? displays : []).filter(display => {
     if (searchTerm && !display.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
         !display.description?.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
@@ -162,8 +162,8 @@ const Displays = () => {
   });
 
   // Get unique locations and tags for filter options
-  const locations = [...new Set(displays.map(d => d.location).filter(Boolean))];
-  const tags = [...new Set(displays.flatMap(d => d.tags || []))];
+  const locations = [...new Set((Array.isArray(displays) ? displays : []).map(d => d.location).filter(Boolean))];
+  const tags = [...new Set((Array.isArray(displays) ? displays : []).flatMap(d => d.tags || []))];
 
   if (!supportsDisplayManagement()) {
     return (
