@@ -623,75 +623,63 @@ const ChannelSettings = ({ channel, onClose }) => {
             </div>
           ) : (
             <>
-              {channel.hasUI && webComponentLoaded && !webComponentError ? (
-            <div className="web-component-container">
-              <div className="web-component-header">
-                <p className="text-tertiary">
-                  Using channel's custom configuration interface
-                </p>
-              </div>
-              {renderWebComponent()}
-            </div>
-          ) : channel.hasUI ? (
-            <div className="custom-ui-info">
-              <p className="text-tertiary">
-                This channel has a custom management interface with advanced features.
-              </p>
-              
-              <div className="custom-ui-actions">
-                <button
-                  className="btn btn-primary"
-                  onClick={async () => {
-                    // Load and show the management component
-                    const managementComponent = await loadManagementComponent(channelManifest);
-                    if (managementComponent) {
-                      setShowManagementInterface(true);
-                    }
-                  }}
-                >
-                  Open Management Interface
-                </button>
-              </div>
-             
-            </div>
-          ) : null}
-
-          {/* Show basic settings only if no management interface is available */}
-          {settingsSchema?.properties && !hasManagementInterface() ? (
-            <div className="settings-form">
-              {Object.entries(settingsSchema.properties).map(([key, setting]) => (
-                <div key={key} className="form-group">
-                  <label className="form-label">
-                    {setting.title || setting.label || key}
-                    {setting.required && <span className="required">*</span>}
-                  </label>
-                  {setting.description && (
-                    <p className="setting-description">{setting.description}</p>
-                  )}
-                  {renderSettingField(key, setting)}
+              {/* For advanced channels with custom UI, show management interface option */}
+              {settingsType === 'advanced' && hasManagementInterface() ? (
+                <div className="custom-ui-info">
+                  <p className="text-tertiary">
+                    This channel has a custom management interface with advanced features.
+                  </p>
+                  
+                  <div className="custom-ui-actions">
+                    <button
+                      className="btn btn-primary"
+                      onClick={async () => {
+                        // Load and show the management component
+                        const managementComponent = await loadManagementComponent(channelManifest);
+                        if (managementComponent) {
+                          setShowManagementInterface(true);
+                        }
+                      }}
+                    >
+                      Open Management Interface
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          ) : settingsSchema?.properties && hasManagementInterface() ? (
-            <div />
-          ) : (
-            <div className="no-settings">
-              <p className="text-tertiary">
-                {settingsType === 'advanced' ? 
-                  'This channel uses a custom settings interface.' :
-                  'No configurable settings available for this channel.'
-                }
-              </p>
-            </div>
-          )}
+              ) : settingsType === 'simple' && settingsSchema?.properties ? (
+                /* Show simple settings form for channels with settingsType: simple */
+                <div className="settings-form">
+                  {Object.entries(settingsSchema.properties).map(([key, setting]) => (
+                    <div key={key} className="form-group">
+                      <label className="form-label">
+                        {setting.title || setting.label || key}
+                        {setting.required && <span className="required">*</span>}
+                      </label>
+                      {setting.description && (
+                        <p className="setting-description">{setting.description}</p>
+                      )}
+                      {renderSettingField(key, setting)}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                /* Fallback for channels with no settings or unrecognized type */
+                <div className="no-settings">
+                  <p className="text-tertiary">
+                    {settingsType === 'advanced' ? 
+                      'This channel uses a custom settings interface.' :
+                      'No configurable settings available for this channel.'
+                    }
+                  </p>
+                </div>
+              )}
             </>
           )}
         </div>
 
-        {settingsSchema?.properties && !hasManagementInterface() && (
+        {settingsType === 'simple' && settingsSchema?.properties && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
-              {channel.hasUI ? 'Close' : 'Cancel'}
+              Cancel
             </button>
             <button 
               className="btn btn-primary" 
@@ -704,7 +692,7 @@ const ChannelSettings = ({ channel, onClose }) => {
           </div>
         )}
 
-        {(!settingsSchema?.properties || hasManagementInterface()) && (
+        {(settingsType !== 'simple' || !settingsSchema?.properties) && (
           <div className="channel-settings-footer">
             <button className="btn" onClick={onClose}>
               Close
