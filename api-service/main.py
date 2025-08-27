@@ -56,6 +56,13 @@ async def lifespan(app: FastAPI):
     print(f"📁 Channels Directory: {settings.channels_directory}")
     print(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
     
+    # Create database tables if they don't exist
+    from app.db.base import engine
+    from app.db.models import Base
+    print("🗄️  Ensuring database schema exists...")
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database schema ready")
+    
     if settings.redis_enabled:
         print(f"🔴 Redis: enabled at {settings.redis_url}")
     
