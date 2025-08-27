@@ -44,13 +44,23 @@ async def list_channels(
     channel_responses = []
     for channel_data in channels_slice:
         config = channel_data['config']
+        
+        # Determine settings type based on structure (same logic as get_channels_manifest)
+        settings_config = config.get('settings', {})
+        if 'schema' in settings_config and 'defaults' in settings_config:
+            # Advanced schema-based settings
+            settings_type = config.get('settingsType', config.get('settings_type', 'advanced'))
+        else:
+            # Simple or no settings
+            settings_type = config.get('settingsType', config.get('settings_type', 'simple'))
+        
         channel_responses.append(ChannelResponse(
             id=channel_data['id'],
             name=config['name'],
             description=config['description'],
             version=config['version'],
             schemaVersion=config.get('schemaVersion', '2.1'),
-            settingsType=config.get('settingsType', 'simple'),
+            settingsType=settings_type,
             permissions=config.get('permissions', {}),
             uiConfig=config.get('ui', []),
             assetsConfig=config.get('assets', {}),
