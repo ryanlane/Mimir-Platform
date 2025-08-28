@@ -203,7 +203,25 @@ class ChannelDiscoveryService:
 
         except Exception as e:
             logger.error(f"Error setting up static mounts for {channel_id}: {e}")
-    
+
+    def setup_channel_router(self, app: FastAPI, channel_id: str, channel_instance):
+        """Setup channel's own FastAPI router if it has one"""
+        try:
+            if channel_instance and hasattr(channel_instance, 'get_router'):
+                logger.info(f"Setting up router for channel: {channel_id}")
+                channel_router = channel_instance.get_router()
+                if channel_router:
+                    # Mount the channel's router under its API path
+                    mount_path = f"/api/channels/{channel_id}"
+                    app.include_router(channel_router, prefix=mount_path, tags=[f"channel-{channel_id}"])
+                    logger.info(f"Mounted channel router: {mount_path}")
+                else:
+                    logger.debug(f"Channel {channel_id} get_router() returned None")
+            else:
+                logger.debug(f"Channel {channel_id} does not have a get_router() method")
+        except Exception as e:
+            logger.error(f"Error setting up router for {channel_id}: {e}")
+
     def discover_channels(self, app: FastAPI) -> List[Dict[str, Any]]:
         """Discover and load all channels from filesystem"""
         if not self.channels_dir.exists():
@@ -249,6 +267,9 @@ class ChannelDiscoveryService:
             
             # Setup static file mounts
             self.setup_static_mounts(app, channel_id, channel_path)
+            
+            # Setup channel router if available
+            self.setup_channel_router(app, channel_id, channel_instance)
             
             # Store channel data
             channel_data = {
