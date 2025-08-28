@@ -749,21 +749,112 @@ async def upload_images(
     if not config:
         raise HTTPException(status_code=404, detail="Channel not found")
     
-    # For now, simulate successful upload
-    # In a real implementation, this would save files and return actual results
+    # Try to use channel instance for actual file upload
+    channel_instance = channel_discovery.get_channel_instance(channel_id)
+    if channel_instance and hasattr(channel_instance, 'upload_images'):
+        try:
+            return await channel_instance.upload_images(files)
+        except Exception as e:
+            from app.core.logging import get_logger
+            logger = get_logger("app.api.channels")
+            logger.error(f"Error uploading images via channel instance: {e}")
+    
+    # Fallback: Save files directly and generate thumbnails
+    from pathlib import Path
+    import hashlib
+    import time
+    from PIL import Image
+    
+    # Get channel directory
+    all_channels = channel_discovery.get_all_channels()
+    channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
+    
+    if channel_data and channel_data.get('path'):
+        channel_dir = Path(channel_data['path'])
+    else:
+        channel_dir = Path(f'/var/opt/mimir/mimir-api/channels/{channel_id}')
+    
+    uploads_dir = channel_dir / "assets" / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    
     results = []
-    for i, file in enumerate(files):
-        if file.content_type and file.content_type.startswith('image/'):
-            results.append({
-                "filename": file.filename,
-                "success": True,
-                "image_id": i + 1
-            })
-        else:
+    for file in files:
+        if not file.content_type or not file.content_type.startswith('image/'):
             results.append({
                 "filename": file.filename,
                 "success": False,
                 "error": "Not an image file"
+            })
+            continue
+            
+        try:
+            # Generate unique filename
+            timestamp = str(int(time.time() * 1000))
+            content = await file.read()
+            hash_obj = hashlib.md5(content + timestamp.encode())
+            file_hash = hash_obj.hexdigest()[:12]
+            
+            # Keep original extension
+            original_ext = Path(file.filename).suffix.lower()
+            if not original_ext:
+                original_ext = '.png'
+            
+            new_filename = f"image_{file_hash}{original_ext}"
+            file_path = uploads_dir / new_filename
+            
+            # Save original file
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            
+            # Generate thumbnail
+            thumb_filename = f"image_{file_hash}.thumb.jpg"
+            thumb_path = uploads_dir / thumb_filename
+            
+            try:
+                with Image.open(file_path) as img:
+                    # Convert to RGB if necessary (for PNG with transparency)
+                    if img.mode in ('RGBA', 'LA', 'P'):
+                        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                        if img.mode == 'P':
+                            img = img.convert('RGBA')
+                        rgb_img.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+                        img = rgb_img
+                    
+                    # Create thumbnail (600x600 max, maintaining aspect ratio)
+                    img.thumbnail((600, 600), Image.Resampling.LANCZOS)
+                    img.save(thumb_path, 'JPEG', quality=85, optimize=True)
+                    
+            except Exception as thumb_error:
+                from app.core.logging import get_logger
+                logger = get_logger("app.api.channels")
+                logger.warning(f"Failed to generate thumbnail for {new_filename}: {thumb_error}")
+            
+            # Add to database if channel instance supports it
+            image_id = None
+            if channel_instance and hasattr(channel_instance, 'db'):
+                try:
+                    image_data = {
+                        'filename': new_filename,
+                        'original_name': file.filename,
+                        'file_size': len(content)
+                    }
+                    image_id = channel_instance.db.add_image(image_data)
+                except Exception as db_error:
+                    from app.core.logging import get_logger
+                    logger = get_logger("app.api.channels")
+                    logger.warning(f"Failed to add image to database: {db_error}")
+            
+            results.append({
+                "filename": new_filename,
+                "success": True,
+                "image_id": image_id or len(results) + 1
+            })
+            
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": str(e)
             })
     
     return {"results": results}
