@@ -40,6 +40,20 @@ async def get_redis_status():
     }
 
 
+@admin_router.get("/distribution/overview")
+async def get_distribution_overview():
+    """Get distribution system overview"""
+    return {
+        "enabled": settings.distribution_enabled,
+        "mode": settings.distribution_default_mode,
+        "redis_enabled": settings.redis_enabled,
+        "active_displays": 0,  # TODO: Get actual count from database
+        "active_scenes": 0,    # TODO: Get actual count from database
+        "queue_size": 0,       # TODO: Get actual queue size
+        "status": "operational" if settings.distribution_enabled else "disabled"
+    }
+
+
 @admin_router.post("/channels/reload")
 async def reload_channels():
     """Reload all channels"""
