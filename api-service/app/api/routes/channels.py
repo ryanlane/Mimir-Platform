@@ -365,6 +365,182 @@ async def list_subchannels(
         return {"subchannels": []}
 
 
+@router.post("/{channel_id}/subchannels/{subchannel_id}/content")
+async def assign_content_to_subchannel(
+    channel_id: str,
+    subchannel_id: str,
+    content_data: Dict[str, Any],
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Assign content (images) to a subchannel"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Read and update galleries file
+    import json
+    from pathlib import Path
+    
+    # Get channel directory
+    all_channels = channel_discovery.get_all_channels()
+    channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
+    
+    if channel_data and channel_data.get('path'):
+        channel_dir = str(channel_data['path'])
+    else:
+        channel_dir = f'/var/opt/mimir/mimir-api/channels/{channel_id}'
+    
+    galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
+    
+    try:
+        # Read current galleries
+        if galleries_file.exists():
+            with open(galleries_file, 'r') as f:
+                galleries = json.load(f)
+        else:
+            galleries = []
+        
+        # Find the target gallery
+        gallery = next((g for g in galleries if g['id'] == subchannel_id), None)
+        if not gallery:
+            raise HTTPException(status_code=404, detail="Subchannel not found")
+        
+        # Get content IDs to add
+        content_ids = content_data.get('contentIds', [])
+        action = content_data.get('action', 'add')
+        
+        if action == 'add':
+            # Add new content IDs to the gallery, avoiding duplicates
+            for content_id in content_ids:
+                if str(content_id) not in gallery['contentIds']:
+                    gallery['contentIds'].append(str(content_id))
+        elif action == 'remove':
+            # Remove content IDs from the gallery
+            gallery['contentIds'] = [cid for cid in gallery['contentIds'] if cid not in content_ids]
+        
+        # Update image count
+        gallery['imageCount'] = len(gallery['contentIds'])
+        
+        # Update modified timestamp
+        from datetime import datetime
+        gallery['modified'] = datetime.now().isoformat()
+        
+        # Write back to file
+        with open(galleries_file, 'w') as f:
+            json.dump(galleries, f, indent=2)
+        
+        return {"success": True, "gallery": gallery}
+        
+    except Exception as e:
+        from app.core.logging import get_logger
+        logger = get_logger("app.api.channels")
+        logger.error(f"Error updating gallery content: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update gallery content")
+
+
+@router.put("/{channel_id}/subchannels/{subchannel_id}")
+async def update_subchannel(
+    channel_id: str,
+    subchannel_id: str,
+    update_data: Dict[str, Any],
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Update subchannel metadata"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Read and update galleries file
+    import json
+    from pathlib import Path
+    
+    # Get channel directory
+    all_channels = channel_discovery.get_all_channels()
+    channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
+    
+    if channel_data and channel_data.get('path'):
+        channel_dir = str(channel_data['path'])
+    else:
+        channel_dir = f'/var/opt/mimir/mimir-api/channels/{channel_id}'
+    
+    galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
+    
+    try:
+        # Read current galleries
+        if galleries_file.exists():
+            with open(galleries_file, 'r') as f:
+                galleries = json.load(f)
+        else:
+            raise HTTPException(status_code=404, detail="Galleries file not found")
+        
+        # Find the target gallery
+        gallery = next((g for g in galleries if g['id'] == subchannel_id), None)
+        if not gallery:
+            raise HTTPException(status_code=404, detail="Subchannel not found")
+        
+        # Update fields
+        if 'name' in update_data:
+            gallery['name'] = update_data['name']
+        if 'description' in update_data:
+            gallery['description'] = update_data['description']
+        if 'cover_image_id' in update_data:
+            gallery['coverImageId'] = update_data['cover_image_id']
+        
+        # Update modified timestamp
+        from datetime import datetime
+        gallery['modified'] = datetime.now().isoformat()
+        
+        # Write back to file
+        with open(galleries_file, 'w') as f:
+            json.dump(galleries, f, indent=2)
+        
+        return {"success": True, "gallery": gallery}
+        
+    except Exception as e:
+        from app.core.logging import get_logger
+        logger = get_logger("app.api.channels")
+        logger.error(f"Error updating subchannel: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update subchannel")
+
+
+@router.get("/{channel_id}/subchannels/{subchannel_id}/settings")
+async def get_subchannel_settings(
+    channel_id: str,
+    subchannel_id: str,
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Get subchannel-specific settings"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Return default gallery settings
+    return {
+        "order_mode": {"value": "added"},
+        "crop_mode": {"value": "smart_crop"},
+        "update_interval_value": {"value": 30},
+        "update_interval_unit": {"value": "minutes"},
+        "slideshow_enabled": {"value": True},
+        "transition_effect": {"value": "fade"}
+    }
+
+
+@router.put("/{channel_id}/subchannels/{subchannel_id}/settings")
+async def update_subchannel_settings(
+    channel_id: str,
+    subchannel_id: str,
+    settings_data: Dict[str, Any],
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Update subchannel-specific settings"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # For now, just return success - settings would be stored with the gallery
+    return {"success": True, "settings": settings_data}
+
+
 @router.post("/{channel_id}/subchannels")
 async def create_subchannel(
     channel_id: str,
