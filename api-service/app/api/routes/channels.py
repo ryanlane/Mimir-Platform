@@ -329,9 +329,14 @@ async def list_subchannels(
     channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
 ):
     """Get list of subchannels for a channel"""
+    print(f"DEBUG: Searching for channel_id: {channel_id}")
+    
     config = channel_discovery.get_channel_config(channel_id)
     if not config:
+        print(f"DEBUG: Channel {channel_id} not found in config")
         raise HTTPException(status_code=404, detail="Channel not found")
+    
+    print(f"DEBUG: Found config for channel: {channel_id}")
     
     # Read galleries from the channel's data/galleries.json file
     import json
@@ -343,23 +348,32 @@ async def list_subchannels(
     all_channels = channel_discovery.get_all_channels()
     channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
     
+    print(f"DEBUG: Channel data found: {channel_data is not None}")
+    if channel_data:
+        print(f"DEBUG: Channel path: {channel_data.get('path')}")
+    
     if channel_data and channel_data.get('path'):
         channel_dir = str(channel_data['path'])
     else:
         # Fallback to default construction (this likely won't work for most channels)
         channel_dir = f'/var/opt/mimir/mimir-api/channels/{channel_id}'
     
+    print(f"DEBUG: Using channel_dir: {channel_dir}")
     galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
+    print(f"DEBUG: Looking for galleries file at: {galleries_file}")
     
     try:
         if galleries_file.exists():
+            print(f"DEBUG: Galleries file exists, reading...")
             with open(galleries_file, 'r') as f:
                 galleries = json.load(f)
+            print(f"DEBUG: Successfully loaded {len(galleries)} galleries")
             return {"subchannels": galleries}
         else:
+            print(f"DEBUG: Galleries file does not exist")
             return {"subchannels": []}
     except Exception as e:
-        print(f"Error reading galleries file: {e}")
+        print(f"ERROR: Error reading galleries file: {e}")
         return {"subchannels": []}
 
 
