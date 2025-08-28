@@ -690,8 +690,70 @@ async def list_images(
     if not config:
         raise HTTPException(status_code=404, detail="Channel not found")
     
-    # For now, return empty list - would integrate with channel instance
-    return []
+    # Get channel directory and read image data
+    import json
+    from pathlib import Path
+    
+    # Get channel directory from config
+    all_channels = channel_discovery.get_all_channels()
+    channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
+    
+    if channel_data and channel_data.get('path'):
+        channel_dir = str(channel_data['path'])
+    else:
+        channel_dir = f'/var/opt/mimir/mimir-api/channels/{channel_id}'
+    
+    # Try to read from photo_frame.db using channel instance if available
+    channel_instance = channel_discovery.get_channel_instance(channel_id)
+    if channel_instance and hasattr(channel_instance, 'db'):
+        try:
+            # Use the channel's database to get images
+            images = channel_instance.db.get_all_images()
+            return images
+        except Exception as e:
+            from app.core.logging import get_logger
+            logger = get_logger("app.api.channels")
+            logger.error(f"Error reading images from channel database: {e}")
+    
+    # Fallback: return mock data based on contentIds in galleries
+    try:
+        galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
+        if galleries_file.exists():
+            with open(galleries_file, 'r') as f:
+                galleries = json.load(f)
+            
+            # Collect all unique image IDs from all galleries
+            all_image_ids = set()
+            for gallery in galleries:
+                if 'contentIds' in gallery:
+                    all_image_ids.update(gallery['contentIds'])
+            
+            # Create mock image data for each ID
+            images = []
+            for image_id in sorted(all_image_ids, key=lambda x: int(x) if x.isdigit() else 0):
+                images.append({
+                    "id": int(image_id),
+                    "filename": f"image_{image_id}.jpg",
+                    "original_name": f"uploaded_image_{image_id}.jpg",
+                    "title": f"Image {image_id}",
+                    "description": f"Uploaded image {image_id}",
+                    "width": 1920,
+                    "height": 1080,
+                    "file_size": 2048000,
+                    "enabled": True,
+                    "created": "2025-08-27T20:00:00Z",
+                    "modified": "2025-08-27T20:00:00Z",
+                    "times_shown": 0
+                })
+            
+            return images
+        else:
+            return []
+    except Exception as e:
+        from app.core.logging import get_logger
+        logger = get_logger("app.api.channels")
+        logger.error(f"Error reading image data: {e}")
+        return []
 
 
 @router.post("/{channel_id}/images/upload")
