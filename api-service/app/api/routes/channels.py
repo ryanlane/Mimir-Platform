@@ -333,8 +333,25 @@ async def list_subchannels(
     if not config:
         raise HTTPException(status_code=404, detail="Channel not found")
     
-    # For now, return empty list - subchannels would be implemented later
-    return {"subchannels": []}
+    # Read galleries from the channel's data/galleries.json file
+    import json
+    import os
+    from pathlib import Path
+    
+    # Get channel directory from config
+    channel_dir = config.get('channelDir', f'/var/opt/mimir/mimir-api/channels/{channel_id}')
+    galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
+    
+    try:
+        if galleries_file.exists():
+            with open(galleries_file, 'r') as f:
+                galleries = json.load(f)
+            return {"subchannels": galleries}
+        else:
+            return {"subchannels": []}
+    except Exception as e:
+        print(f"Error reading galleries file: {e}")
+        return {"subchannels": []}
 
 
 @router.post("/{channel_id}/subchannels")
@@ -348,19 +365,73 @@ async def create_subchannel(
     if not config:
         raise HTTPException(status_code=404, detail="Channel not found")
     
-    # Basic gallery creation response
-    gallery_name = subchannel_data.get("name", "New Gallery")
-    gallery_id = gallery_name.lower().replace(" ", "_")
+    import json
+    import os
+    from pathlib import Path
+    from datetime import datetime
+    import uuid
     
-    return {
-        "success": True,
-        "subchannel": {
+    # Get channel directory from config
+    channel_dir = config.get('channelDir', f'/var/opt/mimir/mimir-api/channels/{channel_id}')
+    galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
+    
+    try:
+        # Read existing galleries
+        galleries = []
+        if galleries_file.exists():
+            with open(galleries_file, 'r') as f:
+                galleries = json.load(f)
+        
+        # Create new gallery
+        gallery_name = subchannel_data.get("name", "New Gallery")
+        gallery_id = gallery_name.lower().replace(" ", "_").replace("-", "_")
+        
+        # Ensure unique ID
+        existing_ids = [g['id'] for g in galleries]
+        counter = 1
+        original_id = gallery_id
+        while gallery_id in existing_ids:
+            gallery_id = f"{original_id}_{counter}"
+            counter += 1
+        
+        new_gallery = {
             "id": gallery_id,
             "name": gallery_name,
-            "type": "gallery",
-            "created": True
+            "description": subchannel_data.get("description", ""),
+            "contentIds": [],
+            "tags": subchannel_data.get("tags", []),
+            "created": datetime.now().isoformat() + "Z",
+            "modified": datetime.now().isoformat() + "Z",
+            "imageCount": 0,
+            "coverImageId": None,
+            "displaySettings": {
+                "order_mode": "random",
+                "crop_mode": "letterbox", 
+                "transition_effect": "fade",
+                "update_interval_value": 45,
+                "update_interval_unit": "seconds",
+                "slideshow_enabled": True
+            }
         }
-    }
+        
+        # Add to galleries list
+        galleries.append(new_gallery)
+        
+        # Ensure data directory exists
+        galleries_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write back to file
+        with open(galleries_file, 'w') as f:
+            json.dump(galleries, f, indent=2)
+        
+        return {
+            "success": True,
+            "subchannel": new_gallery
+        }
+        
+    except Exception as e:
+        print(f"Error creating gallery: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create gallery: {str(e)}")
 
 
 @router.get("/{channel_id}/images")
