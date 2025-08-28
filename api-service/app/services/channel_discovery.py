@@ -10,7 +10,17 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI
+
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+
+# Subclass to disable caching for JS files
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if path.endswith('.js'):
+            response.headers['Cache-Control'] = 'no-store'
+        return response
 
 from app.config import settings
 from app.core.logging import get_logger
@@ -175,22 +185,22 @@ class ChannelDiscoveryService:
     def setup_static_mounts(self, app: FastAPI, channel_id: str, channel_path: Path):
         """Setup static file serving for channel UI and assets"""
         try:
-            # Mount UI directory if it exists
+            # Mount UI directory if it exists (no-cache for JS)
             ui_path = channel_path / "ui"
             if ui_path.exists() and ui_path.is_dir():
                 mount_path = f"/api/channels/{channel_id}/ui"
-                app.mount(mount_path, StaticFiles(directory=str(ui_path)), name=f"{channel_id}-ui")
+                app.mount(mount_path, NoCacheStaticFiles(directory=str(ui_path)), name=f"{channel_id}-ui")
                 self.static_mounts[f"{channel_id}-ui"] = mount_path
-                logger.info(f"Mounted UI static files: {mount_path} -> {ui_path}")
-            
-            # Mount assets directory if it exists  
+                logger.info(f"Mounted UI static files (no-cache for JS): {mount_path} -> {ui_path}")
+
+            # Mount assets directory if it exists (default caching)
             assets_path = channel_path / "assets"
             if assets_path.exists() and assets_path.is_dir():
                 mount_path = f"/api/channels/{channel_id}/assets"
                 app.mount(mount_path, StaticFiles(directory=str(assets_path)), name=f"{channel_id}-assets")
                 self.static_mounts[f"{channel_id}-assets"] = mount_path
                 logger.info(f"Mounted assets static files: {mount_path} -> {assets_path}")
-                
+
         except Exception as e:
             logger.error(f"Error setting up static mounts for {channel_id}: {e}")
     
