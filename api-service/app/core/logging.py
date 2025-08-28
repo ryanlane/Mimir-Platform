@@ -95,9 +95,12 @@ def setup_logging() -> None:
             "handlers": ["default"],
         },
         "loggers": {
-            # Keep uvicorn logs consistent with our handler
+            # Keep uvicorn logs for endpoint access monitoring
             "uvicorn.error": {"level": "INFO", "handlers": ["default"], "propagate": False},
             "uvicorn.access": {"level": "INFO", "handlers": ["default"], "propagate": False},
+            # Reduce SQLAlchemy verbosity - only show errors
+            "sqlalchemy.engine": {"level": "ERROR", "handlers": ["default"], "propagate": False},
+            "sqlalchemy": {"level": "ERROR", "handlers": ["default"], "propagate": False},
             # App namespace
             "app": {"level": level, "handlers": ["default"], "propagate": False},
         },

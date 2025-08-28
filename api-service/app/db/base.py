@@ -11,7 +11,7 @@ from app.config import settings
 # Decide engine kwargs based on backend
 url = make_url(settings.database_url)
 engine_kwargs = {
-    "echo": settings.debug,
+    "echo": False,  # Disable SQL query logging for cleaner logs
     "future": True,  # 2.x style
 }
 
