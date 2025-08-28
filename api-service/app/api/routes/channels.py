@@ -339,7 +339,16 @@ async def list_subchannels(
     from pathlib import Path
     
     # Get channel directory from config
-    channel_dir = config.get('channelDir', f'/var/opt/mimir/mimir-api/channels/{channel_id}')
+    # First try to get channelDir from channel discovery service
+    all_channels = channel_discovery.get_all_channels()
+    channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
+    
+    if channel_data and channel_data.get('path'):
+        channel_dir = str(channel_data['path'])
+    else:
+        # Fallback to default construction (this likely won't work for most channels)
+        channel_dir = f'/var/opt/mimir/mimir-api/channels/{channel_id}'
+    
     galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
     
     try:
@@ -372,7 +381,16 @@ async def create_subchannel(
     import uuid
     
     # Get channel directory from config
-    channel_dir = config.get('channelDir', f'/var/opt/mimir/mimir-api/channels/{channel_id}')
+    # First try to get channelDir from channel discovery service
+    all_channels = channel_discovery.get_all_channels()
+    channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
+    
+    if channel_data and channel_data.get('path'):
+        channel_dir = str(channel_data['path'])
+    else:
+        # Fallback to default construction (this likely won't work for most channels)
+        channel_dir = f'/var/opt/mimir/mimir-api/channels/{channel_id}'
+    
     galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
     
     try:
