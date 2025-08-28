@@ -9,7 +9,6 @@ import './Scenes.css';
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
   const [channels, setChannels] = useState([]);
-  const [overlays, setOverlays] = useState([]);
   const [displayStatus, setDisplayStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -25,10 +24,9 @@ const Scenes = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [scenesResponse, channelsResponse, overlaysResponse] = await Promise.all([
+      const [scenesResponse, channelsResponse] = await Promise.all([
         api.getScenes(),
-        api.getChannels(),
-        api.getOverlays()
+        api.getChannels()
       ]);
 
       // Handle display status separately to gracefully handle "no displays" case
@@ -51,7 +49,6 @@ const Scenes = () => {
 
       setScenes(scenesResponse.data.scenes || []);
       setChannels(channelsResponse.data.channels || []);
-      setOverlays(overlaysResponse.data.overlays || []);
       
       // Only set display status if we don't have WebSocket state
       if (!currentState?.displayStatus) {
@@ -393,7 +390,6 @@ const Scenes = () => {
         <SceneForm
           scene={editingScene}
           channels={channels}
-          overlays={overlays}
           onClose={handleFormClose}
         />
       )}

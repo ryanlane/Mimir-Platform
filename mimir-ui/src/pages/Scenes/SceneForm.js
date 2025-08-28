@@ -3,7 +3,7 @@ import { X, Save } from 'lucide-react';
 import { api } from '../../services/api';
 import './SceneForm.css';
 
-const SceneForm = ({ scene, channels, overlays, onClose }) => {
+const SceneForm = ({ scene, channels, onClose }) => {
   const [formData, setFormData] = useState({
     name: '',
     channels: [],

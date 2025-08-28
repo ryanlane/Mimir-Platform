@@ -234,9 +234,6 @@ export const api = {
     return result;
   },
 
-  // Overlays
-  getOverlays: (params = {}) => apiClient.get('/overlays', { params }),
-
   // Display
   getDisplayStatus: () => apiClient.get('/displays/status'),
   clearDisplay: () => apiClient.post('/display/clear'),
