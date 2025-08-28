@@ -101,6 +101,12 @@ def setup_logging() -> None:
             # Reduce SQLAlchemy verbosity - only show errors
             "sqlalchemy.engine": {"level": "ERROR", "handlers": ["default"], "propagate": False},
             "sqlalchemy": {"level": "ERROR", "handlers": ["default"], "propagate": False},
+            "sqlalchemy.engine.Engine": {"level": "ERROR", "handlers": ["default"], "propagate": False},
+            "sqlalchemy.pool": {"level": "ERROR", "handlers": ["default"], "propagate": False},
+            "sqlalchemy.dialects": {"level": "ERROR", "handlers": ["default"], "propagate": False},
+            # Reduce other noisy loggers
+            "alembic": {"level": "WARNING", "handlers": ["default"], "propagate": False},
+            "asyncio": {"level": "WARNING", "handlers": ["default"], "propagate": False},
             # App namespace
             "app": {"level": level, "handlers": ["default"], "propagate": False},
         },

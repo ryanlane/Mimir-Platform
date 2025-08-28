@@ -57,8 +57,25 @@ log "📤 Syncing files to $REMOTE_HOST…"
 [ -f alembic.ini ]      && "${RSYNC_BASE[@]}" alembic.ini      "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
 [ -d deploy ]           && "${RSYNC_BASE[@]}" deploy/          "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/deploy/"
 
+# Deploy systemd service file if requested
+if [[ $do_service =~ ^[Yy]$ ]]; then
+  log "🔧 Deploying systemd service file..."
+  if [ -f "mimir-api.service.example" ]; then
+    "${RSYNC_BASE[@]}" mimir-api.service.example "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+    ssh $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "sudo bash -lc '
+      cp \"$REMOTE_PATH/mimir-api.service.example\" /etc/systemd/system/mimir-api.service
+      systemctl daemon-reload
+    '"
+    ok "Systemd service file deployed"
+  else
+    fail "mimir-api.service.example not found in current directory"
+  fi
+fi
+
 echo
 read -p "Install requirements and restart mimir-api on remote now? [y/N]: " do_restart
+read -p "Deploy systemd service file? (overwrites existing) [y/N]: " do_service
+read -p "Run database migrations? [Y/n]: " do_migrations
 if [[ $do_restart =~ ^[Yy]$ ]]; then
   log "🧰 Ensuring python3-venv, creating venv as mimir, installing deps, and restarting… (you may be prompted for sudo)"
 
@@ -83,7 +100,19 @@ if [[ $do_restart =~ ^[Yy]$ ]]; then
     [ -f requirements.txt ] && .venv/bin/python -m pip install -r requirements.txt || true
   '"
 
-  # 3) Restart the service
+  # 3) Run database migrations if requested
+  if [[ ! $do_migrations =~ ^[Nn]$ ]]; then
+    log "🗄️ Running database migrations..."
+    ssh -t $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "sudo -u mimir bash -lc '
+      set -e
+      cd \"$REMOTE_PATH\"
+      export MIMIR_ENV_FILE=/etc/mimir/mimir-api.env
+      .venv/bin/alembic upgrade head
+    '"
+    ok "Database migrations completed"
+  fi
+
+  # 4) Restart the service
   ssh -t $SSH_OPTS "$REMOTE_USER@$REMOTE_HOST" "sudo bash -lc '
     systemctl daemon-reload
     systemctl restart mimir-api
@@ -91,6 +120,15 @@ if [[ $do_restart =~ ^[Yy]$ ]]; then
   '"
 fi
 
+# Deployment summary
+echo
+ok "Deploy complete to $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH"
+if [[ $do_service =~ ^[Yy]$ ]]; then
+  echo "📋 Note: Systemd service file was deployed. Check environment file at /etc/mimir/mimir-api.env if needed."
+fi
+if [[ ! $do_migrations =~ ^[Nn]$ ]]; then
+  echo "📋 Note: Database migrations were applied."
+fi
+
 # close ssh master
 ssh $SSH_OPTS -O exit "$REMOTE_USER@$REMOTE_HOST" 2>/dev/null || true
-ok "Deploy complete to $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH"
