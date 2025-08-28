@@ -1416,26 +1416,6 @@ async def delete_image(
     return {"success": True}
 
 
-@router.get("/{channel_id}/settings")
-async def get_channel_settings(
-    channel_id: str,
-    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
-):
-    """Get channel settings"""
-    config = channel_discovery.get_channel_config(channel_id)
-    if not config:
-        raise HTTPException(status_code=404, detail="Channel not found")
-    
-    # Return default settings for now
-    return {
-        "slideshow_enabled": {"value": True},
-        "order_mode": {"value": "added"},
-        "crop_mode": {"value": "smart_crop"},
-        "update_interval_value": {"value": 30},
-        "update_interval_unit": {"value": "minutes"}
-    }
-
-
 @router.delete("/{channel_id}")
 async def delete_channel(
     channel_id: str,
