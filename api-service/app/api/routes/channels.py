@@ -1276,56 +1276,136 @@ async def list_images(
     else:
         channel_dir = f'/var/opt/mimir/mimir-api/channels/{channel_id}'
     
-    # Try to read from photo_frame.db using channel instance if available
-    channel_instance = channel_discovery.get_channel_instance(channel_id)
-    if channel_instance and hasattr(channel_instance, 'db'):
-        try:
-            # Use the channel's database to get images
-            images = channel_instance.db.get_all_images()
-            return images
-        except Exception as e:
-            from app.core.logging import get_logger
-            logger = get_logger("app.api.channels")
-            logger.error(f"Error reading images from channel database: {e}")
+    # For file-based channels, scan the actual uploads directory for images
+    from app.core.logging import get_logger
+    import os
+    import time
+    from datetime import datetime
+    logger = get_logger("app.api.channels")
     
-    # Fallback: return mock data based on contentIds in galleries
     try:
+        uploads_dir = Path(channel_dir) / 'assets' / 'uploads'
         galleries_file = Path(channel_dir) / 'data' / 'galleries.json'
+        
+        # Get all image files from uploads directory
+        image_files = []
+        if uploads_dir.exists():
+            for file_path in uploads_dir.iterdir():
+                if file_path.is_file() and file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif']:
+                    # Skip thumbnail files
+                    if '.thumb.' in file_path.name:
+                        continue
+                    image_files.append(file_path)
+        
+        logger.info(f"Found {len(image_files)} image files in {uploads_dir}")
+        
+        # Build a mapping of image ID to actual filename from galleries
+        id_to_filename = {}
+        filename_to_id = {}
+        next_available_id = 1
+        
         if galleries_file.exists():
-            with open(galleries_file, 'r') as f:
-                galleries = json.load(f)
-            
-            # Collect all unique image IDs from all galleries
-            all_image_ids = set()
-            for gallery in galleries:
-                if 'contentIds' in gallery:
-                    all_image_ids.update(gallery['contentIds'])
-            
-            # Create mock image data for each ID
-            images = []
-            for image_id in sorted(all_image_ids, key=lambda x: int(x) if x.isdigit() else 0):
-                images.append({
-                    "id": int(image_id),
-                    "filename": f"image_{image_id}.jpg",
-                    "original_name": f"uploaded_image_{image_id}.jpg",
-                    "title": f"Image {image_id}",
-                    "description": f"Uploaded image {image_id}",
-                    "width": 1920,
-                    "height": 1080,
-                    "file_size": 2048000,
-                    "enabled": True,
-                    "created": "2025-08-27T20:00:00Z",
-                    "modified": "2025-08-27T20:00:00Z",
-                    "times_shown": 0
-                })
-            
-            return images
+            try:
+                with open(galleries_file, 'r', encoding='utf-8') as f:
+                    galleries = json.load(f)
+                
+                # Extract all content IDs and track the highest ID
+                all_content_ids = set()
+                for gallery in galleries:
+                    if 'contentIds' in gallery:
+                        for content_id in gallery['contentIds']:
+                            all_content_ids.add(str(content_id))
+                            if content_id.isdigit():
+                                next_available_id = max(next_available_id, int(content_id) + 1)
+                
+                logger.info(f"Found {len(all_content_ids)} content IDs in galleries")
+                
+            except (json.JSONDecodeError, Exception) as e:
+                logger.warning(f"Could not read galleries file: {e}")
+                all_content_ids = set()
         else:
-            return []
+            all_content_ids = set()
+        
+        # Create image data for each actual file
+        images = []
+        used_ids = set()
+        
+        for file_path in image_files:
+            try:
+                # Get file stats
+                stat = file_path.stat()
+                file_size = stat.st_size
+                modified_time = datetime.fromtimestamp(stat.st_mtime).isoformat() + 'Z'
+                created_time = datetime.fromtimestamp(stat.st_ctime).isoformat() + 'Z'
+                
+                # Try to extract dimensions if possible
+                width, height = 1920, 1080  # Default dimensions
+                try:
+                    from PIL import Image
+                    with Image.open(file_path) as img:
+                        width, height = img.size
+                except (ImportError, Exception):
+                    pass  # Use defaults if PIL not available or image can't be read
+                
+                # Try to determine image ID from filename or assign new one
+                filename = file_path.name
+                
+                # Look for pattern like image_HASH.jpg and try to map to an ID
+                image_id = None
+                
+                # First check if this filename is already mapped in galleries by checking contentIds
+                # We'll assign IDs sequentially to files as we find them
+                for content_id in sorted(all_content_ids, key=lambda x: int(x) if x.isdigit() else float('inf')):
+                    if content_id not in used_ids:
+                        image_id = int(content_id) if content_id.isdigit() else next_available_id
+                        used_ids.add(content_id)
+                        break
+                
+                # If no ID found from galleries, assign next available
+                if image_id is None:
+                    while str(next_available_id) in used_ids or next_available_id in used_ids:
+                        next_available_id += 1
+                    image_id = next_available_id
+                    used_ids.add(str(image_id))
+                    next_available_id += 1
+                
+                # Store mapping for future use
+                id_to_filename[str(image_id)] = filename
+                filename_to_id[filename] = image_id
+                
+                # Create title from original filename if available
+                title = filename
+                if '_' in filename:
+                    # For hash-based names, create a cleaner title
+                    title = f"Image {image_id}"
+                
+                images.append({
+                    "id": image_id,
+                    "filename": filename,
+                    "original_name": filename,  # Could be enhanced with metadata file
+                    "title": title,
+                    "description": f"Uploaded image {image_id}",
+                    "width": width,
+                    "height": height,
+                    "file_size": file_size,
+                    "enabled": True,
+                    "created": created_time,
+                    "modified": modified_time,
+                    "times_shown": 0  # Could be tracked in metadata file
+                })
+                
+            except Exception as e:
+                logger.warning(f"Error processing image file {file_path}: {e}")
+                continue
+        
+        # Sort images by ID for consistent ordering
+        images.sort(key=lambda x: x['id'])
+        
+        logger.info(f"Returning {len(images)} processed images")
+        return images
+        
     except Exception as e:
-        from app.core.logging import get_logger
-        logger = get_logger("app.api.channels")
-        logger.error(f"Error reading image data: {e}")
+        logger.error(f"Error scanning image files: {e}")
         return []
 
 
