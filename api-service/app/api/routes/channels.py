@@ -1328,9 +1328,11 @@ async def list_images(
         
         # Create image data for each actual file
         images = []
-        used_ids = set()
         
-        for file_path in image_files:
+        # Sort files by name for consistent ordering
+        image_files.sort(key=lambda f: f.name)
+        
+        for index, file_path in enumerate(image_files, start=1):
             try:
                 # Get file stats
                 stat = file_path.stat()
@@ -1347,34 +1349,12 @@ async def list_images(
                 except (ImportError, Exception):
                     pass  # Use defaults if PIL not available or image can't be read
                 
-                # Try to determine image ID from filename or assign new one
+                # Use simple sequential ID assignment
                 filename = file_path.name
+                image_id = index
                 
-                # Look for pattern like image_HASH.jpg and try to map to an ID
-                image_id = None
-                
-                # First check if this filename is already mapped in galleries by checking contentIds
-                # We'll assign IDs sequentially to files as we find them
-                for content_id in sorted(all_content_ids, key=lambda x: int(x) if x.isdigit() else float('inf')):
-                    if content_id not in used_ids:
-                        image_id = int(content_id) if content_id.isdigit() else next_available_id
-                        used_ids.add(content_id)
-                        break
-                
-                # If no ID found from galleries, assign next available
-                if image_id is None:
-                    while str(next_available_id) in used_ids or next_available_id in used_ids:
-                        next_available_id += 1
-                    image_id = next_available_id
-                    used_ids.add(str(image_id))
-                    next_available_id += 1
-                
-                # Store mapping for future use
-                id_to_filename[str(image_id)] = filename
-                filename_to_id[filename] = image_id
-                
-                # Create title from original filename if available
-                title = filename
+                # Create title from filename
+                title = f"Image {image_id}"
                 if '_' in filename:
                     # For hash-based names, create a cleaner title
                     title = f"Image {image_id}"
@@ -1397,9 +1377,6 @@ async def list_images(
             except Exception as e:
                 logger.warning(f"Error processing image file {file_path}: {e}")
                 continue
-        
-        # Sort images by ID for consistent ordering
-        images.sort(key=lambda x: x['id'])
         
         logger.info(f"Returning {len(images)} processed images")
         return images
