@@ -2,6 +2,25 @@
 Channel API Routes
 FastAPI router for channel-related endpoints
 
+⚠️ CRITICAL: CHANNEL ID USAGE ⚠️
+====================================
+ALL channel operations MUST use the channel ID from the channel's config.json file,
+NEVER the directory name, path, or display name. This ensures proper routing and data integrity.
+
+✅ Correct: Use config.json "id" field (e.g., "com.epaperframe.photoframe")
+❌ Wrong: Use directory name (e.g., "photo_frame") 
+❌ Wrong: Use display name (e.g., "Photo Frame")
+❌ Wrong: Use file path components
+
+Example:
+- Directory: /var/opt/mimir/mimir-api/channels/photo_frame/
+- Config ID: "com.epaperframe.photoframe" ← USE THIS
+- Display Name: "Photo Frame" ← DON'T USE THIS
+
+The ChannelDiscoveryService handles the mapping between config IDs and 
+directory paths. Always use channel_discovery.get_channel_config(channel_id)
+to validate and resolve channel information.
+
 ==== SUBCHANNEL SYSTEM OVERVIEW ====
 
 Subchannels (also called "galleries" in photo frame channels) provide a way to organize 

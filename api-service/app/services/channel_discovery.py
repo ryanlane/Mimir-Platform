@@ -49,7 +49,7 @@ class ChannelDiscoveryService:
         """Load and validate channel config.json"""
         config_file = channel_path / "config.json"
         if not config_file.exists():
-            logger.warning(f"No config.json found for channel: {channel_path.name}")
+            logger.warning(f"No config.json found for channel: {channel_path.name} (path: {channel_path})")
             return None
             
         try:
@@ -203,14 +203,31 @@ class ChannelDiscoveryService:
         
         discovered_channels = []
         
+        logger.info(f"Scanning channels directory: {self.channels_dir}")
+        
         for channel_path in self.channels_dir.iterdir():
+            # Skip non-directories immediately
             if not channel_path.is_dir():
+                logger.debug(f"Skipping non-directory: {channel_path.name}")
                 continue
+            
+            # Skip hidden directories (starting with .)
+            if channel_path.name.startswith('.'):
+                logger.debug(f"Skipping hidden directory: {channel_path.name}")
+                continue
+            
+            # Skip common subdirectories that aren't channels
+            skip_dirs = {'assets', 'data', 'static', 'uploads', 'thumbnails', 'cache', 'temp', 'logs'}
+            if channel_path.name.lower() in skip_dirs:
+                logger.debug(f"Skipping common subdirectory: {channel_path.name}")
+                continue
+            
+            logger.debug(f"Examining potential channel directory: {channel_path.name} (full path: {channel_path})")
                 
             # Load config to get the channel ID
             config = self.load_channel_config(channel_path)
             if not config:
-                logger.warning(f"Skipping channel {channel_path.name}: invalid or missing config")
+                # This will log its own warning, so just continue
                 continue
                 
             # Use ID from config if present, otherwise fall back to directory name
