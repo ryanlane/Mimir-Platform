@@ -37,6 +37,20 @@ def get_db():
         db.close()
 
 
+@router.get("/status", response_model=dict)
+async def get_displays_status(db: Session = Depends(get_db)):
+    """Get overall display system status"""
+    displays = db.query(DisplayClient).all()
+    online_count = len([d for d in displays if d.is_online])
+    
+    return {
+        "total_displays": len(displays),
+        "online_displays": online_count,
+        "offline_displays": len(displays) - online_count,
+        "status": "operational" if online_count > 0 else "no_displays"
+    }
+
+
 @router.post("/register", response_model=DisplayClientResponse)
 async def register_display_client(
     registration: DisplayClientRegistration, 

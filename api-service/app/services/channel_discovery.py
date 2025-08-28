@@ -197,7 +197,7 @@ class ChannelDiscoveryService:
     def discover_channels(self, app: FastAPI) -> List[Dict[str, Any]]:
         """Discover and load all channels from filesystem"""
         if not self.channels_dir.exists():
-            self.channels_dir.mkdir(exist_ok=True)
+            self.channels_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Created channels directory: {self.channels_dir}")
             return []
         

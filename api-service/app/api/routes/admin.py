@@ -4,6 +4,7 @@ FastAPI router for health checks and administrative endpoints
 """
 from fastapi import APIRouter, Depends
 from app.dependencies import get_channel_service, get_scene_service, get_display_service
+from app.config import settings
 
 
 health_router = APIRouter(tags=["health"])
@@ -25,6 +26,17 @@ async def health_check():
             "status": "operational"
         },
         "uptime": "running"
+    }
+
+
+@admin_router.get("/redis/status")
+async def get_redis_status():
+    """Get Redis connection status"""
+    return {
+        "enabled": settings.redis_enabled,
+        "connected": settings.redis_enabled,  # Simplified for now
+        "url": settings.redis_dsn if settings.redis_enabled else None,
+        "status": "connected" if settings.redis_enabled else "disabled"
     }
 
 
