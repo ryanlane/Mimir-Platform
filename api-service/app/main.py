@@ -20,7 +20,6 @@ from app.services.caching import cache_service
 # Import routers
 from app.api.routes.channels import router as channels_router
 from app.api.routes.scenes import router as scenes_router
-from app.api.routes.overlays import router as overlays_router
 from app.api.routes.displays import router as displays_router
 from app.api.routes.websockets import router as websockets_router
 from app.api.routes.admin import health_router, admin_router
@@ -81,7 +80,6 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=settings.api_prefix, tags=["health"])
     app.include_router(channels_router, prefix=settings.api_prefix, tags=["channels"])
     app.include_router(scenes_router, prefix=settings.api_prefix, tags=["scenes"])
-    app.include_router(overlays_router, prefix=settings.api_prefix, tags=["overlays"])
     app.include_router(displays_router, prefix=settings.api_prefix, tags=["displays"])
     app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])
     
