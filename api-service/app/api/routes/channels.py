@@ -135,11 +135,41 @@ async def get_channel_settings(
     channel_id: str,
     channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
 ):
-    """Get channel settings"""
+    """Get channel settings with schema and current values"""
+    # Get channel config for schema and settingsType
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Get current settings
     settings = channel_discovery.get_channel_settings(channel_id)
     if settings is None:
         raise HTTPException(status_code=404, detail="Channel not found")
-    return settings
+    
+    # Extract current values from the {key: {type, value}} format
+    current_values = {}
+    for key, setting_data in settings.items():
+        if isinstance(setting_data, dict) and 'value' in setting_data:
+            current_values[key] = setting_data['value']
+        else:
+            current_values[key] = setting_data
+    
+    # Get settings configuration from config
+    settings_config = config.get('settings', {})
+    
+    # Determine settings type
+    if 'schema' in settings_config and 'defaults' in settings_config:
+        settings_type = config.get('settingsType', 'advanced')
+    else:
+        settings_type = config.get('settingsType', 'simple')
+    
+    # Return structured response expected by frontend
+    return {
+        "schema": settings_config.get('schema'),
+        "settingsType": settings_type,
+        "current": current_values,
+        "defaults": settings_config.get('defaults', {})
+    }
 
 
 @router.post("/{channel_id}/settings")
