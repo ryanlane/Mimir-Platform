@@ -903,6 +903,94 @@ async def get_subchannel(
         raise HTTPException(status_code=500, detail="Failed to retrieve subchannel")
 
 
+@router.delete("/{channel_id}/subchannels/{subchannel_id}")
+async def delete_subchannel(
+    channel_id: str,
+    subchannel_id: str,
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """
+    Delete a subchannel (gallery) from a channel
+    
+    This endpoint permanently removes a subchannel/gallery and all its content assignments.
+    The actual images are not deleted, only the gallery structure and content relationships.
+    This operation cannot be undone.
+    
+    Args:
+        channel_id: The channel containing the subchannel
+        subchannel_id: The specific subchannel/gallery to delete
+        
+    Returns:
+        {"success": bool, "message": str, "deletedSubchannel": subchannel_info}
+    """
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    import json
+    from pathlib import Path
+    from app.core.logging import get_logger
+    logger = get_logger("app.api.channels")
+    
+    # Get channel directory
+    all_channels = channel_discovery.get_all_channels()
+    channel_data = next((ch for ch in all_channels if ch['id'] == channel_id), None)
+    
+    if not channel_data or not channel_data.get('path'):
+        logger.error(f"Channel directory not found for: {channel_id}")
+        raise HTTPException(status_code=500, detail="Channel directory not accessible")
+    
+    channel_dir = Path(channel_data['path'])
+    galleries_file = channel_dir / 'data' / 'galleries.json'
+    
+    try:
+        # Read current galleries/subchannels
+        if not galleries_file.exists():
+            raise HTTPException(status_code=404, detail="No subchannels found for this channel")
+        
+        with open(galleries_file, 'r', encoding='utf-8') as f:
+            galleries = json.load(f)
+        
+        # Find the subchannel to delete
+        subchannel_to_delete = None
+        galleries_updated = []
+        
+        for gallery in galleries:
+            if gallery['id'] == subchannel_id:
+                subchannel_to_delete = gallery.copy()  # Keep a copy for the response
+            else:
+                galleries_updated.append(gallery)
+        
+        if subchannel_to_delete is None:
+            raise HTTPException(status_code=404, detail=f"Subchannel '{subchannel_id}' not found")
+        
+        # Ensure data directory exists before writing
+        galleries_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write the updated galleries list back to file
+        with open(galleries_file, 'w', encoding='utf-8') as f:
+            json.dump(galleries_updated, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Successfully deleted subchannel '{subchannel_id}' from channel {channel_id}")
+        
+        return {
+            "success": True,
+            "message": f"Subchannel '{subchannel_to_delete.get('name', subchannel_id)}' has been deleted",
+            "deletedSubchannel": {
+                "id": subchannel_to_delete["id"],
+                "name": subchannel_to_delete.get("name", ""),
+                "imageCount": subchannel_to_delete.get("imageCount", 0)
+            }
+        }
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in galleries file for channel {channel_id}: {e}")
+        raise HTTPException(status_code=500, detail="Invalid subchannel data format")
+    except Exception as e:
+        logger.error(f"Error deleting subchannel {subchannel_id} from channel {channel_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete subchannel: {str(e)}")
+
+
 @router.get("/{channel_id}/subchannels/{subchannel_id}/images/{image_id}/thumbnail")
 async def get_subchannel_image_thumbnail(
     channel_id: str,
