@@ -617,55 +617,6 @@ async def list_subchannel_images(
         raise HTTPException(status_code=500, detail="Failed to list subchannel images")
 
 
-@router.get("/{channel_id}/subchannels/{subchannel_id}/images/{image_id}/thumbnail")
-async def get_subchannel_image_thumbnail(
-    channel_id: str,
-    subchannel_id: str,
-    image_id: str,
-    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service),
-    cache_service: CacheService = Depends(get_cache_service)
-):
-    """Get thumbnail for a specific image within a subchannel"""
-    # Validate channel exists
-    config = channel_discovery.get_channel_config(channel_id)
-    if not config:
-        raise HTTPException(status_code=404, detail="Channel not found")
-    
-    # Rate limiting for thumbnail requests
-    rate_limit = cache_service.check_rate_limit(
-        f"thumbnail:{channel_id}:{subchannel_id}:{image_id}", 
-        max_requests=100, 
-        window_seconds=60
-    )
-    if not rate_limit['allowed']:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded for thumbnail requests")
-    
-    # Get channel instance and delegate
-    channel_instance = channel_discovery.get_channel_instance(channel_id)
-    if not channel_instance:
-        raise HTTPException(status_code=500, detail="Channel instance not available")
-    
-    try:
-        if hasattr(channel_instance, 'get_subchannel_image_thumbnail'):
-            thumbnail_path = channel_instance.get_subchannel_image_thumbnail(subchannel_id, image_id)
-            if not thumbnail_path:
-                raise HTTPException(status_code=404, detail="Thumbnail not found")
-            
-            return FileResponse(
-                thumbnail_path,
-                media_type="image/jpeg",
-                filename=f"thumb_{image_id}.jpg",
-                headers={"Cache-Control": "public, max-age=3600"}
-            )
-        else:
-            raise HTTPException(status_code=501, detail="Channel does not support subchannel thumbnails")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting subchannel thumbnail for {image_id} in {subchannel_id}/{channel_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get thumbnail")
-
-
 @router.get("/{channel_id}/images")
 async def list_images(
     channel_id: str,
@@ -692,38 +643,6 @@ async def list_images(
     except Exception as e:
         logger.error(f"Error listing images for {channel_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to list images")
-
-
-@router.post("/{channel_id}/images/upload")
-async def upload_images(
-    channel_id: str,
-    files: List[UploadFile] = File(...),
-    gallery_id: str = Query(None, description="Optional gallery ID to assign images to"),
-    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
-):
-    """Upload images to a channel"""
-    # Validate channel exists
-    config = channel_discovery.get_channel_config(channel_id)
-    if not config:
-        raise HTTPException(status_code=404, detail="Channel not found")
-    
-    # Get channel instance and delegate
-    channel_instance = channel_discovery.get_channel_instance(channel_id)
-    if not channel_instance:
-        raise HTTPException(status_code=500, detail="Channel instance not available")
-    
-    try:
-        if hasattr(channel_instance, 'upload_images'):
-            # Use channel's own upload implementation
-            result = channel_instance.upload_images(files, gallery_id=gallery_id)
-            return result
-        else:
-            raise HTTPException(status_code=501, detail="Channel does not support image uploads")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error uploading images to {channel_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to upload images")
 
 
 @router.delete("/{channel_id}/images/{image_id}")
