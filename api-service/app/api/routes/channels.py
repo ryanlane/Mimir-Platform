@@ -2,7 +2,7 @@
 Channel API Routes
 FastAPI router for channel-related endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Query, Response
+from fastapi import APIRouter, HTTPException, Depends, Query, Response, File, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from typing import Dict, Any, List
 
@@ -502,6 +502,86 @@ async def get_subchannel(
     
     # For now, return None - subchannels would be implemented later
     raise HTTPException(status_code=404, detail="Subchannel not found")
+
+
+@router.get("/{channel_id}/images")
+async def list_images(
+    channel_id: str,
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Get list of images for a channel"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # For now, return empty list - would integrate with channel instance
+    return []
+
+
+@router.post("/{channel_id}/images/upload")
+async def upload_images(
+    channel_id: str,
+    files: List[UploadFile] = File(...),
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Upload images to a channel"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # For now, simulate successful upload
+    # In a real implementation, this would save files and return actual results
+    results = []
+    for i, file in enumerate(files):
+        if file.content_type and file.content_type.startswith('image/'):
+            results.append({
+                "filename": file.filename,
+                "success": True,
+                "image_id": i + 1
+            })
+        else:
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": "Not an image file"
+            })
+    
+    return {"results": results}
+
+
+@router.delete("/{channel_id}/images/{image_id}")
+async def delete_image(
+    channel_id: str,
+    image_id: str,
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Delete an image from a channel"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # For now, return success - would integrate with channel instance
+    return {"success": True}
+
+
+@router.get("/{channel_id}/settings")
+async def get_channel_settings(
+    channel_id: str,
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Get channel settings"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Return default settings for now
+    return {
+        "slideshow_enabled": {"value": True},
+        "order_mode": {"value": "added"},
+        "crop_mode": {"value": "smart_crop"},
+        "update_interval_value": {"value": 30},
+        "update_interval_unit": {"value": "minutes"}
+    }
 
 
 @router.delete("/{channel_id}")
