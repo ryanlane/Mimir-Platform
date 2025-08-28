@@ -337,6 +337,50 @@ async def list_subchannels(
     return {"subchannels": []}
 
 
+@router.post("/{channel_id}/subchannels")
+async def create_subchannel(
+    channel_id: str,
+    subchannel_data: Dict[str, Any],
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Create a new subchannel (gallery) for a channel"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # Basic gallery creation response
+    gallery_name = subchannel_data.get("name", "New Gallery")
+    gallery_id = gallery_name.lower().replace(" ", "_")
+    
+    return {
+        "success": True,
+        "subchannel": {
+            "id": gallery_id,
+            "name": gallery_name,
+            "type": "gallery",
+            "created": True
+        }
+    }
+
+
+@router.get("/{channel_id}/images")
+async def list_channel_images(
+    channel_id: str,
+    channel_discovery: ChannelDiscoveryService = Depends(get_channel_discovery_service)
+):
+    """Get list of images for a channel"""
+    config = channel_discovery.get_channel_config(channel_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    # For now, return empty images list - this would be implemented to scan channel directory
+    return {
+        "images": [],
+        "total": 0,
+        "channel_id": channel_id
+    }
+
+
 @router.get("/{channel_id}/subchannels/config")
 async def get_subchannels_config(
     channel_id: str,

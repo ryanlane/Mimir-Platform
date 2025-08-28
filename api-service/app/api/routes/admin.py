@@ -12,6 +12,7 @@ admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @health_router.get("/health")
+@health_router.head("/health") 
 async def health_check():
     """System health check endpoint"""
     return {
