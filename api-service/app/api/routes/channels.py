@@ -1446,17 +1446,9 @@ async def upload_images(
     from app.core.logging import get_logger
     logger = get_logger("app.api.channels")
     
-    # Try to use channel instance for actual file upload if it provides the method
-    channel_instance = channel_discovery.get_channel_instance(channel_id)
-    if channel_instance and hasattr(channel_instance, 'upload_images'):
-        try:
-            logger.info(f"Using channel instance upload for {channel_id}")
-            result = await channel_instance.upload_images(files)
-            logger.info(f"Channel instance upload completed with {len(result.get('results', []))} files")
-            return result
-        except Exception as e:
-            logger.error(f"Channel instance upload failed for {channel_id}: {e}")
-            # Continue with fallback implementation
+    # For file-based channels, always use the filesystem implementation 
+    # Skip channel instance upload to ensure proper thumbnail generation
+    logger.info(f"Using filesystem-based upload implementation for {channel_id}")
     
     # Fallback implementation: Standard file upload with thumbnail generation
     all_channels = channel_discovery.get_all_channels()
@@ -1545,25 +1537,8 @@ async def upload_images(
             except Exception as e:
                 logger.warning(f"Could not generate thumbnail for {new_filename}: {e}")
             
-            # Add to channel database if supported
-            image_id = None
-            if channel_instance and hasattr(channel_instance, 'db') and hasattr(channel_instance.db, 'add_image'):
-                try:
-                    image_data = {
-                        'filename': new_filename,
-                        'original_name': file.filename or 'unknown.jpg',
-                        'file_size': len(content),
-                        'content_hash': content_hash
-                    }
-                    image_id = channel_instance.db.add_image(image_data)
-                    logger.info(f"Added image to channel database with ID: {image_id}")
-                except Exception as db_error:
-                    logger.warning(f"Failed to add image to channel database: {db_error}")
-                    # Generate a fallback ID
-                    image_id = len(results) + 1
-            else:
-                # Generate a fallback ID based on current results
-                image_id = len(results) + 1
+            # For file-based channels, generate a simple incremental ID
+            image_id = len(results) + 1
             
             results.append({
                 "filename": new_filename,
