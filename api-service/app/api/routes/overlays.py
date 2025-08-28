@@ -40,7 +40,7 @@ async def list_overlays(
     overlays = db.query(Overlay).offset(offset).limit(limit).all()
     
     overlay_responses = [
-        OverlayResponse.from_orm(overlay) for overlay in overlays
+        OverlayResponse.model_validate(overlay) for overlay in overlays
     ]
     
     return OverlayListResponse(
@@ -61,7 +61,7 @@ async def get_overlay(
     if not overlay:
         raise HTTPException(status_code=404, detail="Overlay not found")
     
-    return OverlayResponse.from_orm(overlay)
+    return OverlayResponse.model_validate(overlay)
 
 
 @router.post("", response_model=OverlayResponse)
@@ -81,7 +81,7 @@ async def create_overlay(
     db.commit()
     db.refresh(overlay)
     
-    return OverlayResponse.from_orm(overlay)
+    return OverlayResponse.model_validate(overlay)
 
 
 @router.put("/{overlay_id}", response_model=OverlayResponse)
@@ -96,14 +96,14 @@ async def update_overlay(
         raise HTTPException(status_code=404, detail="Overlay not found")
     
     # Update only provided fields
-    update_data = overlay_data.dict(exclude_unset=True)
+    update_data = overlay_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(overlay, key, value)
     
     db.commit()
     db.refresh(overlay)
     
-    return OverlayResponse.from_orm(overlay)
+    return OverlayResponse.model_validate(overlay)
 
 
 @router.delete("/{overlay_id}")
