@@ -2,6 +2,7 @@
 Scene Service
 Business logic for scene management operations
 """
+import uuid
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.db.models import Scene
@@ -27,10 +28,9 @@ class SceneService:
                 "id": scene.id,
                 "name": scene.name,
                 "channels": scene.channels,
-                "image_fit": scene.image_fit,
-                "overlay": scene.overlay,
-                "schedule": scene.schedule,
-                "theme": scene.theme,
+                "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
+                "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
+                "distribution_mode": scene.distribution_mode,  # New field
                 "is_active": scene.is_active,
                 "created_at": scene.created_at,
                 "updated_at": scene.updated_at
@@ -49,14 +49,16 @@ class SceneService:
     
     def create_scene(self, scene_data: Dict[str, Any]) -> Scene:
         """Create a new scene"""
+        # Generate a UUID for the new scene if not provided
+        scene_id = scene_data.get("id") or str(uuid.uuid4())
+        
         scene = Scene(
-            id=scene_data["id"],
+            id=scene_id,
             name=scene_data["name"],
             channels=scene_data.get("channels", []),
-            image_fit=scene_data.get("image_fit", "cover"),
-            overlay=scene_data.get("overlay"),
-            schedule=scene_data.get("schedule"),
-            theme=scene_data.get("theme"),
+            overlays=scene_data.get("overlay"),  # Map 'overlay' to 'overlays' column
+            timing_config=scene_data.get("schedule"),  # Map 'schedule' to 'timing_config' column
+            distribution_mode=scene_data.get("distribution_mode", "MIRROR"),  # New field
             is_active=scene_data.get("is_active", False)
         )
         
@@ -76,14 +78,12 @@ class SceneService:
             scene.name = scene_data["name"]
         if "channels" in scene_data:
             scene.channels = scene_data["channels"]
-        if "image_fit" in scene_data:
-            scene.image_fit = scene_data["image_fit"]
         if "overlay" in scene_data:
-            scene.overlay = scene_data["overlay"]
+            scene.overlays = scene_data["overlay"]  # Map 'overlay' to 'overlays' column
         if "schedule" in scene_data:
-            scene.schedule = scene_data["schedule"]
-        if "theme" in scene_data:
-            scene.theme = scene_data["theme"]
+            scene.timing_config = scene_data["schedule"]  # Map 'schedule' to 'timing_config' column
+        if "distribution_mode" in scene_data:
+            scene.distribution_mode = scene_data["distribution_mode"]  # New field
         if "is_active" in scene_data:
             scene.is_active = scene_data["is_active"]
         

@@ -44,10 +44,9 @@ async def get_scene(
         "id": scene.id,
         "name": scene.name,
         "channels": scene.channels,
-        "image_fit": scene.image_fit,
-        "overlay": scene.overlay,
-        "schedule": scene.schedule,
-        "theme": scene.theme,
+        "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
+        "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
+        "distribution_mode": scene.distribution_mode,  # New field
         "is_active": scene.is_active
     }
 
@@ -63,10 +62,9 @@ async def create_scene(
         "id": scene.id,
         "name": scene.name,
         "channels": scene.channels,
-        "image_fit": scene.image_fit,
-        "overlay": scene.overlay,
-        "schedule": scene.schedule,
-        "theme": scene.theme,
+        "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
+        "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
+        "distribution_mode": scene.distribution_mode,  # New field
         "is_active": scene.is_active
     }
 
@@ -86,10 +84,9 @@ async def update_scene(
         "id": scene.id,
         "name": scene.name,
         "channels": scene.channels,
-        "image_fit": scene.image_fit,
-        "overlay": scene.overlay,
-        "schedule": scene.schedule,
-        "theme": scene.theme,
+        "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
+        "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
+        "distribution_mode": scene.distribution_mode,  # New field
         "is_active": scene.is_active
     }
 
