@@ -19,7 +19,7 @@ const DISPLAYS_CACHE_TIMEOUT = 30 * 1000; // 30 seconds
 const Displays = () => {
   console.log('🚀 Displays component is rendering!');
   
-  const { supportsDisplayManagement } = useFeatureDetection();
+  const { supportsDisplayManagement, isLoading, apiVersion, supportedFeatures } = useFeatureDetection();
   const { isConnected } = useWebSocket();
   
   const [displays, setDisplays] = useState([]);
@@ -29,6 +29,12 @@ const Displays = () => {
   console.log('🔍 Current displays state:', displays?.length || 0, 'displays');
   console.log('🔍 Loading state:', loading);
   console.log('🔍 Error state:', error);
+  console.log('🔍 Feature detection state:', {
+    isLoading: isLoading,
+    apiVersion: apiVersion,
+    hasDisplayManagement: supportsDisplayManagement(),
+    supportedFeatures: supportedFeatures
+  });
   
   // UI state
   const [showRegistration, setShowRegistration] = useState(false);
