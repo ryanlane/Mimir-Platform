@@ -40,15 +40,51 @@ def get_db():
 
 @router.get("/status", response_model=dict)
 async def get_displays_status(db: Session = Depends(get_db)):
-    """Get overall display system status"""
-    displays = db.query(DisplayClient).all()
-    online_count = len([d for d in displays if d.is_online])
+    """Get overall display system status including mDNS discovered displays"""
+    # Get displays from database
+    db_displays = db.query(DisplayClient).all()
+    db_online_count = len([d for d in db_displays if d.is_online])
+    
+    # Get discovered displays from mDNS service
+    discovered_displays = []
+    discovered_online_count = 0
+    mdns_service_running = False
+    
+    if mdns_discovery_service.is_running:
+        mdns_service_running = True
+        discovered_displays = mdns_discovery_service.get_discovered_displays()
+        discovered_online_count = sum(1 for d in discovered_displays if d.is_online)
+    
+    # Combine totals (avoid double counting by using max)
+    total_displays = max(len(db_displays), len(discovered_displays))
+    total_online = max(db_online_count, discovered_online_count)
+    
+    # Enhanced status
+    status = "no_displays"
+    if total_online > 0:
+        status = "operational"
+    elif total_displays > 0:
+        status = "displays_offline"
     
     return {
-        "total_displays": len(displays),
-        "online_displays": online_count,
-        "offline_displays": len(displays) - online_count,
-        "status": "operational" if online_count > 0 else "no_displays"
+        "total_displays": total_displays,
+        "online_displays": total_online,
+        "offline_displays": total_displays - total_online,
+        "status": status,
+        "database_displays": {
+            "total": len(db_displays),
+            "online": db_online_count,
+            "offline": len(db_displays) - db_online_count
+        },
+        "discovered_displays": {
+            "total": len(discovered_displays),
+            "online": discovered_online_count,
+            "offline": len(discovered_displays) - discovered_online_count
+        },
+        "mdns_discovery": {
+            "service_running": mdns_service_running,
+            "service_available": mdns_discovery_service.is_available
+        }
     }
 
 
@@ -127,13 +163,81 @@ async def register_display_client(
 async def list_display_clients(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    include_discovered: bool = Query(True, description="Include live discovered displays"),
     db: Session = Depends(get_db)
 ):
-    """Get paginated list of display clients"""
-    total = db.query(DisplayClient).count()
-    clients = db.query(DisplayClient).offset(offset).limit(limit).all()
+    """Get paginated list of display clients including discovered displays"""
+    # Get displays from database
+    db_clients = db.query(DisplayClient).offset(offset).limit(limit).all()
+    display_responses = []
     
-    display_responses = [DisplayClientResponse.model_validate(client) for client in clients]
+    # Add database displays
+    for client in db_clients:
+        display_responses.append(DisplayClientResponse.model_validate(client))
+    
+    # If requested, merge with discovered displays that aren't in database
+    if include_discovered and mdns_discovery_service.is_running:
+        discovered_displays = mdns_discovery_service.get_discovered_displays()
+        
+        # Find discovered displays that aren't already in database
+        db_hostnames = {client.hostname for client in db_clients if client.hostname}
+        
+        for discovered in discovered_displays:
+            if discovered.hostname not in db_hostnames:
+                try:
+                    # Parse resolution
+                    width, height = 800, 480  # defaults
+                    if discovered.resolution:
+                        try:
+                            width, height = map(int, discovered.resolution.split("x"))
+                        except ValueError:
+                            pass
+                    
+                    # Create a dict that matches DisplayClientResponse structure
+                    discovered_dict = {
+                        "id": discovered.display_id,
+                        "name": discovered.display_name,
+                        "location": discovered.location,
+                        "hostname": discovered.hostname,
+                        "webhook_port": discovered.webhook_port,
+                        "client_version": discovered.client_version or "unknown",
+                        "display_type": "discovered",
+                        "discovery_method": "mdns",
+                        "auto_discovered": True,
+                        "width": width,
+                        "height": height,
+                        "orientation": discovered.properties.get("orientation", "landscape"),
+                        "redis_distribution": discovered.properties.get("redis_distribution") == "true",
+                        "content_claiming": discovered.properties.get("content_claiming") == "true",
+                        "is_online": discovered.is_online,
+                        "last_seen": discovered.last_seen,
+                        "assigned_scene_id": None,
+                        "current_content_hash": None,
+                        "created_at": discovered.discovered_at,
+                        "updated_at": discovered.last_seen,
+                        "tags": []
+                    }
+                    
+                    # Create DisplayClientResponse from dict
+                    discovered_response = DisplayClientResponse.model_validate(discovered_dict)
+                    display_responses.append(discovered_response)
+                    
+                except Exception as e:
+                    # Log error but continue
+                    import logging
+                    logging.getLogger(__name__).warning(f"Error adding discovered display {discovered.display_name}: {e}")
+    
+    # Get total count including potential discovered displays
+    total_db = db.query(DisplayClient).count()
+    total_discovered = 0
+    
+    if include_discovered and mdns_discovery_service.is_running:
+        discovered_displays = mdns_discovery_service.get_discovered_displays()
+        # Get all hostnames from database to avoid duplicates
+        all_db_hostnames = {client.hostname for client in db.query(DisplayClient).all() if client.hostname}
+        total_discovered = sum(1 for d in discovered_displays if d.hostname not in all_db_hostnames)
+    
+    total = total_db + total_discovered
     
     from app.schemas.common import PaginationMeta
     
