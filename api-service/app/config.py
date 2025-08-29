@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     # --- Distribution (Redis-based) ---
     distribution_default_mode: str = Field("MIRROR", validation_alias=AliasChoices("DISTRIBUTION_DEFAULT_MODE",))
 
+    # --- mDNS Discovery ---
+    mdns_discovery_enabled: bool = Field(True, validation_alias=AliasChoices("MDNS_DISCOVERY_ENABLED", "MDNS_ENABLED"))
+    mdns_auto_register: bool = Field(True, validation_alias=AliasChoices("MDNS_AUTO_REGISTER",))
+    mdns_update_interval: int = Field(30, validation_alias=AliasChoices("MDNS_UPDATE_INTERVAL",))  # seconds
+    mdns_offline_timeout: int = Field(120, validation_alias=AliasChoices("MDNS_OFFLINE_TIMEOUT",))  # seconds
+
     @property
     def redis_dsn(self) -> str | None:
         """Build a Redis URL when REDIS_URL isn't provided."""

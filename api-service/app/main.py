@@ -17,6 +17,7 @@ from app.services.plugin_discovery import plugin_discovery_service
 from app.services.websocket import websocket_service
 from app.services.distribution import distribution_service
 from app.services.caching import cache_service
+from app.services.mdns_discovery import mdns_discovery_service
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -38,6 +39,12 @@ def _initialize_services(app: FastAPI, logger):
         import asyncio
         asyncio.create_task(distribution_service.start_distribution_monitoring())
         logger.info("Distribution monitoring started")
+    
+    # Start mDNS discovery service if enabled
+    if settings.mdns_discovery_enabled:
+        import asyncio
+        asyncio.create_task(mdns_discovery_service.start_discovery())
+        logger.info("mDNS discovery service started")
     
     # Log service status
     capabilities = distribution_service.get_capability_flags()
@@ -137,12 +144,29 @@ async def startup_event():
     
     if settings.distribution_enabled:
         print(f"📡 Distribution: enabled (mode: {settings.distribution_default_mode})")
+    
+    # Report mDNS discovery status
+    if settings.mdns_discovery_enabled:
+        if mdns_discovery_service.is_available:
+            print(f"🔍 mDNS Discovery: enabled (continuous background monitoring)")
+            print(f"   Auto-register: {settings.mdns_auto_register}")
+            print(f"   Update interval: {settings.mdns_update_interval}s")
+            print(f"   Offline timeout: {settings.mdns_offline_timeout}s")
+        else:
+            print(f"⚠️ mDNS Discovery: disabled (zeroconf library not available)")
+    else:
+        print(f"🔍 mDNS Discovery: disabled by configuration")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown event"""
     print("🛑 Mimir API shutting down...")
+    
+    # Stop mDNS discovery service
+    if settings.mdns_discovery_enabled:
+        await mdns_discovery_service.stop_discovery()
+        print("🔍 mDNS discovery service stopped")
 
 
 # Development server entry point

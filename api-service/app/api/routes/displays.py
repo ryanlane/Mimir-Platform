@@ -23,6 +23,7 @@ from app.schemas.displays import (
     LegacyDisplayStatusResponse
 )
 from app.schemas.common import PaginationParams
+from app.services.mdns_discovery import mdns_discovery_service
 
 
 router = APIRouter(prefix="/displays", tags=["displays"])
@@ -150,6 +151,52 @@ async def discover_displays(
     db: Session = Depends(get_db)
 ):
     """Discover available displays on network via mDNS"""
+    # Check if continuous discovery is running
+    if mdns_discovery_service.is_running:
+        # Use the background service results
+        discovered_displays = []
+        for display in mdns_discovery_service.get_discovered_displays():
+            display_info = {
+                "service_name": display.service_name,
+                "hostname": display.hostname,
+                "display_name": display.display_name,
+                "display_id": display.display_id,
+                "location": display.location,
+                "resolution": display.resolution,
+                "client_version": display.client_version,
+                "webhook_port": display.webhook_port,
+                "addresses": display.addresses,
+                "properties": display.properties,
+                "discovered_at": display.discovered_at.isoformat(),
+                "is_online": display.is_online
+            }
+            
+            # Add webhook URL if available
+            if display.addresses and display.webhook_port:
+                display_info["webhook_url"] = f"http://{display.addresses[0]}:{display.webhook_port}"
+            
+            discovered_displays.append(display_info)
+        
+        # Get auto-registered count from database
+        auto_registered_count = 0
+        if auto_register and mdns_discovery_service.auto_register:
+            auto_registered_count = db.query(DisplayClient).filter(
+                DisplayClient.discovery_method == "mdns",
+                DisplayClient.auto_discovered == True
+            ).count()
+        
+        return {
+            "discovered_displays": discovered_displays,
+            "auto_registered": [],  # Background service handles this automatically
+            "discovery_timeout": 0,  # No timeout for background service
+            "total_found": len(discovered_displays),
+            "total_auto_registered": auto_registered_count,
+            "discovery_completed_at": datetime.datetime.now().isoformat(),
+            "source": "background_service",
+            "continuous_discovery": True
+        }
+    
+    # Fallback to manual discovery if background service not running
     try:
         from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
         import time
@@ -328,6 +375,95 @@ async def discover_displays(
             status_code=500, 
             detail=f"Discovery failed: {str(e)}"
         )
+
+
+@router.get("/discovery/status")
+async def get_discovery_status():
+    """Get current mDNS discovery service status"""
+    stats = mdns_discovery_service.get_discovery_stats()
+    discovered = mdns_discovery_service.get_discovered_displays()
+    
+    return {
+        "service_status": stats,
+        "discovered_displays": [
+            {
+                "display_id": d.display_id,
+                "display_name": d.display_name,
+                "hostname": d.hostname,
+                "location": d.location,
+                "addresses": d.addresses,
+                "is_online": d.is_online,
+                "last_seen": d.last_seen.isoformat(),
+                "discovered_at": d.discovered_at.isoformat()
+            }
+            for d in discovered
+        ]
+    }
+
+
+@router.post("/discovery/start")
+async def start_discovery_service():
+    """Start the mDNS discovery service"""
+    if mdns_discovery_service.is_running:
+        return {"status": "already_running", "message": "mDNS discovery service is already running"}
+    
+    if not mdns_discovery_service.is_available:
+        raise HTTPException(
+            status_code=501,
+            detail="mDNS discovery not available (zeroconf library not installed)"
+        )
+    
+    success = await mdns_discovery_service.start_discovery()
+    if success:
+        return {"status": "started", "message": "mDNS discovery service started successfully"}
+    else:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to start mDNS discovery service"
+        )
+
+
+@router.post("/discovery/stop")
+async def stop_discovery_service():
+    """Stop the mDNS discovery service"""
+    await mdns_discovery_service.stop_discovery()
+    return {"status": "stopped", "message": "mDNS discovery service stopped"}
+
+
+@router.get("/discovery/live")
+async def get_live_discovered_displays():
+    """Get currently discovered displays from the live mDNS service"""
+    if not mdns_discovery_service.is_running:
+        raise HTTPException(
+            status_code=503,
+            detail="mDNS discovery service is not running. Use /api/displays/discovery/start to start it."
+        )
+    
+    discovered = mdns_discovery_service.get_discovered_displays()
+    
+    return {
+        "total_discovered": len(discovered),
+        "online_count": sum(1 for d in discovered if d.is_online),
+        "discovered_displays": [
+            {
+                "service_name": d.service_name,
+                "display_id": d.display_id,
+                "display_name": d.display_name,
+                "hostname": d.hostname,
+                "location": d.location,
+                "addresses": d.addresses,
+                "webhook_port": d.webhook_port,
+                "resolution": d.resolution,
+                "client_version": d.client_version,
+                "is_online": d.is_online,
+                "discovered_at": d.discovered_at.isoformat(),
+                "last_seen": d.last_seen.isoformat(),
+                "properties": d.properties,
+                "webhook_url": f"http://{d.addresses[0]}:{d.webhook_port}" if d.addresses and d.webhook_port else None
+            }
+            for d in discovered
+        ]
+    }
 
 
 @router.get("/{display_id}", response_model=DisplayClientResponse)
