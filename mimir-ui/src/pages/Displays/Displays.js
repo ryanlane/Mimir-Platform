@@ -63,14 +63,6 @@ const Displays = () => {
     console.log('🔄 Displays data:', displays);
   }, [displays]);
 
-  // Load displays when feature detection completes or filters change
-  useEffect(() => {
-    if (!isLoading) {
-      console.log('🔄 Feature detection completed, loading displays...');
-      loadDisplays();
-    }
-  }, [loadDisplays, isLoading]);
-
   const loadDisplays = useCallback(async () => {
     // Wait for feature detection to complete
     if (isLoading) {
