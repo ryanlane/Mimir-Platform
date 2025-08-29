@@ -114,7 +114,14 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
 
           <div className="detail-item">
             <Monitor size={14} />
-            <span>{display.resolution[0]}×{display.resolution[1]} • {display.orientation}</span>
+            <span>
+              {display.resolution && Array.isArray(display.resolution) && display.resolution.length >= 2
+                ? `${display.resolution[0]}×${display.resolution[1]}`
+                : display.width && display.height
+                ? `${display.width}×${display.height}`
+                : 'Unknown resolution'
+              } • {display.orientation || 'landscape'}
+            </span>
           </div>
 
           {display.refresh_rate_hz && (

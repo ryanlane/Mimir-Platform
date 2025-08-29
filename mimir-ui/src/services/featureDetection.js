@@ -70,7 +70,7 @@ class FeatureDetectionService {
             console.log('✅ Channel manifest endpoint detected for:', firstChannel.id);
             this.supportedFeatures.add('channel_manifest');
           } catch (manifestError) {
-            console.log('❌ Channel manifest endpoint not available');
+            console.log('❌ Channel manifest endpoint not available:', manifestError.message);
           }
         }
       } catch (error) {
@@ -93,12 +93,13 @@ class FeatureDetectionService {
         if (error.response?.status === 404) {
           // Channel not found is OK, endpoint exists
           this.supportedFeatures.add('channel_health');
+          console.log('✅ Channel health endpoint exists (404 response is expected)');
         } else {
-          console.log('❌ Channel health endpoint not available');
+          console.log('❌ Channel health endpoint not available:', error.message);
         }
       }
 
-      // Test for channel testing endpoint with actual available channels
+      // Test for channel testing endpoint with actual available channels  
       try {
         const channels = await api.getChannels();
         if (channels.data?.channels?.length > 0) {
@@ -113,8 +114,9 @@ class FeatureDetectionService {
         if (error.response?.status === 404) {
           // Channel not found is OK, endpoint exists
           this.supportedFeatures.add('channel_testing');
+          console.log('✅ Channel testing endpoint exists (404 response is expected)');
         } else {
-          console.log('❌ Channel testing endpoint not available');
+          console.log('❌ Channel testing endpoint not available:', error.message);
         }
       }
 
