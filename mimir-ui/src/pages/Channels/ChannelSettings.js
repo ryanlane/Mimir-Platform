@@ -110,8 +110,11 @@ const ChannelSettings = ({ channel, onClose }) => {
           
           console.log(`Loading Management Component from ${fullModuleUrl}`);
           
-          // Check if component is already loaded
-          if (!customElements.get('photo-frame-manager')) {
+          // Check if component is already loaded (check multiple possible names)
+          const possibleNames = ['x-photo-frame-manager', 'photo-frame-manager'];
+          const alreadyRegistered = possibleNames.some(name => customElements.get(name));
+          
+          if (!alreadyRegistered) {
             // Set global API configuration for the Web Component
             window.mimirApiBaseUrl = getApiBaseUrl();
             window.mimirServerBaseUrl = getServerBaseUrl();
@@ -172,11 +175,25 @@ const ChannelSettings = ({ channel, onClose }) => {
               }
             };
             
-            await import(/* webpackIgnore: true */ fullModuleUrl);
-            console.log(`✅ Management Component loaded successfully`);
+            try {
+              await import(/* webpackIgnore: true */ fullModuleUrl);
+              console.log(`✅ Management Component loaded successfully`);
+            } catch (importError) {
+              // Handle duplicate registration error gracefully
+              if (importError.name === 'NotSupportedError' && importError.message.includes('already been used')) {
+                console.log(`⚠️ Management Component already registered, skipping import`);
+              } else {
+                throw importError; // Re-throw other errors
+              }
+            }
+          } else {
+            console.log(`✅ Management Component already loaded`);
           }
           
-          return { element: 'photo-frame-manager', moduleUrl: managementModuleUrl };
+          // Determine which element name is actually registered
+          const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-photo-frame-manager';
+          
+          return { element: registeredName, moduleUrl: managementModuleUrl };
         } else {
           console.log(`No management component found for ${channel.id}`);
           return null;
@@ -232,8 +249,12 @@ const ChannelSettings = ({ channel, onClose }) => {
   const renderManagementComponent = () => {
     if (!config?.ui?.components?.manager) return null;
 
+    // Dynamically detect which element name is registered
+    const possibleNames = ['x-photo-frame-manager', 'photo-frame-manager'];
+    const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-photo-frame-manager';
+
     const managementComponent = {
-      element: 'photo-frame-manager', // Default web component name
+      element: registeredName,
       moduleUrl: config.ui.components.manager
     };
     
