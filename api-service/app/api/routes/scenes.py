@@ -2,10 +2,13 @@
 Scene API Routes
 FastAPI router for scene-related endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, Query
+from typing import Dict, Any, Optional
+from sqlalchemy.orm import Session
 from app.dependencies import get_scene_service
 from app.core.services.scene_service import SceneService
+from app.db.base import SessionLocal
+from app.db.models import DisplayClient
 from app.schemas.scenes import (
     SceneResponse,
     SceneCreate,
@@ -115,3 +118,52 @@ async def activate_scene(
         raise HTTPException(status_code=404, detail="Scene not found")
     
     return {"message": "Scene activated successfully"}
+
+
+@router.get("/{scene_id}/displays")
+async def get_scene_displays(
+    scene_id: str,
+    scene_service: SceneService = Depends(get_scene_service)
+):
+    """Get displays assigned to a specific scene"""
+    # Check if scene exists
+    scene = scene_service.get_scene_by_id(scene_id)
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # Get displays assigned to this scene
+    db = SessionLocal()
+    try:
+        assigned_displays = db.query(DisplayClient).filter(
+            DisplayClient.assigned_scene_id == scene_id
+        ).all()
+        
+        display_list = []
+        online_count = 0
+        for display in assigned_displays:
+            if display.is_online:
+                online_count += 1
+            
+            display_list.append({
+                "id": display.id,
+                "name": display.name,
+                "location": display.location,
+                "is_online": display.is_online,
+                "last_seen": display.last_seen,
+                "display_type": display.display_type,
+                "resolution": f"{display.width}x{display.height}" if display.width and display.height else "Unknown",
+                "orientation": display.orientation
+            })
+        
+        return {
+            "scene_id": scene_id,
+            "scene_name": scene.name,
+            "display_stats": {
+                "total_assigned": len(assigned_displays),
+                "online_displays": online_count,
+                "offline_displays": len(assigned_displays) - online_count
+            },
+            "assigned_displays": display_list
+        }
+    finally:
+        db.close()
