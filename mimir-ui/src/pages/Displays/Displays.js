@@ -82,22 +82,65 @@ const Displays = () => {
       }
 
       // Fetch displays and discovery status in parallel
-      const [displaysResponse, discoveryResponse] = await Promise.all([
-        api.getDisplays(params),
+      const requests = [
+        api.getDisplays(params), // Always get registered displays
         api.getDiscoveryStatus().catch(err => {
           console.warn('Discovery status not available:', err);
           return null;
         })
-      ]);
+      ];
 
-      const displaysData = displaysResponse.data?.data || displaysResponse.data || [];
+      // If including discovered displays, fetch them separately
+      if (includeDiscovered) {
+        requests.push(api.getDiscoveredDisplays().catch(err => {
+          console.warn('Discovered displays not available:', err);
+          return null;
+        }));
+      }
+
+      const [displaysResponse, discoveryResponse, discoveredResponse] = await Promise.all(requests);
+
+      const registeredDisplays = displaysResponse.data?.data || displaysResponse.data || [];
       const discoveryData = discoveryResponse?.data || null;
+      const discoveredDisplays = discoveredResponse?.data?.discovered_displays || [];
+
+      // Combine and normalize display data
+      const allDisplays = [
+        // Registered displays
+        ...registeredDisplays.map(display => ({
+          ...display,
+          source: 'registered',
+          is_online: display.isOnline !== undefined ? display.isOnline : display.is_online,
+          last_seen: display.lastSeen || display.last_seen,
+          resolution: display.resolution || (display.width && display.height ? [display.width, display.height] : null)
+        })),
+        // Discovered displays  
+        ...discoveredDisplays.map(display => ({
+          id: display.display_id,
+          name: display.display_name,
+          hostname: display.hostname,
+          location: display.location,
+          source: 'discovered',
+          is_online: display.is_online,
+          last_seen: display.properties?.last_seen || display.discovered_at,
+          resolution: display.resolution ? display.resolution.split('x').map(Number) : null,
+          width: display.resolution ? parseInt(display.resolution.split('x')[0]) : null,
+          height: display.resolution ? parseInt(display.resolution.split('x')[1]) : null,
+          orientation: 'landscape', // Default for discovered displays
+          client_version: display.client_version,
+          webhook_port: display.webhook_port,
+          addresses: display.addresses,
+          displayType: 'discovered',
+          discoveryMethod: 'mdns',
+          autoDiscovered: true
+        }))
+      ];
 
       // Update cache
-      displaysCache = { displays: displaysData, discoveryStatus: discoveryData };
-      displaysCacheTime = now;
+      displaysCache = { displays: allDisplays, discoveryStatus: discoveryData };
+      displaysCacheTime = Date.now();
 
-      setDisplays(displaysData);
+      setDisplays(allDisplays);
       setDiscoveryStatus(discoveryData);
     } catch (error) {
       console.error('Error loading displays:', error);

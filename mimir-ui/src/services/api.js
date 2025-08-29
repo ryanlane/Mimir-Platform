@@ -299,6 +299,7 @@ export const api = {
   getDiscoveryStatus: () => apiClient.get('/displays/discovery/status'),
   discoverDisplays: () => apiClient.post('/displays/discovery/trigger'),
   getLiveDiscoveredDisplays: () => apiClient.get('/displays/discovery/live'),
+  getDiscoveredDisplays: () => apiClient.get('/displays/discover'),
   getDisplayImage: (displayId, headers = {}) => apiClient.get(`/displays/${displayId}/current-image`, { headers }),
   getDisplayImageFile: (displayId) => apiClient.get(`/displays/${displayId}/current_image_file`, { responseType: 'blob' }),
   // Enhanced display image polling with ETag support
