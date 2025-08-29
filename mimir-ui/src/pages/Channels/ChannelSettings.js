@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import { X } from 'lucide-react';
 import { api } from '../../services/api';
 import './ChannelSettings.css';
 
@@ -89,11 +89,7 @@ const getServerBaseUrl = () => {
 
 const ChannelSettings = ({ channel, onClose }) => {
   const [config, setConfig] = useState(null);
-  const [settings, setSettings] = useState({});
-  const [settingsSchema, setSettingsSchema] = useState(null);
-  const [settingsType, setSettingsType] = useState('simple');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const loadManagementComponent = async (configData) => {
@@ -205,20 +201,6 @@ const ChannelSettings = ({ channel, onClose }) => {
 
         setConfig(configResponse.data);
         
-        // Extract settings information from manifest
-        const manifestData = configResponse.data;
-        if (manifestData) {
-          // Check if this is a simple settings channel with a settings schema
-          // For now, assume advanced if it has UI components
-          const hasManagementUI = manifestData.ui?.components?.manager;
-          setSettingsType(hasManagementUI ? 'advanced' : 'simple');
-          
-          // For advanced channels, we don't need a settings schema
-          // For simple channels, we'd need to define one or get it from the manifest
-          setSettingsSchema(null);
-          setSettings({});
-        }
-
         // Auto-load management component if available
         if (configResponse.data?.ui?.components?.manager) {
           await loadManagementComponent(configResponse.data);
@@ -234,22 +216,13 @@ const ChannelSettings = ({ channel, onClose }) => {
   }, [channel]);
 
   const handleSave = async () => {
-    setSaving(true);
-    try {
-      await api.updateChannelSettings(channel.id, settings);
-      onClose();
-    } catch (error) {
-      console.error('Error saving settings:', error);
-    } finally {
-      setSaving(false);
-    }
+    // Settings are now handled entirely by the channel plugin UI
+    onClose();
   };
 
   const handleSettingChange = (key, value) => {
-    setSettings(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    // Settings are now handled entirely by the channel plugin UI
+    console.log('Settings handled by plugin UI:', key, value);
   };
 
   const hasManagementInterface = () => {
@@ -268,7 +241,6 @@ const ChannelSettings = ({ channel, onClose }) => {
 
     const hostProps = {
       channel: channel,
-      settings: settings,
       config: config,
       apiBaseUrl: getApiBaseUrl(), // Use dynamic API base URL
       // Provide API helper functions for the Web Component
@@ -296,121 +268,6 @@ const ChannelSettings = ({ channel, onClose }) => {
       'data-hostprops': JSON.stringify(hostProps),
       key: `${channel.id}-${managementComponent.element}-management`
     });
-  };
-
-  const renderSettingField = (key, setting) => {
-    // Use current value from settings state, fallback to default
-    let value = settings[key] !== undefined ? settings[key] : (setting.default || '');
-
-    // If enum is present, render dropdown regardless of type
-    if (Array.isArray(setting.enum)) {
-      // Always use string for dropdown value
-      const stringValue = value !== undefined && value !== null ? String(value) : '';
-      return (
-        <select
-          className="form-select"
-          value={stringValue}
-          onChange={(e) => {
-            let selected = e.target.value;
-            // If original type is number, convert back
-            if (setting.type === 'number') {
-              selected = selected === '' ? '' : Number(selected);
-            }
-            handleSettingChange(key, selected);
-          }}
-        >
-          {setting.enum.map(opt => (
-            <option key={opt} value={String(opt)}>{opt}</option>
-          ))}
-        </select>
-      );
-    }
-
-    switch (setting.type) {
-      case 'string':
-        return (
-          <input
-            type={setting.secret ? 'password' : 'text'}
-            className="form-input"
-            value={setting.secret && value ? '***hidden***' : value}
-            onChange={(e) => handleSettingChange(key, e.target.value)}
-            placeholder={setting.label || key}
-            readOnly={setting.secret && value && value.includes('***')}
-            onFocus={(e) => {
-              if (setting.secret && e.target.value.includes('***')) {
-                e.target.value = '';
-                handleSettingChange(key, '');
-              }
-            }}
-          />
-        );
-
-      case 'number':
-        return (
-          <input
-            type="number"
-            className="form-input"
-            value={value}
-            onChange={(e) => {
-              const val = e.target.value;
-              handleSettingChange(key, val === '' ? '' : parseFloat(val));
-            }}
-            placeholder={setting.label || key}
-          />
-        );
-
-      case 'boolean':
-        return (
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={!!value}
-              onChange={(e) => handleSettingChange(key, e.target.checked)}
-            />
-            <span>{setting.label || key}</span>
-          </label>
-        );
-
-      case 'select':
-        // Support both array of objects and array of strings for options
-        let options = setting.options;
-        if (Array.isArray(options) && typeof options[0] === 'string') {
-          options = options.map(opt => ({ value: opt, label: opt }));
-        }
-        const selectValue = value !== undefined && value !== null ? String(value) : '';
-        return (
-          <select
-            className="form-select"
-            value={selectValue}
-            onChange={(e) => {
-              let selected = e.target.value;
-              // If original type is number, convert back
-              if (setting.value !== undefined && typeof setting.value === 'number') {
-                selected = selected === '' ? '' : Number(selected);
-              }
-              handleSettingChange(key, selected);
-            }}
-          >
-            <option value="">Select {setting.label || key}</option>
-            {options?.map((option) => (
-              <option key={option.value} value={String(option.value)}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        );
-
-      default:
-        return (
-          <input
-            type="text"
-            className="form-input"
-            value={value}
-            onChange={(e) => handleSettingChange(key, e.target.value)}
-            placeholder={setting.label || key}
-          />
-        );
-    }
   };
 
   if (loading) {
@@ -443,58 +300,21 @@ const ChannelSettings = ({ channel, onClose }) => {
           {/* Inject channel UI component directly if available */}
           {hasManagementInterface() ? (
             renderManagementComponent()
-          ) : settingsType === 'simple' && settingsSchema?.properties ? (
-            /* Show simple settings form for channels with settingsType: simple */
-            <div className="settings-form">
-              {Object.entries(settingsSchema.properties).map(([key, setting]) => (
-                <div key={key} className="form-group">
-                  <label className="form-label">
-                    {setting.title || setting.label || key}
-                    {setting.required && <span className="required">*</span>}
-                  </label>
-                  {setting.description && (
-                    <p className="setting-description">{setting.description}</p>
-                  )}
-                  {renderSettingField(key, setting)}
-                </div>
-              ))}
-            </div>
           ) : (
-            /* Fallback for channels with no settings or unrecognized type */
+            /* Fallback for channels with no management interface */
             <div className="no-settings">
               <p className="text-tertiary">
-                {settingsType === 'advanced' ? 
-                  'This channel uses a custom settings interface.' :
-                  'No configurable settings available for this channel.'
-                }
+                This channel manages its own settings through its interface.
               </p>
             </div>
           )}
         </div>
 
-        {settingsType === 'simple' && settingsSchema?.properties && (
-          <div className="channel-settings-footer">
-            <button className="btn" onClick={onClose}>
-              Cancel
-            </button>
-            <button 
-              className="btn btn-primary" 
-              onClick={handleSave}
-              disabled={saving}
-            >
-              <Save size={16} />
-              {saving ? 'Saving...' : 'Save Settings'}
-            </button>
-          </div>
-        )}
-
-        {(settingsType !== 'simple' || !settingsSchema?.properties) && (
-          <div className="channel-settings-footer">
-            <button className="btn" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        )}
+        <div className="channel-settings-footer">
+          <button className="btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
