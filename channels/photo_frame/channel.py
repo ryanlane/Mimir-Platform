@@ -25,9 +25,12 @@ class PhotoFrameChannel:
         self._config = None
         self._router = None
         
+        # Initialize with basic logging
+        print(f"📸 PhotoFrameChannel initialized with directory: {channel_dir}")
+    
     @property
     def id(self) -> str:
-        return "photo_frame"
+        return "com.epaperframe.photoframe"
     
     @property
     def config(self) -> dict:
