@@ -132,6 +132,40 @@ const Displays = () => {
         console.warn('Could not fetch discovered display assignments:', err);
       }
 
+      // Fetch scene information for displays that have assignments
+      let sceneNames = {};
+      try {
+        // Get all unique scene IDs from both registered and discovered displays
+        const allSceneIds = new Set();
+        
+        // Add scene IDs from registered displays
+        allDisplays.forEach(display => {
+          if (display.assignedSceneId || display.assigned_scene_id) {
+            allSceneIds.add(display.assignedSceneId || display.assigned_scene_id);
+          }
+        });
+        
+        // Add scene IDs from discovered display assignments
+        Object.values(discoveredAssignments).forEach(assignment => {
+          if (assignment.scene_id) {
+            allSceneIds.add(assignment.scene_id);
+          }
+        });
+
+        // Fetch scene names for all unique scene IDs
+        if (allSceneIds.size > 0) {
+          const scenesResponse = await api.getScenes();
+          const scenes = scenesResponse.data?.scenes || [];
+          sceneNames = scenes.reduce((acc, scene) => {
+            acc[scene.id] = scene.name;
+            return acc;
+          }, {});
+          console.log('🔍 Debug - Scene names fetched:', sceneNames);
+        }
+      } catch (err) {
+        console.warn('Could not fetch scene names:', err);
+      }
+
       // Normalize the display data and set source based on displayType
       const normalizedDisplays = allDisplays.map(display => {
         const normalized = {
@@ -149,6 +183,13 @@ const Displays = () => {
           normalized.assignedSceneId = assignment.scene_id; // Keep both formats for compatibility
           normalized.assigned_at = assignment.assigned_at;
           console.log(`🔍 Debug - Found assignment for ${display.id}: ${assignment.scene_id}`);
+        }
+
+        // Add scene name for any display with an assigned scene
+        const sceneId = normalized.assigned_scene_id || normalized.assignedSceneId;
+        if (sceneId && sceneNames[sceneId]) {
+          normalized.assigned_scene_name = sceneNames[sceneId];
+          console.log(`🔍 Debug - Added scene name for ${display.id}: ${sceneNames[sceneId]}`);
         }
 
         return normalized;
