@@ -98,29 +98,27 @@ const ChannelSettings = ({ channel, onClose }) => {
   useEffect(() => {
     const loadManagementComponent = async (configData) => {
       try {
-        // Find management component with route
-        const managementComponent = configData?.ui?.find(ui => ui.route);
+        // Find management component from manifest UI structure
+        const managementModuleUrl = configData?.ui?.components?.manager;
         
-        if (managementComponent) {
+        if (managementModuleUrl) {
           // Construct full URL for the module
-          // The moduleUrl from manifest is relative like "/api/channels/..."
-          // We need to prepend the server base URL
-          const serverBaseUrl = getServerBaseUrl(); // Use dynamic server URL
-          let fullModuleUrl = managementComponent.moduleUrl.startsWith('http') 
-            ? managementComponent.moduleUrl 
-            : `${serverBaseUrl}${managementComponent.moduleUrl}`;
+          const serverBaseUrl = getServerBaseUrl();
+          let fullModuleUrl = managementModuleUrl.startsWith('http') 
+            ? managementModuleUrl 
+            : `${serverBaseUrl}${managementModuleUrl}`;
           
           // Add cache-busting parameter to ensure fresh module loading
           const cacheBuster = Date.now();
           fullModuleUrl += fullModuleUrl.includes('?') ? `&v=${cacheBuster}` : `?v=${cacheBuster}`;
           
-          console.log(`Loading Management Component: ${managementComponent.element} from ${fullModuleUrl}`);
+          console.log(`Loading Management Component from ${fullModuleUrl}`);
           
           // Check if component is already loaded
-          if (!customElements.get(managementComponent.element)) {
+          if (!customElements.get('photo-frame-manager')) {
             // Set global API configuration for the Web Component
             window.mimirApiBaseUrl = getApiBaseUrl();
-            window.mimirServerBaseUrl = getServerBaseUrl(); // Provide server base URL for Web Components
+            window.mimirServerBaseUrl = getServerBaseUrl();
             
             // Store original fetch before overriding
             const originalFetch = window.fetch;
@@ -161,10 +159,9 @@ const ChannelSettings = ({ channel, onClose }) => {
                 const url = endpoint.startsWith('http') ? endpoint : `${getServerBaseUrl()}${endpoint}`;
                 return fetch(url, {
                   ...options,
-                  credentials: 'include', // As required by the integration guide
+                  credentials: 'include',
                   headers: {
                     ...options.headers,
-                    // Add any additional required headers
                   }
                 });
               },
@@ -180,13 +177,10 @@ const ChannelSettings = ({ channel, onClose }) => {
             };
             
             await import(/* webpackIgnore: true */ fullModuleUrl);
-            console.log(`✅ Management Component ${managementComponent.element} loaded successfully`);
-            
-            // Restore original fetch after component is loaded (optional)
-            // window.fetch = originalFetch;
+            console.log(`✅ Management Component loaded successfully`);
           }
           
-          return managementComponent;
+          return { element: 'photo-frame-manager', moduleUrl: managementModuleUrl };
         } else {
           console.log(`No management component found for ${channel.id}`);
           return null;
@@ -207,24 +201,26 @@ const ChannelSettings = ({ channel, onClose }) => {
           mimirServerBaseUrl: window.mimirServerBaseUrl
         });
 
-        const [configResponse, settingsResponse] = await Promise.all([
-          api.getChannelConfig(channel.id),
-          api.getChannelSettings(channel.id)
-        ]);
+        const configResponse = await api.getChannelManifest(channel.id);
 
         setConfig(configResponse.data);
         
-        // Initialize settings state with current values from settings response
-        // Use the structured settings response instead of parsing config
-        if (settingsResponse.data) {
-          const settingsData = settingsResponse.data;
-          setSettingsSchema(settingsData.schema || null);
-          setSettingsType(settingsData.settingsType || 'simple');
-          setSettings(settingsData.current || {});
+        // Extract settings information from manifest
+        const manifestData = configResponse.data;
+        if (manifestData) {
+          // Check if this is a simple settings channel with a settings schema
+          // For now, assume advanced if it has UI components
+          const hasManagementUI = manifestData.ui?.components?.manager;
+          setSettingsType(hasManagementUI ? 'advanced' : 'simple');
+          
+          // For advanced channels, we don't need a settings schema
+          // For simple channels, we'd need to define one or get it from the manifest
+          setSettingsSchema(null);
+          setSettings({});
         }
 
         // Auto-load management component if available
-        if (configResponse.data?.ui?.some(ui => ui.route)) {
+        if (configResponse.data?.ui?.components?.manager) {
           await loadManagementComponent(configResponse.data);
         }
       } catch (error) {
@@ -257,14 +253,16 @@ const ChannelSettings = ({ channel, onClose }) => {
   };
 
   const hasManagementInterface = () => {
-    return config?.ui?.some(ui => ui.route) || false;
+    return config?.ui?.components?.manager || false;
   };
 
   const renderManagementComponent = () => {
-    if (!config?.ui) return null;
+    if (!config?.ui?.components?.manager) return null;
 
-    // Find management component with route
-    const managementComponent = config.ui.find(ui => ui.route);
+    const managementComponent = {
+      element: 'photo-frame-manager', // Default web component name
+      moduleUrl: config.ui.components.manager
+    };
     
     if (!managementComponent) return null;
 

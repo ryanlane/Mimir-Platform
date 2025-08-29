@@ -112,6 +112,21 @@ export const api = {
     console.log(`💾 Cached: ${key}`);
     return result;
   },
+  
+  getChannelManifest: async (channelId) => {
+    const key = apiCache.generateKey(`/channels/${channelId}/manifest`);
+    const cached = apiCache.get(key);
+    if (cached) {
+      console.log(`📋 Cache hit: ${key}`);
+      return cached;
+    }
+    
+    const result = await apiClient.get(`/channels/${channelId}/manifest`);
+    apiCache.set(key, result, CACHE_CONFIGS.CHANNELS.ttl);
+    console.log(`💾 Cached: ${key}`);
+    return result;
+  },
+  
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
   requestChannelImage: (channelId, requestData, subchannelId = null) => {
