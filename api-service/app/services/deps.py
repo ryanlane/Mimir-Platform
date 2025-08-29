@@ -6,6 +6,7 @@ from typing import Generator
 from fastapi import Depends
 
 from app.services.channel_discovery import ChannelDiscoveryService, channel_discovery_service
+from app.services.plugin_discovery import PluginDiscoveryService, plugin_discovery_service
 from app.services.websocket import WebSocketService, websocket_service
 from app.services.distribution import DistributionService, distribution_service
 from app.services.caching import CacheService, cache_service
@@ -21,6 +22,11 @@ from sqlalchemy.orm import Session
 def get_channel_discovery_service() -> ChannelDiscoveryService:
     """Get channel discovery service instance"""
     return channel_discovery_service
+
+
+def get_plugin_discovery_service() -> PluginDiscoveryService:
+    """Get plugin discovery service instance"""
+    return plugin_discovery_service
 
 
 def get_websocket_service() -> WebSocketService:
@@ -62,6 +68,11 @@ def websocket_service_dependency() -> Generator[WebSocketService, None, None]:
 def channel_discovery_dependency() -> Generator[ChannelDiscoveryService, None, None]:
     """FastAPI dependency for channel discovery service"""
     yield channel_discovery_service
+
+
+def plugin_discovery_dependency() -> Generator[PluginDiscoveryService, None, None]:
+    """FastAPI dependency for plugin discovery service"""
+    yield plugin_discovery_service
 
 
 def distribution_dependency() -> Generator[DistributionService, None, None]:

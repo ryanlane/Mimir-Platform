@@ -13,6 +13,7 @@ from app.core.logging import setup_logging, get_logger
 
 # Import services
 from app.services.channel_discovery import channel_discovery_service
+from app.services.plugin_discovery import plugin_discovery_service
 from app.services.websocket import websocket_service
 from app.services.distribution import distribution_service
 from app.services.caching import cache_service
@@ -29,13 +30,18 @@ def _initialize_services(app: FastAPI, logger):
     """Initialize all services"""
     logger.info("Initializing services...")
     
-    # Initialize channel discovery and discover channels
-    discovered_channels = channel_discovery_service.discover_channels(app)
-    logger.info(f"Discovered {len(discovered_channels)} channels")
+    # Initialize plugin discovery and discover channel plugins
+    import asyncio
+    
+    async def discover_plugins():
+        discovered_plugins = await plugin_discovery_service.discover_plugins()
+        logger.info(f"Discovered {len(discovered_plugins)} channel plugins")
+    
+    # Run plugin discovery
+    asyncio.create_task(discover_plugins())
     
     # Start distribution monitoring if enabled
     if settings.distribution_enabled:
-        import asyncio
         asyncio.create_task(distribution_service.start_distribution_monitoring())
         logger.info("Distribution monitoring started")
     
