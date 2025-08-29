@@ -60,7 +60,10 @@ class FeatureDetectionService {
         this.supportedFeatures.add('embedded_plugins');
         this.supportedFeatures.add('v2.1_channels');
         this.supportedFeatures.add('plugin_system');
-        this.apiVersion = '2.1';
+        // Only set API version to 2.1 if we haven't already detected a higher version
+        if (!this.apiVersion || this.apiVersion < '2.1') {
+          this.apiVersion = '2.1';
+        }
         
         // If we have channels, test manifest endpoint for working channels only
         if (channels.data?.channels?.length > 0) {
