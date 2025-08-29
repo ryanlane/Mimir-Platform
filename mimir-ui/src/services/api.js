@@ -294,6 +294,11 @@ export const api = {
   getDisplays: (params = {}) => apiClient.get('/displays', { params }),
   assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${displayId}/assign_scene`, { scene_id: sceneId }),
   unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/assign_scene`),
+  
+  // Discovery API endpoints
+  getDiscoveryStatus: () => apiClient.get('/displays/discovery/status'),
+  discoverDisplays: () => apiClient.post('/displays/discovery/trigger'),
+  getLiveDiscoveredDisplays: () => apiClient.get('/displays/discovery/live'),
   getDisplayImage: (displayId, headers = {}) => apiClient.get(`/displays/${displayId}/current-image`, { headers }),
   getDisplayImageFile: (displayId) => apiClient.get(`/displays/${displayId}/current_image_file`, { responseType: 'blob' }),
   // Enhanced display image polling with ETag support

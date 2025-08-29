@@ -49,7 +49,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
 
   return (
     <>
-      <div className={`display-card ${getStatusColor()}`}>
+      <div className={`display-card ${getStatusColor()} ${display.source === 'discovered' ? 'discovered-display' : 'registered-display'}`}>
         <div className="display-card-header">
           <div className="display-info">
             <div className="display-title">
@@ -58,6 +58,16 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
               <div className={`status-indicator ${display.is_online ? 'online' : 'offline'}`}>
                 {display.is_online ? <Wifi size={14} /> : <WifiOff size={14} />}
               </div>
+              {display.source === 'discovered' && (
+                <div className="source-badge discovered">
+                  <span>Discovered</span>
+                </div>
+              )}
+              {display.source === 'registered' && (
+                <div className="source-badge registered">
+                  <span>Registered</span>
+                </div>
+              )}
             </div>
             {display.description && (
               <p className="display-description">{display.description}</p>
@@ -65,20 +75,32 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
           </div>
 
           <div className="display-actions">
-            <button 
-              className="btn btn-sm btn-tertiary" 
-              onClick={() => onEdit(display)}
-              title="Edit Display"
-            >
-              <Settings size={16} />
-            </button>
-            <button 
-              className="btn btn-sm btn-tertiary" 
-              onClick={() => onDelete(display.id)}
-              title="Delete Display"
-            >
-              <Trash2 size={16} />
-            </button>
+            {display.source === 'registered' ? (
+              <>
+                <button 
+                  className="btn btn-sm btn-tertiary" 
+                  onClick={() => onEdit(display)}
+                  title="Edit Display"
+                >
+                  <Settings size={16} />
+                </button>
+                <button 
+                  className="btn btn-sm btn-tertiary" 
+                  onClick={() => onDelete(display.id)}
+                  title="Delete Display"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </>
+            ) : (
+              <button 
+                className="btn btn-sm btn-primary" 
+                onClick={() => onEdit(display, 'register')}
+                title="Register This Display"
+              >
+                Register
+              </button>
+            )}
           </div>
         </div>
 
@@ -120,28 +142,34 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
         </div>
 
         <div className="display-scene-info">
-          {display.assigned_scene_id ? (
-            <div className="scene-assigned">
-              <div className="scene-info">
-                <Play size={14} />
-                <span>Scene: <strong>{display.assigned_scene_name}</strong></span>
+          {display.source === 'registered' ? (
+            display.assigned_scene_id ? (
+              <div className="scene-assigned">
+                <div className="scene-info">
+                  <Play size={14} />
+                  <span>Scene: <strong>{display.assigned_scene_name}</strong></span>
+                </div>
+                <button 
+                  className="btn btn-sm btn-secondary" 
+                  onClick={() => onAssignScene(display)}
+                >
+                  Change Scene
+                </button>
               </div>
-              <button 
-                className="btn btn-sm btn-secondary" 
-                onClick={() => onAssignScene(display)}
-              >
-                Change Scene
-              </button>
-            </div>
+            ) : (
+              <div className="scene-unassigned">
+                <span className="no-scene">No scene assigned</span>
+                <button 
+                  className="btn btn-sm btn-primary" 
+                  onClick={() => onAssignScene(display)}
+                >
+                  Assign Scene
+                </button>
+              </div>
+            )
           ) : (
             <div className="scene-unassigned">
-              <span className="no-scene">No scene assigned</span>
-              <button 
-                className="btn btn-sm btn-primary" 
-                onClick={() => onAssignScene(display)}
-              >
-                Assign Scene
-              </button>
+              <span className="no-scene">Register display to assign scenes</span>
             </div>
           )}
         </div>

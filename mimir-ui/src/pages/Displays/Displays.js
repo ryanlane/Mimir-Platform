@@ -35,6 +35,10 @@ const Displays = () => {
   const [locationFilter, setLocationFilter] = useState('');
   const [onlineFilter, setOnlineFilter] = useState('all'); // 'all', 'online', 'offline'
   const [tagFilter, setTagFilter] = useState('');
+  const [includeDiscovered, setIncludeDiscovered] = useState(true);
+  
+  // Discovery service status
+  const [discoveryStatus, setDiscoveryStatus] = useState(null);
 
   const loadDisplays = useCallback(async () => {
     if (!supportsDisplayManagement()) {
@@ -48,13 +52,18 @@ const Displays = () => {
       const now = Date.now();
       if (displaysCache && displaysCacheTime && (now - displaysCacheTime) < DISPLAYS_CACHE_TIMEOUT) {
         console.log('🚀 Using cached displays data');
-        setDisplays(displaysCache);
+        setDisplays(displaysCache.displays || []);
+        setDiscoveryStatus(displaysCache.discoveryStatus);
         setLoading(false);
         return;
       }
 
       console.log('📡 Fetching fresh displays data');
-      const params = {};
+      
+      // Build query parameters
+      const params = {
+        include_discovered: includeDiscovered
+      };
       if (onlineFilter !== 'all') {
         params.online_only = onlineFilter === 'online';
       }
@@ -65,21 +74,31 @@ const Displays = () => {
         params.tag = tagFilter;
       }
 
-      const response = await api.getDisplays(params);
-      const displaysData = response.data?.data || response.data || [];
+      // Fetch displays and discovery status in parallel
+      const [displaysResponse, discoveryResponse] = await Promise.all([
+        api.getDisplays(params),
+        api.getDiscoveryStatus().catch(err => {
+          console.warn('Discovery status not available:', err);
+          return null;
+        })
+      ]);
+
+      const displaysData = displaysResponse.data?.data || displaysResponse.data || [];
+      const discoveryData = discoveryResponse?.data || null;
 
       // Update cache
-      displaysCache = displaysData;
+      displaysCache = { displays: displaysData, discoveryStatus: discoveryData };
       displaysCacheTime = now;
 
       setDisplays(displaysData);
+      setDiscoveryStatus(discoveryData);
     } catch (error) {
       console.error('Error loading displays:', error);
       setError(error.message);
     } finally {
       setLoading(false);
     }
-  }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter]);
+  }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter, includeDiscovered]);
 
   // Manual refresh that bypasses cache
   const refreshDisplays = useCallback(async () => {
@@ -88,6 +107,19 @@ const Displays = () => {
     setLoading(true);
     await loadDisplays();
   }, [loadDisplays]);
+
+  // Trigger discovery
+  const triggerDiscovery = useCallback(async () => {
+    try {
+      console.log('🔍 Triggering display discovery...');
+      await api.discoverDisplays();
+      // Refresh displays after discovery
+      await refreshDisplays();
+    } catch (error) {
+      console.error('Error triggering discovery:', error);
+      setError('Discovery failed: ' + error.message);
+    }
+  }, [refreshDisplays]);
 
   useEffect(() => {
     loadDisplays();
@@ -202,6 +234,15 @@ const Displays = () => {
         <div className="page-actions">
           <button 
             className="btn btn-secondary" 
+            onClick={triggerDiscovery}
+            disabled={loading}
+            title="Discover displays on network"
+          >
+            <Search size={18} />
+            Discover
+          </button>
+          <button 
+            className="btn btn-secondary" 
             onClick={refreshDisplays}
             disabled={loading}
           >
@@ -217,6 +258,33 @@ const Displays = () => {
           </button>
         </div>
       </div>
+
+      {/* Discovery Status */}
+      {discoveryStatus && (
+        <div className="discovery-status">
+          <div className="discovery-info">
+            <div className="discovery-indicator">
+              {discoveryStatus.service_status?.is_running ? (
+                <>
+                  <div className="status-dot online"></div>
+                  <span>mDNS Discovery Active</span>
+                </>
+              ) : (
+                <>
+                  <div className="status-dot offline"></div>
+                  <span>mDNS Discovery Inactive</span>
+                </>
+              )}
+            </div>
+            {discoveryStatus.service_status?.is_running && (
+              <div className="discovery-stats">
+                <span>{discoveryStatus.service_status.total_discovered} discovered</span>
+                <span>{discoveryStatus.service_status.online_displays} online</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Search and Filters */}
       <div className="displays-controls">
@@ -273,6 +341,17 @@ const Displays = () => {
               </select>
             </div>
           )}
+
+          <div className="filter-group">
+            <label className="checkbox-filter">
+              <input
+                type="checkbox"
+                checked={includeDiscovered}
+                onChange={(e) => setIncludeDiscovered(e.target.checked)}
+              />
+              <span>Include Discovered</span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -329,9 +408,23 @@ const Displays = () => {
                 setSelectedDisplay(display);
                 setShowSceneAssignment(true);
               }}
-              onEdit={(display) => {
-                // TODO: Implement display editing
-                console.log('Edit display:', display);
+              onEdit={(display, action) => {
+                if (action === 'register') {
+                  // Open registration modal for discovered display
+                  setSelectedDisplay({
+                    ...display,
+                    // Convert discovered display to registration format
+                    name: display.name || display.service_name,
+                    ip_address: display.ip_address,
+                    port: display.port,
+                    resolution: display.resolution || [1920, 1080],
+                    orientation: display.orientation || 'landscape'
+                  });
+                  setShowRegistration(true);
+                } else {
+                  // TODO: Implement display editing for registered displays
+                  console.log('Edit display:', display);
+                }
               }}
               onDelete={handleDeleteDisplay}
               onRefresh={refreshDisplays}
