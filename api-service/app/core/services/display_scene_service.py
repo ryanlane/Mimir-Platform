@@ -1,6 +1,7 @@
 """
 Display-Scene Relationship Service
 Enhanced service for managing the relationship between displays and scenes
+Handles both registered displays (database) and discovered displays (in-memory)
 """
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ import uuid
 
 from app.db.models import DisplayClient, Scene, ContentLease
 from app.core.logging import get_logger
+from app.core.services.discovered_display_manager import discovered_assignment_manager
+from app.services.mdns_discovery import mdns_discovery_service
 
 
 class DisplaySceneService:
@@ -25,94 +28,170 @@ class DisplaySceneService:
         scene_id: str, 
         override_settings: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Assign a scene to a specific display"""
-        
-        # Validate display exists
-        display = self.db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-        if not display:
-            raise ValueError(f"Display {display_id} not found")
+        """Assign a scene to either a registered or discovered display"""
         
         # Validate scene exists
         scene = self.db.query(Scene).filter(Scene.id == scene_id).first()
         if not scene:
             raise ValueError(f"Scene {scene_id} not found")
         
-        # Store previous assignment for history
-        previous_scene_id = display.assigned_scene_id
+        # Check if this is a registered display first
+        display = self.db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
         
-        # Update the assignment
-        display.assigned_scene_id = scene_id
-        display.last_seen = datetime.now()
-        
-        # Store override settings if provided (would require new column in future)
-        # For now, we'll track this in content_hash as JSON if needed
-        
-        self.db.commit()
-        self.db.refresh(display)
-        
-        self.logger.info(f"Assigned scene {scene_id} to display {display_id}")
-        
-        return {
-            "display_id": display_id,
-            "display_name": display.name,
-            "scene_id": scene_id,
-            "scene_name": scene.name,
-            "previous_scene_id": previous_scene_id,
-            "assigned_at": datetime.now(),
-            "success": True
-        }
+        if display:
+            # Handle registered display (database assignment)
+            previous_scene_id = display.assigned_scene_id
+            display.assigned_scene_id = scene_id
+            display.last_seen = datetime.now()
+            
+            self.db.commit()
+            self.db.refresh(display)
+            
+            self.logger.info(f"Assigned scene {scene_id} to registered display {display_id}")
+            
+            return {
+                "display_id": display_id,
+                "display_name": display.name,
+                "display_type": "registered",
+                "scene_id": scene_id,
+                "scene_name": scene.name,
+                "previous_scene_id": previous_scene_id,
+                "assigned_at": datetime.now(),
+                "success": True
+            }
+        else:
+            # Check if this is a discovered display
+            discovered_displays = mdns_discovery_service.get_discovered_displays()
+            discovered_display = next((d for d in discovered_displays if d.display_id == display_id), None)
+            
+            if discovered_display:
+                # Handle discovered display (in-memory assignment)
+                previous_scene_id = discovered_assignment_manager.get_assigned_scene(display_id)
+                success = discovered_assignment_manager.assign_scene(display_id, scene_id)
+                
+                if not success:
+                    raise ValueError(f"Failed to assign scene to discovered display {display_id}")
+                
+                self.logger.info(f"Assigned scene {scene_id} to discovered display {display_id}")
+                
+                return {
+                    "display_id": display_id,
+                    "display_name": discovered_display.display_name,
+                    "display_type": "discovered",
+                    "scene_id": scene_id,
+                    "scene_name": scene.name,
+                    "previous_scene_id": previous_scene_id,
+                    "assigned_at": datetime.now(),
+                    "success": True
+                }
+            else:
+                raise ValueError(f"Display {display_id} not found (neither registered nor discovered)")
     
     def unassign_scene_from_display(self, display_id: str) -> Dict[str, Any]:
-        """Remove scene assignment from display"""
+        """Remove scene assignment from either a registered or discovered display"""
         
+        # Check if this is a registered display first
         display = self.db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-        if not display:
-            raise ValueError(f"Display {display_id} not found")
         
-        previous_scene_id = display.assigned_scene_id
-        display.assigned_scene_id = None
-        display.last_seen = datetime.now()
-        
-        self.db.commit()
-        
-        self.logger.info(f"Unassigned scene from display {display_id}")
-        
-        return {
-            "display_id": display_id,
-            "display_name": display.name,
-            "previous_scene_id": previous_scene_id,
-            "unassigned_at": datetime.now(),
-            "success": True
-        }
+        if display:
+            # Handle registered display
+            previous_scene_id = display.assigned_scene_id
+            display.assigned_scene_id = None
+            display.last_seen = datetime.now()
+            
+            self.db.commit()
+            
+            self.logger.info(f"Unassigned scene from registered display {display_id}")
+            
+            return {
+                "display_id": display_id,
+                "display_name": display.name,
+                "display_type": "registered",
+                "previous_scene_id": previous_scene_id,
+                "unassigned_at": datetime.now(),
+                "success": True
+            }
+        else:
+            # Check if this is a discovered display
+            discovered_displays = mdns_discovery_service.get_discovered_displays()
+            discovered_display = next((d for d in discovered_displays if d.display_id == display_id), None)
+            
+            if discovered_display:
+                # Handle discovered display
+                previous_scene_id = discovered_assignment_manager.unassign_scene(display_id)
+                
+                self.logger.info(f"Unassigned scene from discovered display {display_id}")
+                
+                return {
+                    "display_id": display_id,
+                    "display_name": discovered_display.display_name,
+                    "display_type": "discovered",
+                    "previous_scene_id": previous_scene_id,
+                    "unassigned_at": datetime.now(),
+                    "success": True
+                }
+            else:
+                raise ValueError(f"Display {display_id} not found (neither registered nor discovered)")
     
     def get_scene_with_display_stats(self, scene_id: str) -> Optional[Dict[str, Any]]:
-        """Get scene information with display assignment statistics"""
+        """Get scene information with display assignment statistics (both registered and discovered)"""
         
         scene = self.db.query(Scene).filter(Scene.id == scene_id).first()
         if not scene:
             return None
         
-        # Get all displays assigned to this scene
-        assigned_displays = self.db.query(DisplayClient).filter(
+        # Get registered displays assigned to this scene
+        registered_displays = self.db.query(DisplayClient).filter(
             DisplayClient.assigned_scene_id == scene_id
         ).all()
         
-        # Calculate statistics
-        total_assigned = len(assigned_displays)
-        online_displays = sum(1 for d in assigned_displays if d.is_online)
-        offline_displays = total_assigned - online_displays
+        # Get discovered displays assigned to this scene
+        discovered_display_ids = discovered_assignment_manager.get_displays_for_scene(scene_id)
+        discovered_displays = []
         
-        # Build display list
+        if discovered_display_ids:
+            all_discovered = mdns_discovery_service.get_discovered_displays()
+            discovered_displays = [
+                d for d in all_discovered 
+                if d.display_id in discovered_display_ids
+            ]
+        
+        # Calculate statistics for both types
+        registered_online = sum(1 for d in registered_displays if d.is_online)
+        discovered_online = sum(1 for d in discovered_displays if d.is_online)
+        
+        total_assigned = len(registered_displays) + len(discovered_displays)
+        total_online = registered_online + discovered_online
+        total_offline = total_assigned - total_online
+        
+        # Build combined display list
         display_list = []
-        for display in assigned_displays:
+        
+        # Add registered displays
+        for display in registered_displays:
             display_list.append({
                 "display_id": display.id,
                 "display_name": display.name,
+                "display_type": "registered",
                 "location": display.location,
                 "is_online": display.is_online,
                 "last_seen": display.last_seen,
-                "assigned_at": display.last_seen,  # Approximate, would need proper tracking
+                "assigned_at": display.last_seen,  # Approximate
                 "content_hash": display.current_content_hash
+            })
+        
+        # Add discovered displays
+        for discovered in discovered_displays:
+            assignment_info = discovered_assignment_manager.get_assignment_info(discovered.display_id)
+            display_list.append({
+                "display_id": discovered.display_id,
+                "display_name": discovered.display_name,
+                "display_type": "discovered",
+                "location": discovered.location,
+                "is_online": discovered.is_online,
+                "last_seen": discovered.last_seen,
+                "assigned_at": assignment_info.get("assigned_at") if assignment_info else None,
+                "content_hash": None  # Discovered displays don't store content hash
             })
         
         return {
@@ -125,8 +204,18 @@ class DisplaySceneService:
             "is_active": scene.is_active,
             "display_stats": {
                 "total_assigned": total_assigned,
-                "online_displays": online_displays,
-                "offline_displays": offline_displays,
+                "online_displays": total_online,
+                "offline_displays": total_offline,
+                "registered_displays": {
+                    "total": len(registered_displays),
+                    "online": registered_online,
+                    "offline": len(registered_displays) - registered_online
+                },
+                "discovered_displays": {
+                    "total": len(discovered_displays),
+                    "online": discovered_online,
+                    "offline": len(discovered_displays) - discovered_online
+                },
                 "last_updated": datetime.now()
             },
             "assigned_displays": display_list,
@@ -287,25 +376,58 @@ class DisplaySceneService:
         
         return sorted(result, key=lambda x: x["display_count"], reverse=True)
     
-    def get_unassigned_displays(self) -> List[Dict[str, Any]]:
-        """Get displays that don't have scene assignments"""
+    def get_unassigned_displays(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Get displays that don't have scene assignments (both registered and discovered)"""
         
-        unassigned_displays = self.db.query(DisplayClient).filter(
+        # Get unassigned registered displays
+        unassigned_registered = self.db.query(DisplayClient).filter(
             DisplayClient.assigned_scene_id.is_(None)
         ).all()
         
-        return [
+        registered_list = [
             {
                 "display_id": display.id,
                 "display_name": display.name,
+                "display_type": "registered",
                 "location": display.location,
                 "is_online": display.is_online,
                 "last_seen": display.last_seen,
                 "discovery_method": display.discovery_method,
                 "auto_discovered": display.auto_discovered
             }
-            for display in unassigned_displays
+            for display in unassigned_registered
         ]
+        
+        # Get unassigned discovered displays
+        all_discovered = mdns_discovery_service.get_discovered_displays()
+        all_discovered_ids = [d.display_id for d in all_discovered]
+        unassigned_discovered_ids = discovered_assignment_manager.get_unassigned_discovered_displays(all_discovered_ids)
+        
+        discovered_list = []
+        for discovered in all_discovered:
+            if discovered.display_id in unassigned_discovered_ids:
+                discovered_list.append({
+                    "display_id": discovered.display_id,
+                    "display_name": discovered.display_name,
+                    "display_type": "discovered",
+                    "location": discovered.location,
+                    "is_online": discovered.is_online,
+                    "last_seen": discovered.last_seen,
+                    "discovery_method": "mdns",
+                    "auto_discovered": True,
+                    "hostname": discovered.hostname,
+                    "webhook_port": discovered.webhook_port
+                })
+        
+        return {
+            "registered": registered_list,
+            "discovered": discovered_list,
+            "totals": {
+                "registered_unassigned": len(registered_list),
+                "discovered_unassigned": len(discovered_list),
+                "total_unassigned": len(registered_list) + len(discovered_list)
+            }
+        }
     
     def reassign_displays_from_scene(
         self, 
@@ -345,4 +467,57 @@ class DisplaySceneService:
             "displays_moved": count,
             "affected_display_ids": [d.id for d in affected_displays],
             "success": True
+        }
+    
+    def cleanup_discovered_assignments(self) -> Dict[str, Any]:
+        """Clean up assignments for discovered displays that are no longer active"""
+        
+        # Get currently active discovered displays
+        active_discovered = mdns_discovery_service.get_discovered_displays()
+        active_ids = {d.display_id for d in active_discovered}
+        
+        # Clean up stale assignments
+        removed_count = discovered_assignment_manager.cleanup_stale_assignments(active_ids)
+        
+        self.logger.info(f"Cleaned up {removed_count} stale discovered display assignments")
+        
+        return {
+            "stale_assignments_removed": removed_count,
+            "active_discovered_displays": len(active_ids),
+            "cleanup_timestamp": datetime.now()
+        }
+    
+    def get_assignment_overview(self) -> Dict[str, Any]:
+        """Get comprehensive overview of all display assignments"""
+        
+        # Get registered display assignments
+        all_registered = self.db.query(DisplayClient).all()
+        registered_assigned = sum(1 for d in all_registered if d.assigned_scene_id)
+        registered_unassigned = len(all_registered) - registered_assigned
+        
+        # Get discovered display assignments
+        discovered_stats = discovered_assignment_manager.get_assignment_stats()
+        all_discovered = mdns_discovery_service.get_discovered_displays()
+        discovered_total = len(all_discovered)
+        discovered_assigned = discovered_stats["total_assignments"]
+        discovered_unassigned = discovered_total - discovered_assigned
+        
+        return {
+            "registered_displays": {
+                "total": len(all_registered),
+                "assigned": registered_assigned,
+                "unassigned": registered_unassigned
+            },
+            "discovered_displays": {
+                "total": discovered_total,
+                "assigned": discovered_assigned,
+                "unassigned": discovered_unassigned
+            },
+            "overall": {
+                "total_displays": len(all_registered) + discovered_total,
+                "total_assigned": registered_assigned + discovered_assigned,
+                "total_unassigned": registered_unassigned + discovered_unassigned
+            },
+            "discovered_assignment_stats": discovered_stats,
+            "last_updated": datetime.now()
         }
