@@ -275,6 +275,15 @@ const Displays = () => {
   console.log('🔍 Debug - Total displays:', displays.length);
   console.log('🔍 Debug - Filtered displays:', filteredDisplays.length);
   console.log('🔍 Debug - Displays array:', displays);
+  console.log('🔍 Debug - Individual displays:');
+  displays.forEach((display, index) => {
+    console.log(`  Display ${index}:`, {
+      id: display.id,
+      name: display.name,
+      source: display.source,
+      is_online: display.is_online
+    });
+  });
   if (!supportsDisplayManagement()) {
     return (
       <div className="page-container">
@@ -478,15 +487,18 @@ const Displays = () => {
         </div>
       ) : (
         <div className="displays-grid">
-          {filteredDisplays.map(display => (
-            <DisplayCard
-              key={display.id}
-              display={display}
-              onAssignScene={(display) => {
-                setSelectedDisplay(display);
-                setShowSceneAssignment(true);
-              }}
-              onEdit={(display, action) => {
+          {console.log('🔍 About to render', filteredDisplays.length, 'display cards')}
+          {filteredDisplays.map((display, index) => {
+            console.log(`🔍 Rendering DisplayCard ${index} for:`, display.name, 'with ID:', display.id);
+            return (
+              <DisplayCard
+                key={display.id}
+                display={display}
+                onAssignScene={(display) => {
+                  setSelectedDisplay(display);
+                  setShowSceneAssignment(true);
+                }}
+                onEdit={(display, action) => {
                 if (action === 'register') {
                   // Open registration modal for discovered display
                   setSelectedDisplay({
@@ -507,7 +519,8 @@ const Displays = () => {
               onDelete={handleDeleteDisplay}
               onRefresh={refreshDisplays}
             />
-          ))}
+            );
+          })}
         </div>
       )}
 
