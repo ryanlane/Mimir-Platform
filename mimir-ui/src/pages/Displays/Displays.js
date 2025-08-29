@@ -102,7 +102,7 @@ const Displays = () => {
 
       const registeredDisplays = displaysResponse.data?.data || displaysResponse.data || [];
       const discoveryData = discoveryResponse?.data || null;
-      const discoveredDisplays = discoveredResponse?.data?.discovered_displays || [];
+      const discoveredDisplays = (discoveredResponse?.data?.discovered_displays || []);
 
       // Combine and normalize display data
       const allDisplays = [
@@ -135,6 +135,11 @@ const Displays = () => {
           autoDiscovered: true
         }))
       ];
+
+      console.log('🔍 Debug - Registered displays:', registeredDisplays.length);
+      console.log('🔍 Debug - Discovered displays:', discoveredDisplays.length);
+      console.log('🔍 Debug - Combined displays:', allDisplays.length);
+      console.log('🔍 Debug - All displays data:', allDisplays);
 
       // Update cache
       displaysCache = { displays: allDisplays, discoveryStatus: discoveryData };
@@ -236,10 +241,30 @@ const Displays = () => {
 
   // Filter displays based on search and filters
   const filteredDisplays = (Array.isArray(displays) ? displays : []).filter(display => {
+    // Search term filter
     if (searchTerm && !display.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
         !display.description?.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
+
+    // Online status filter
+    if (onlineFilter === 'online' && !display.is_online) {
+      return false;
+    }
+    if (onlineFilter === 'offline' && display.is_online) {
+      return false;
+    }
+
+    // Location filter
+    if (locationFilter && display.location !== locationFilter) {
+      return false;
+    }
+
+    // Tag filter
+    if (tagFilter && (!display.tags || !display.tags.includes(tagFilter))) {
+      return false;
+    }
+
     return true;
   });
 
@@ -247,6 +272,9 @@ const Displays = () => {
   const locations = [...new Set((Array.isArray(displays) ? displays : []).map(d => d.location).filter(Boolean))];
   const tags = [...new Set((Array.isArray(displays) ? displays : []).flatMap(d => d.tags || []))];
 
+  console.log('🔍 Debug - Total displays:', displays.length);
+  console.log('🔍 Debug - Filtered displays:', filteredDisplays.length);
+  console.log('🔍 Debug - Displays array:', displays);
   if (!supportsDisplayManagement()) {
     return (
       <div className="page-container">
