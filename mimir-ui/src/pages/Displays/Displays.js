@@ -26,6 +26,10 @@ const Displays = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  console.log('🔍 Current displays state:', displays?.length || 0, 'displays');
+  console.log('🔍 Loading state:', loading);
+  console.log('🔍 Error state:', error);
+  
   // UI state
   const [showRegistration, setShowRegistration] = useState(false);
   const [showSceneAssignment, setShowSceneAssignment] = useState(false);
@@ -47,6 +51,12 @@ const Displays = () => {
     featureDetection.clearExpiredCache();
   }, []);
 
+  // Debug state changes
+  useEffect(() => {
+    console.log('🔄 Displays state changed to:', displays.length, 'displays');
+    console.log('🔄 Displays data:', displays);
+  }, [displays]);
+
   const loadDisplays = useCallback(async () => {
     if (!supportsDisplayManagement()) {
       setError('Display management is not available in this API version');
@@ -65,7 +75,7 @@ const Displays = () => {
         return;
       }
 
-      console.log('📡 Fetching fresh displays data');
+      console.log('📡 Fetching displays data from unified endpoint');
       
       // Build query parameters
       const params = {
@@ -81,72 +91,42 @@ const Displays = () => {
         params.tag = tagFilter;
       }
 
-      // Fetch displays and discovery status in parallel
-      const requests = [
-        api.getDisplays(params), // Always get registered displays
+      // Fetch displays and discovery status
+      const [displaysResponse, discoveryResponse] = await Promise.all([
+        api.getDisplays(params),
         api.getDiscoveryStatus().catch(err => {
           console.warn('Discovery status not available:', err);
           return null;
         })
-      ];
+      ]);
 
-      // If including discovered displays, fetch them separately
-      if (includeDiscovered) {
-        requests.push(api.getDiscoveredDisplays().catch(err => {
-          console.warn('Discovered displays not available:', err);
-          return null;
-        }));
-      }
-
-      const [displaysResponse, discoveryResponse, discoveredResponse] = await Promise.all(requests);
-
-      const registeredDisplays = displaysResponse.data?.data || displaysResponse.data || [];
+      const allDisplays = displaysResponse.data?.data || displaysResponse.data || [];
       const discoveryData = discoveryResponse?.data || null;
-      const discoveredDisplays = (discoveredResponse?.data?.discovered_displays || []);
 
-      // Combine and normalize display data
-      const allDisplays = [
-        // Registered displays
-        ...registeredDisplays.map(display => ({
-          ...display,
-          source: 'registered',
-          is_online: display.isOnline !== undefined ? display.isOnline : display.is_online,
-          last_seen: display.lastSeen || display.last_seen,
-          resolution: display.resolution || (display.width && display.height ? [display.width, display.height] : null)
-        })),
-        // Discovered displays  
-        ...discoveredDisplays.map(display => ({
-          id: display.display_id,
-          name: display.display_name,
-          hostname: display.hostname,
-          location: display.location,
-          source: 'discovered',
-          is_online: display.is_online,
-          last_seen: display.properties?.last_seen || display.discovered_at,
-          resolution: display.resolution ? display.resolution.split('x').map(Number) : null,
-          width: display.resolution ? parseInt(display.resolution.split('x')[0]) : null,
-          height: display.resolution ? parseInt(display.resolution.split('x')[1]) : null,
-          orientation: 'landscape', // Default for discovered displays
-          client_version: display.client_version,
-          webhook_port: display.webhook_port,
-          addresses: display.addresses,
-          displayType: 'discovered',
-          discoveryMethod: 'mdns',
-          autoDiscovered: true
-        }))
-      ];
+      // Normalize the display data and set source based on displayType
+      const normalizedDisplays = allDisplays.map(display => ({
+        ...display,
+        source: display.displayType || 'registered', // Use displayType as source
+        is_online: display.isOnline !== undefined ? display.isOnline : display.is_online,
+        last_seen: display.lastSeen || display.last_seen,
+        resolution: display.resolution || (display.width && display.height ? [display.width, display.height] : null)
+      }));
 
-      console.log('🔍 Debug - Registered displays:', registeredDisplays.length);
-      console.log('🔍 Debug - Discovered displays:', discoveredDisplays.length);
-      console.log('🔍 Debug - Combined displays:', allDisplays.length);
-      console.log('🔍 Debug - All displays data:', allDisplays);
+      console.log('🔍 Debug - Total displays from API:', allDisplays.length);
+      console.log('🔍 Debug - Normalized displays:', normalizedDisplays.length);
+      console.log('🔍 Debug - Displays by type:', {
+        discovered: normalizedDisplays.filter(d => d.displayType === 'discovered').length,
+        registered: normalizedDisplays.filter(d => d.displayType === 'registered').length
+      });
 
       // Update cache
-      displaysCache = { displays: allDisplays, discoveryStatus: discoveryData };
+      displaysCache = { displays: normalizedDisplays, discoveryStatus: discoveryData };
       displaysCacheTime = Date.now();
 
-      setDisplays(allDisplays);
+      console.log('🎯 About to set displays state with:', normalizedDisplays.length, 'displays');
+      setDisplays(normalizedDisplays);
       setDiscoveryStatus(discoveryData);
+      console.log('✅ Displays state set complete');
     } catch (error) {
       console.error('Error loading displays:', error);
       setError(error.message);
@@ -448,6 +428,14 @@ const Displays = () => {
           {filteredDisplays.length} display{filteredDisplays.length !== 1 ? 's' : ''}
         </span>
         <span className="stats-item">
+          <Monitor size={14} />
+          {filteredDisplays.filter(d => d.displayType === 'registered').length} registered
+        </span>
+        <span className="stats-item">
+          <Search size={14} />
+          {filteredDisplays.filter(d => d.displayType === 'discovered').length} discovered
+        </span>
+        <span className="stats-item">
           <Wifi size={14} />
           {filteredDisplays.filter(d => d.is_online).length} online
         </span>
@@ -499,21 +487,26 @@ const Displays = () => {
                   setShowSceneAssignment(true);
                 }}
                 onEdit={(display, action) => {
-                if (action === 'register') {
-                  // Open registration modal for discovered display
+                if (action === 'register' && display.displayType === 'discovered') {
+                  // Optional registration for discovered display
                   setSelectedDisplay({
                     ...display,
                     // Convert discovered display to registration format
                     name: display.name || display.service_name,
-                    ip_address: display.ip_address,
-                    port: display.port,
-                    resolution: display.resolution || [1920, 1080],
+                    ip_address: display.addresses?.[0] || display.ip_address,
+                    port: display.webhook_port || display.port,
+                    resolution: display.resolution || [display.width, display.height],
                     orientation: display.orientation || 'landscape'
                   });
                   setShowRegistration(true);
-                } else {
+                } else if (display.displayType === 'registered') {
+                  // Edit registered display
+                  console.log('Edit registered display:', display);
                   // TODO: Implement display editing for registered displays
-                  console.log('Edit display:', display);
+                } else {
+                  // Direct interaction with discovered display (no registration needed)
+                  console.log('Interact with discovered display:', display);
+                  // TODO: Implement direct display interaction
                 }
               }}
               onDelete={handleDeleteDisplay}
