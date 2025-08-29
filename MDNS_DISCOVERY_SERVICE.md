@@ -10,15 +10,15 @@ The Mimir API now includes a continuous background mDNS discovery service that a
 - Updates display status in real-time
 - No timeouts or manual discovery needed
 
-### 🤖 **Auto-Registration**
-- Automatically registers discovered displays in the database
-- Updates existing display records when they're rediscovered
-- Maintains online/offline status
+### 📋 **Discovery vs Registration**
+- **Discovery**: Finds displays via mDNS (automatic, continuous)
+- **Registration**: Manually adds displays to database (for non-mDNS displays)
+- Discovered displays appear in lists without database registration
+- Manual registration reserved for web displays, apps, or non-mDNS hardware
 
 ### 🔧 **Configurable**
 - Enable/disable via environment variables
 - Configurable update intervals and timeouts
-- Optional auto-registration
 
 ## Configuration
 
@@ -28,15 +28,43 @@ Add these environment variables to configure the mDNS discovery service:
 # Enable/disable mDNS discovery (default: true)
 MDNS_DISCOVERY_ENABLED=true
 
-# Auto-register discovered displays (default: true)
-MDNS_AUTO_REGISTER=true
-
 # Update interval in seconds (default: 30)
 MDNS_UPDATE_INTERVAL=30
 
 # Offline timeout in seconds (default: 120)
 MDNS_OFFLINE_TIMEOUT=120
 ```
+
+## Architecture
+
+### Discovered vs Registered Displays
+
+**Discovered Displays:**
+- Found automatically via mDNS
+- Appear in display lists immediately
+- No database storage required
+- Real-time status updates
+- Identified by `"display_type": "discovered"`
+
+**Registered Displays:**
+- Manually added via `/api/displays/register`
+- Stored in database permanently
+- For displays that don't support mDNS
+- Identified by `"display_type": "registered"`
+
+### Use Cases
+
+**Use Discovery For:**
+- Hardware displays with mDNS support (like Inky displays)
+- Real-time display monitoring
+- Dynamic display environments
+
+**Use Registration For:**
+- Web-based displays (browser displays)
+- Mobile app displays
+- Legacy hardware without mDNS
+- Virtual displays
+- Displays requiring persistent configuration
 
 ## API Endpoints
 

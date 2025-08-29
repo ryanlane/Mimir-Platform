@@ -149,7 +149,6 @@ async def startup_event():
     if settings.mdns_discovery_enabled:
         if mdns_discovery_service.is_available:
             print(f"🔍 mDNS Discovery: enabled (continuous background monitoring)")
-            print(f"   Auto-register: {settings.mdns_auto_register}")
             print(f"   Update interval: {settings.mdns_update_interval}s")
             print(f"   Offline timeout: {settings.mdns_offline_timeout}s")
         else:

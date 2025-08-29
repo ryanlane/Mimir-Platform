@@ -73,7 +73,6 @@ class Settings(BaseSettings):
 
     # --- mDNS Discovery ---
     mdns_discovery_enabled: bool = Field(True, validation_alias=AliasChoices("MDNS_DISCOVERY_ENABLED", "MDNS_ENABLED"))
-    mdns_auto_register: bool = Field(True, validation_alias=AliasChoices("MDNS_AUTO_REGISTER",))
     mdns_update_interval: int = Field(30, validation_alias=AliasChoices("MDNS_UPDATE_INTERVAL",))  # seconds
     mdns_offline_timeout: int = Field(120, validation_alias=AliasChoices("MDNS_OFFLINE_TIMEOUT",))  # seconds
 

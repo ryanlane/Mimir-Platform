@@ -156,8 +156,7 @@ class MdnsDiscoveryService:
         self._lock = threading.Lock()
         self._monitoring_task: Optional[asyncio.Task] = None
         
-        # Settings
-        self.auto_register = settings.mdns_auto_register
+        # Settings  
         self.update_interval = settings.mdns_update_interval  # seconds
         self.offline_timeout = settings.mdns_offline_timeout  # seconds
     
@@ -289,10 +288,6 @@ class MdnsDiscoveryService:
                 self.discovered_displays[display.service_name] = display
                 logger.info(f"Discovered new display: {display.display_name} ({display.hostname}) at {display.addresses}")
                 self._notify_callbacks(display, "discovered")
-                
-                # Auto-register if enabled
-                if self.auto_register:
-                    asyncio.create_task(self._auto_register_display(display))
     
     def _on_display_updated(self, display: DiscoveredDisplay):
         """Handle updated display"""
@@ -315,61 +310,6 @@ class MdnsDiscoveryService:
             except Exception as e:
                 logger.error(f"Error in discovery callback: {e}")
     
-    async def _auto_register_display(self, display: DiscoveredDisplay):
-        """Automatically register discovered display in database"""
-        try:
-            db = SessionLocal()
-            try:
-                # Check if display already exists
-                existing = db.query(DisplayClient).filter(
-                    DisplayClient.hostname == display.hostname
-                ).first()
-                
-                if existing:
-                    # Update existing display
-                    existing.is_online = True
-                    existing.last_seen = datetime.now()
-                    existing.display_type = "discovered"
-                    existing.discovery_method = "mdns"
-                    db.commit()
-                    logger.debug(f"Updated existing display registration: {display.display_name}")
-                else:
-                    # Create new display record
-                    resolution = display.resolution or "800x480"
-                    try:
-                        width, height = map(int, resolution.split("x"))
-                    except (ValueError, AttributeError):
-                        width, height = 800, 480
-                    
-                    new_client = DisplayClient(
-                        id=display.display_id,
-                        name=display.display_name,
-                        location=display.location,
-                        hostname=display.hostname,
-                        webhook_port=display.webhook_port,
-                        width=width,
-                        height=height,
-                        orientation=display.properties.get("orientation", "landscape"),
-                        client_version=display.client_version or "unknown",
-                        redis_distribution=display.properties.get("redis_distribution") == "true",
-                        content_claiming=display.properties.get("content_claiming") == "true",
-                        display_type="discovered",
-                        discovery_method="mdns",
-                        auto_discovered=True,
-                        is_online=True,
-                        last_seen=datetime.now()
-                    )
-                    
-                    db.add(new_client)
-                    db.commit()
-                    logger.info(f"Auto-registered new display: {display.display_name} ({display.hostname})")
-                    
-            finally:
-                db.close()
-                
-        except Exception as e:
-            logger.error(f"Failed to auto-register display {display.display_name}: {e}")
-    
     async def _monitoring_loop(self):
         """Background monitoring loop for display health"""
         while self.is_running:
@@ -389,36 +329,12 @@ class MdnsDiscoveryService:
                                 display.is_online = False
                                 logger.info(f"Display marked offline due to timeout: {display.display_name}")
                                 self._notify_callbacks(display, "lost")
-                                
-                                # Update database
-                                if self.auto_register:
-                                    asyncio.create_task(self._update_display_offline(display))
                 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"Error in mDNS monitoring loop: {e}")
                 await asyncio.sleep(10)  # Wait before retrying
-    
-    async def _update_display_offline(self, display: DiscoveredDisplay):
-        """Update display as offline in database"""
-        try:
-            db = SessionLocal()
-            try:
-                existing = db.query(DisplayClient).filter(
-                    DisplayClient.hostname == display.hostname
-                ).first()
-                
-                if existing:
-                    existing.is_online = False
-                    existing.last_seen = datetime.now()
-                    db.commit()
-                    
-            finally:
-                db.close()
-                
-        except Exception as e:
-            logger.error(f"Failed to update display offline status: {e}")
     
     def get_discovery_stats(self) -> Dict[str, Any]:
         """Get discovery statistics"""
@@ -432,7 +348,6 @@ class MdnsDiscoveryService:
                 "total_discovered": total_displays,
                 "online_displays": online_displays,
                 "offline_displays": total_displays - online_displays,
-                "auto_register": self.auto_register,
                 "update_interval": self.update_interval,
                 "offline_timeout": self.offline_timeout
             }
