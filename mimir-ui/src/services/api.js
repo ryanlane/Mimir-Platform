@@ -253,8 +253,8 @@ export const api = {
   getDisplayStatus: () => apiClient.get('/displays/status'),
   clearDisplay: () => apiClient.post('/display/clear'),
 
-  // v2.1 Channel System
-  getChannelsManifest: () => apiClient.get('/channels/manifest'),
+  // v2.1 Channel System (Updated for embedded plugin architecture)
+  // Note: /channels/manifest endpoint doesn't exist - use individual channel manifests
   testChannel: (channelId) => apiClient.post(`/channels/${channelId}/test`),
   getChannelHealth: (channelId) => apiClient.get(`/channels/${channelId}/health`),
   getChannelToken: (channelId) => apiClient.get(`/channels/${channelId}/token`),
