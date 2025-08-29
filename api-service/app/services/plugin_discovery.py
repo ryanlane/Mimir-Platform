@@ -169,6 +169,8 @@ class PluginDiscoveryService:
                 plugin.healthy = False
                 return
             
+            logger.info(f"Found channel class for {plugin.id}: {channel_class.__name__} from {channel_class.__module__}")
+            
             # Instantiate the channel
             plugin.instance = channel_class(str(plugin.plugin_path))
             
