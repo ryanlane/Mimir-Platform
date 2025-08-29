@@ -9,6 +9,7 @@ import './Scenes.css';
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
   const [channels, setChannels] = useState([]);
+  const [channelManifests, setChannelManifests] = useState({}); // Cache for channel manifests
   const [displayStatus, setDisplayStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -48,7 +49,27 @@ const Scenes = () => {
       console.log('Current scene from API:', displayResponse?.data?.currentScene);
 
       setScenes(scenesResponse.data.scenes || []);
-      setChannels(channelsResponse.data.channels || []);
+      const channelList = channelsResponse.data.channels || [];
+      setChannels(channelList);
+      
+      // Load channel manifests for better subchannel display
+      const manifestPromises = channelList.map(async (channel) => {
+        try {
+          const manifestResponse = await api.getChannelManifest(channel.id);
+          return { channelId: channel.id, manifest: manifestResponse.data };
+        } catch (error) {
+          console.log(`Could not load manifest for ${channel.id}:`, error.message);
+          return { channelId: channel.id, manifest: null };
+        }
+      });
+      
+      const manifestResults = await Promise.all(manifestPromises);
+      const manifestsMap = manifestResults.reduce((acc, result) => {
+        acc[result.channelId] = result.manifest;
+        return acc;
+      }, {});
+      
+      setChannelManifests(manifestsMap);
       
       // Only set display status if we don't have WebSocket state
       if (!currentState?.displayStatus) {
@@ -321,12 +342,32 @@ const Scenes = () => {
                           const channel = channels.find(c => c.id === channelId);
                           const displayName = channel?.name || channelId;
                           
+                          // Get subchannel display name from manifest
+                          let subChannelDisplayName = subChannelId;
+                          if (subChannelId && channelManifests[channelId]) {
+                            const manifest = channelManifests[channelId];
+                            // Check for galleries (photo frame channel)
+                            if (manifest.galleries) {
+                              const gallery = manifest.galleries.find(g => g.id === subChannelId);
+                              if (gallery) {
+                                subChannelDisplayName = `${gallery.name} (${gallery.image_count || 0} images)`;
+                              }
+                            }
+                            // Future: Add support for other subchannel types
+                            // else if (manifest.subchannels) {
+                            //   const subchannel = manifest.subchannels.find(s => s.id === subChannelId);
+                            //   if (subchannel) {
+                            //     subChannelDisplayName = subchannel.name;
+                            //   }
+                            // }
+                          }
+                          
                           return (
                             <span key={`${channelId}-${subChannelId || 'all'}-${index}`} className="channel-tag">
                               {displayName}
                               {subChannelId && (
                                 <span className="subchannel-indicator">
-                                  → {subChannelId}
+                                  → {subChannelDisplayName}
                                 </span>
                               )}
                             </span>

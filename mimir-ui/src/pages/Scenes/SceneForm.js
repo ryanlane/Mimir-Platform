@@ -18,14 +18,14 @@ const SceneForm = ({ scene, channels, onClose }) => {
   });
   const [loading, setLoading] = useState(false);
   
-  // Sub-channel support
+  // Plugin manifest support for subchannels/galleries
   const [subChannelSupport, setSubChannelSupport] = useState({});
   const [subChannelRequirements, setSubChannelRequirements] = useState({});
   const [availableSubChannels, setAvailableSubChannels] = useState({});
   const [loadingSubChannels, setLoadingSubChannels] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
 
-  // Load sub-channel support for all channels
+  // Load channel capabilities and subchannels/galleries from plugin manifests
   const loadSubChannelData = useCallback(async () => {
     if (!channels.length) return;
     
@@ -36,25 +36,51 @@ const SceneForm = ({ scene, channels, onClose }) => {
     
     for (const channel of channels) {
       try {
-        // Use the enhanced subchannel config endpoint with subchannels included
-        const configResponse = await api.getSubChannelConfig(channel.id, true);
-        const data = configResponse.data;
+        // Use the new plugin manifest endpoint to get capabilities
+        const manifestResponse = await api.getChannelManifest(channel.id);
+        const manifest = manifestResponse.data;
         
-        supportInfo[channel.id] = data?.supports_subchannels || false;
+        // Check if channel supports galleries (photo frame) or other subchannel types
+        const hasGalleries = manifest.galleries && Array.isArray(manifest.galleries) && manifest.galleries.length > 0;
+        const hasSubchannels = manifest.subchannels && Array.isArray(manifest.subchannels) && manifest.subchannels.length > 0;
+        const supportsSubchannels = hasGalleries || hasSubchannels;
+        
+        supportInfo[channel.id] = supportsSubchannels;
+        
+        // For photo frame channel, galleries are optional subchannels
+        // Other plugins might have different requirements
         requirementsInfo[channel.id] = {
-          requires_subchannel_selection: data?.requires_subchannel || false
+          requires_subchannel_selection: false // Most channels don't require subchannel selection
         };
-        subChannelsData[channel.id] = data?.subchannels || [];
+        
+        // Convert galleries or subchannels to unified subchannel format
+        if (hasGalleries) {
+          subChannelsData[channel.id] = manifest.galleries.map(gallery => ({
+            id: gallery.id,
+            name: gallery.name,
+            image_count: gallery.image_count,
+            type: 'gallery'
+          }));
+        } else if (hasSubchannels) {
+          subChannelsData[channel.id] = manifest.subchannels.map(subchannel => ({
+            id: subchannel.id,
+            name: subchannel.name,
+            type: 'subchannel'
+          }));
+        } else {
+          subChannelsData[channel.id] = [];
+        }
         
         console.log(`Channel ${channel.id}:`, {
           supports: supportInfo[channel.id],
           requires: requirementsInfo[channel.id].requires_subchannel_selection,
-          subchannels: subChannelsData[channel.id].length
+          subchannels: subChannelsData[channel.id].length,
+          type: hasGalleries ? 'galleries' : hasSubchannels ? 'subchannels' : 'none'
         });
         
       } catch (error) {
-        // Channel doesn't support sub-channels or error occurred
-        console.log(`Channel ${channel.id} doesn't support subchannels:`, error.message);
+        // Channel doesn't support manifest or error occurred
+        console.log(`Channel ${channel.id} manifest error:`, error.message);
         supportInfo[channel.id] = false;
         requirementsInfo[channel.id] = { requires_subchannel_selection: false };
         subChannelsData[channel.id] = [];
@@ -67,7 +93,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
     setLoadingSubChannels(false);
     
     // Debug logging
-    console.log('SubChannel Support:', supportInfo);
+    console.log('SubChannel Support (from manifests):', supportInfo);
     console.log('SubChannel Requirements:', requirementsInfo);
     console.log('Available SubChannels:', subChannelsData);
   }, [channels]);
@@ -80,7 +106,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
           // Old format: just channel ID
           return { channel_id: channel, subchannel_id: null };
         } else if (channel && typeof channel === 'object') {
-          // New format: channel assignment object
+          // New format: channel assignment object (subchannel_id could be gallery ID)
           return {
             channel_id: channel.channel_id,
             subchannel_id: channel.subchannel_id || null
@@ -95,7 +121,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
       setFormData({
         name: scene.name || '',
         channels: singleChannel,
-        distribution_mode: scene.distribution_mode || 'MIRROR', // Include distribution mode from existing scene
+        distribution_mode: scene.distribution_mode || 'MIRROR',
         overlay: scene.overlay || {
           overlays: [],
           position: ['top', 'right'],
@@ -128,7 +154,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
         const subchannelNames = availableSubchannels.map(sc => sc.name).join(', ');
         
         errors.push(
-          `Channel "${channel?.name || channelId}" requires a subchannel selection. ` +
+          `Channel "${channel?.name || channelId}" requires a gallery/subchannel selection. ` +
           `Available options: ${subchannelNames || 'None available'}`
         );
       }
@@ -292,7 +318,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
                   
                   {isChannelSelected(channel.id) && subChannelSupport[channel.id] && (
                     <div className="subchannel-selection">
-                      <label className="subchannel-label">Sub-Channel:</label>
+                      <label className="subchannel-label">Gallery/Sub-Channel:</label>
                       {availableSubChannels[channel.id]?.length > 0 ? (
                         <select
                           value={getSelectedSubChannel(channel.id)}
@@ -300,23 +326,24 @@ const SceneForm = ({ scene, channels, onClose }) => {
                           className="subchannel-select"
                         >
                           {!subChannelRequirements[channel.id]?.requires_subchannel_selection && (
-                            <option value="">All Content</option>
+                            <option value="">All Content (Random from all galleries)</option>
                           )}
                           {subChannelRequirements[channel.id]?.requires_subchannel_selection && !getSelectedSubChannel(channel.id) && (
-                            <option value="">Select a subchannel...</option>
+                            <option value="">Select a gallery...</option>
                           )}
                           {availableSubChannels[channel.id].map(subChannel => (
                             <option key={subChannel.id} value={subChannel.id}>
                               {subChannel.name}
+                              {subChannel.image_count !== undefined && ` (${subChannel.image_count || 0} images)`}
                             </option>
                           ))}
                         </select>
                       ) : (
-                        <div className="subchannel-loading">No subchannels available</div>
+                        <div className="subchannel-loading">No galleries available</div>
                       )}
                       {subChannelRequirements[channel.id]?.requires_subchannel_selection && (
                         <div className="subchannel-requirement-note">
-                          * Subchannel selection required
+                          * Gallery selection required
                         </div>
                       )}
                     </div>
@@ -327,7 +354,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
                   )}
 
                   {isChannelSelected(channel.id) && !subChannelSupport[channel.id] && !loadingSubChannels && (
-                    <div className="subchannel-loading">This channel does not support sub-channels</div>
+                    <div className="subchannel-loading">This channel does not support galleries or sub-channels</div>
                   )}
                 </div>
               ))}
