@@ -62,15 +62,23 @@ class FeatureDetectionService {
         this.supportedFeatures.add('plugin_system');
         this.apiVersion = '2.1';
         
-        // If we have channels, test manifest endpoint for first available channel
+        // If we have channels, test manifest endpoint for working channels only
         if (channels.data?.channels?.length > 0) {
-          try {
-            const firstChannel = channels.data.channels[0];
-            await api.getChannelManifest(firstChannel.id);
-            console.log('✅ Channel manifest endpoint detected for:', firstChannel.id);
-            this.supportedFeatures.add('channel_manifest');
-          } catch (manifestError) {
-            console.log('❌ Channel manifest endpoint not available:', manifestError.message);
+          let manifestFound = false;
+          for (const channel of channels.data.channels) {
+            try {
+              await api.getChannelManifest(channel.id);
+              console.log('✅ Channel manifest endpoint detected for:', channel.id);
+              this.supportedFeatures.add('channel_manifest');
+              manifestFound = true;
+              break; // Stop after finding one working manifest
+            } catch (manifestError) {
+              console.log(`⚠️ Channel manifest not available for ${channel.id}:`, manifestError.response?.data?.detail || manifestError.message);
+              // Continue to next channel
+            }
+          }
+          if (!manifestFound) {
+            console.log('❌ No working channel manifests found');
           }
         }
       } catch (error) {
@@ -82,42 +90,54 @@ class FeatureDetectionService {
       try {
         const channels = await api.getChannels();
         if (channels.data?.channels?.length > 0) {
-          const firstChannel = channels.data.channels[0];
-          await api.getChannelHealth(firstChannel.id);
-          console.log('✅ Channel health endpoint detected');
-          this.supportedFeatures.add('channel_health');
+          // Try the photoframe channel first since we know it works
+          const workingChannel = channels.data.channels.find(ch => ch.id === 'com.epaperframe.photoframe') 
+                               || channels.data.channels[0];
+          try {
+            await api.getChannelHealth(workingChannel.id);
+            console.log('✅ Channel health endpoint detected for:', workingChannel.id);
+            this.supportedFeatures.add('channel_health');
+          } catch (healthError) {
+            if (healthError.response?.status === 404) {
+              // Channel not found is OK, endpoint exists
+              this.supportedFeatures.add('channel_health');
+              console.log('✅ Channel health endpoint exists (404 response is expected)');
+            } else {
+              console.log('❌ Channel health endpoint not available:', healthError.message);
+            }
+          }
         } else {
           console.log('❌ No channels available to test health endpoint');
         }
       } catch (error) {
-        if (error.response?.status === 404) {
-          // Channel not found is OK, endpoint exists
-          this.supportedFeatures.add('channel_health');
-          console.log('✅ Channel health endpoint exists (404 response is expected)');
-        } else {
-          console.log('❌ Channel health endpoint not available:', error.message);
-        }
+        console.log('❌ Cannot test channel health - channels endpoint failed:', error.message);
       }
 
       // Test for channel testing endpoint with actual available channels  
       try {
         const channels = await api.getChannels();
         if (channels.data?.channels?.length > 0) {
-          const firstChannel = channels.data.channels[0];
-          await api.testChannel(firstChannel.id);
-          console.log('✅ Channel testing endpoint detected');
-          this.supportedFeatures.add('channel_testing');
+          // Try the photoframe channel first since we know it works
+          const workingChannel = channels.data.channels.find(ch => ch.id === 'com.epaperframe.photoframe') 
+                               || channels.data.channels[0];
+          try {
+            await api.testChannel(workingChannel.id);
+            console.log('✅ Channel testing endpoint detected for:', workingChannel.id);
+            this.supportedFeatures.add('channel_testing');
+          } catch (testError) {
+            if (testError.response?.status === 404) {
+              // Channel not found is OK, endpoint exists
+              this.supportedFeatures.add('channel_testing');
+              console.log('✅ Channel testing endpoint exists (404 response is expected)');
+            } else {
+              console.log('❌ Channel testing endpoint not available:', testError.message);
+            }
+          }
         } else {
           console.log('❌ No channels available to test testing endpoint');
         }
       } catch (error) {
-        if (error.response?.status === 404) {
-          // Channel not found is OK, endpoint exists
-          this.supportedFeatures.add('channel_testing');
-          console.log('✅ Channel testing endpoint exists (404 response is expected)');
-        } else {
-          console.log('❌ Channel testing endpoint not available:', error.message);
-        }
+        console.log('❌ Cannot test channel testing - channels endpoint failed:', error.message);
       }
 
       console.log('🎯 Feature detection complete:', {

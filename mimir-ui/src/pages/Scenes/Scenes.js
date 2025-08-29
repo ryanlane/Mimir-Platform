@@ -58,7 +58,7 @@ const Scenes = () => {
           const manifestResponse = await api.getChannelManifest(channel.id);
           return { channelId: channel.id, manifest: manifestResponse.data };
         } catch (error) {
-          console.log(`Could not load manifest for ${channel.id}:`, error.message);
+          console.log(`Could not load manifest for ${channel.id}:`, error.response?.data?.detail || error.message);
           return { channelId: channel.id, manifest: null };
         }
       });
