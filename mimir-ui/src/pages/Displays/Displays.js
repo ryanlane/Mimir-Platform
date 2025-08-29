@@ -519,8 +519,8 @@ const Displays = () => {
               onDelete={handleDeleteDisplay}
               onRefresh={refreshDisplays}
             />
-            );
-          })}
+          );
+        })}
         </div>
       )}
 
