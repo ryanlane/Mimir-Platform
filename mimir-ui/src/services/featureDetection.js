@@ -53,16 +53,28 @@ class FeatureDetectionService {
         console.log('❌ v2.3 Display management not available');
       }
 
-      // Test for v2.1 Channel manifest endpoint
+      // Test for embedded plugin system by checking available channels
       try {
-        const manifest = await api.getChannelsManifest();
-        console.log('✅ Channel manifest endpoint detected:', manifest.data);
-        this.supportedFeatures.add('channel_manifest');
+        const channels = await api.getChannels();
+        console.log('✅ Embedded plugin system detected:', channels.data);
+        this.supportedFeatures.add('embedded_plugins');
         this.supportedFeatures.add('v2.1_channels');
         this.supportedFeatures.add('plugin_system');
         this.apiVersion = '2.1';
+        
+        // If we have channels, test manifest endpoint for first available channel
+        if (channels.data?.channels?.length > 0) {
+          try {
+            const firstChannel = channels.data.channels[0];
+            await api.getChannelManifest(firstChannel.id);
+            console.log('✅ Channel manifest endpoint detected for:', firstChannel.id);
+            this.supportedFeatures.add('channel_manifest');
+          } catch (manifestError) {
+            console.log('❌ Channel manifest endpoint not available');
+          }
+        }
       } catch (error) {
-        console.log('❌ v2.1 Channel manifest not available, falling back to v1.x');
+        console.log('❌ Embedded plugin system not available, falling back to v1.x');
         this.apiVersion = '1.x';
       }
 
