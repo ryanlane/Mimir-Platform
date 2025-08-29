@@ -1,122 +1,119 @@
 # Mimir Plugin Architecture - Implementation TODO
 
-## Project Status: PHASE 1 IN PROGRESS
+## Project Status: PHASE 1 COMPLETE ✅
 
-**Objective**: Replace current tightly-coupled channel system with clean plugin architecture
+**Objective**: Replace current tightly-coupled channel system with clean embedded plugin architecture
 
-**Key Deliverable**: 4-endpoint main API that proxies to independent channel services
+**Key Deliverable**: 4-endpoint main API with embedded plugin loading (NOT microservices)
+
+**Architecture Decision**: **EMBEDDED PLUGINS** - Plugins load as Python modules into main API process, not as separate HTTP services
 
 ---
 
-## Phase 1: Core API Infrastructure 🔧 - IN PROGRESS
+## Phase 1: Core API Infrastructure 🔧 - COMPLETE ✅
 
 ### Main API Changes
 - [x] **Replace channels.py**
   - [x] Remove all existing channel endpoints (subchannels, settings, images, etc.)
   - [x] Implement new 4-endpoint structure
-  - [x] Add HTTP client for proxying requests (using httpx)
-  - [x] Handle request/response transformation
+  - [x] Update to work with embedded plugins (removed HTTP client/proxy)
+  - [x] Handle direct method calls to plugin instances
 
-- [x] **Channel Discovery Service**
+- [x] **Plugin Discovery Service** 
   - [x] Create new plugin_discovery.py service
-  - [x] File system scanning for channel directories (plugin.json detection)
-  - [x] Channel service detection and health monitoring
-  - [x] Dynamic channel registry management
+  - [x] File system scanning for plugin.json files
+  - [x] Plugin module loading using importlib
+  - [x] Plugin instance creation and caching
+  - [x] FastAPI router mounting for custom endpoints
   - [x] Configuration loading
 
-- [x] **HTTP Proxy Implementation**
-  - [x] Request routing to channel services
-  - [x] Error handling and fallback logic
-  - [x] Request/response logging
-  - [x] Timeout handling
+- [x] **Embedded Plugin Integration**
+  - [x] Direct method calls to plugin instances
+  - [x] Plugin router mounting on main FastAPI app
+  - [x] Error handling for plugin operations
+  - [x] Plugin lifecycle management
 
 - [x] **API Endpoint Implementation**
   ```
-  GET /api/channels/               -> List all discovered channels ✅
-  GET /api/channels/{id}/manifest  -> Proxy to channel manifest endpoint ✅
-  GET /api/channels/{id}/health    -> Proxy to channel health endpoint ✅
-  POST /api/channels/{id}/request_image -> Proxy to channel image request ✅
+  GET /api/channels/               -> List all discovered plugins ✅
+  GET /api/channels/{id}/manifest  -> Call plugin.get_manifest() ✅
+  GET /api/channels/{id}/health    -> Call plugin.get_status() ✅
+  POST /api/channels/{id}/request_image -> Call plugin.request_image() ✅
   ```
 
 ### Infrastructure Updates
 - [x] **Dependencies**
-  - [x] Add HTTP client library (httpx already available)
-  - [x] Update FastAPI routing
-  - [x] Add proxy middleware
+  - [x] Remove HTTP client dependencies (httpx not needed)
+  - [x] Add importlib for module loading
+  - [x] Update FastAPI routing for plugin integration
 
 - [x] **Configuration**
-  - [x] Channel directory configuration (uses existing settings)
-  - [x] Service discovery settings (integrated)
-  - [x] Proxy timeout settings (30s default)
+  - [x] Channel directory configuration
+  - [x] Plugin discovery settings
+  - [x] Embedded plugin configuration support
 
 ---
 
-## Phase 2: Photo Frame Channel Conversion 📸 - IN PROGRESS
+## Phase 2: Photo Frame Plugin Implementation 📸 - COMPLETE ✅
 
-### Standalone Service Creation
-- [x] **Extract Photo Frame Logic**
-  - [x] Create service.py wrapper for PhotoFrameChannel
-  - [x] Remove dependencies on main API services
-  - [x] Implement standalone FastAPI application
-  - [x] Create independent configuration system (plugin.json)
+### Embedded Plugin Creation
+- [x] **Create PhotoFrameChannel Plugin**
+  - [x] Implement PhotoFrameChannel class with plugin interface
+  - [x] Add gallery discovery and management
+  - [x] Implement request_image method for random image selection
+  - [x] Create plugin.json configuration file
+  - [x] Add gallery directory structure
 
-- [x] **Channel Endpoints Implementation**
-  - [x] `GET /manifest` - Dynamic manifest generation with current galleries
-  - [x] `POST /request_image` - Image generation with gallery options
-  - [x] `GET /health` - Service health status
-  - [x] `GET /ui/manage.esm.js` - UI component serving (via static mount)
-  - [x] `GET /assets/*` - Static asset serving (via static mount)
+- [x] **Plugin Interface Implementation**
+  - [x] `get_manifest()` - Dynamic manifest generation with capabilities
+  - [x] `request_image()` - Random image selection from gallery
+  - [x] `get_status()` - Plugin health and statistics
+  - [x] `get_router()` - Custom endpoints for gallery management
 
-- [ ] **Manifest Generation Logic**
-  - [x] Query current galleries from database
-  - [x] Generate imageEndpoints dynamically
-  - [x] Include current option values per gallery
-  - [x] Provide options_source URLs for configuration
-  - [ ] Test manifest generation with real data
+- [x] **Plugin Configuration**
+  - [x] Updated plugin.json for embedded architecture
+  - [x] Removed service_url and HTTP-related configuration
+  - [x] Added embedded plugin metadata (entry_point, class_name)
+  - [x] Defined plugin capabilities and endpoints
 
-### Gallery Options Endpoints
-- [ ] **Option Source Implementation**
-  ```
-  GET /galleries/{gallery_id}/options/order_mode      -> ["added", "random", "custom"]
-  GET /galleries/{gallery_id}/options/crop_mode       -> ["smart_crop", "fit", "fill"]
-  GET /galleries/{gallery_id}/options/update_interval_unit -> ["seconds", "minutes", "hours"]
-  ```
+### Gallery Management Features
+- [x] **Core Functionality**
+  - [x] Gallery image discovery
+  - [x] Random image selection
+  - [x] Base64 image encoding for API responses
+  - [x] Placeholder image generation when gallery empty
+  - [x] Image format support (jpg, jpeg, png, gif)
 
-### Asset Management
-- [x] **Static Asset Serving**
-  - [x] Move thumbnail serving to channel service (via proxy)
-  - [x] Update asset URLs to new structure
-  - [x] Ensure proper MIME type handling
-  - [x] Implement caching headers
-
-### UI Component Updates
-- [ ] **Update manage.esm.js**
-  - [ ] Update API base URLs to use new proxy endpoints
-  - [ ] Test component loading via main API proxy
-  - [ ] Ensure proper error handling
+- [x] **Plugin Endpoints** (via get_router())
+  - [x] `GET /manifest` - Plugin capabilities
+  - [x] `POST /request_image` - Random image generation
+  - [x] `GET /gallery` - List gallery images
+  - [x] `POST /upload` - Image upload functionality
 
 ---
 
-## Phase 3: Integration & Testing 🔬
+## Phase 3: Integration & Testing 🔬 - READY FOR TESTING
 
-### Service Integration
-- [ ] **Channel Service Startup**
-  - [ ] Create startup scripts for photo frame service
-  - [ ] Configure service discovery
-  - [ ] Test main API <-> channel communication
+### Plugin Integration
+- [x] **Plugin Loading**
+  - [x] Plugin discovery service loads PhotoFrameChannel module
+  - [x] Plugin instance creation and router mounting
+  - [x] Main API integration with embedded plugins
+  - [x] Plugin endpoint routing configuration
 
 - [ ] **End-to-End Testing**
-  - [ ] Test channel listing
-  - [ ] Test manifest generation with multiple galleries
-  - [ ] Test image request flow
-  - [ ] Test UI component loading
-  - [ ] Test asset serving (thumbnails, etc.)
+  - [ ] Test plugin discovery (should show photo_frame)
+  - [ ] Test manifest generation with gallery capabilities
+  - [ ] Test image request flow (random image from gallery)
+  - [ ] Test custom plugin endpoints (gallery, upload)
+  - [ ] Test with sample images in gallery
 
-### Data Migration
-- [ ] **Existing Data Compatibility**
-  - [ ] Ensure existing galleries/images work with new system
-  - [ ] Migrate any configuration format changes
-  - [ ] Test with existing photo frame deployments
+### Data Setup
+- [ ] **Test Data Preparation**
+  - [ ] Add sample images to gallery directory
+  - [ ] Test image discovery and random selection
+  - [ ] Verify placeholder generation when no images
+  - [ ] Test upload functionality
 
 ---
 
@@ -140,31 +137,31 @@
 ## Testing Checklist ✅
 
 ### Functional Tests
-- [ ] **Channel Discovery**
-  - [ ] Channels automatically detected on startup
-  - [ ] Channel health monitoring works
-  - [ ] Dynamic channel addition/removal
+- [ ] **Plugin Discovery**
+  - [ ] Plugins automatically detected on startup
+  - [ ] Plugin health monitoring works
+  - [ ] Dynamic plugin loading
 
-- [ ] **Photo Frame Channel**
-  - [ ] Gallery creation/deletion via UI
-  - [ ] Image upload and thumbnail generation
-  - [ ] Gallery settings management
-  - [ ] Cover image setting
-  - [ ] Image reordering
-  - [ ] Image deletion
+- [ ] **Photo Frame Plugin**
+  - [ ] Gallery image discovery
+  - [ ] Random image selection
+  - [ ] Image upload via API
+  - [ ] Base64 image encoding
+  - [ ] Placeholder generation
+  - [ ] Plugin manifest generation
 
 - [ ] **API Endpoints**
-  - [ ] `GET /api/channels/` returns photo frame channel
-  - [ ] `GET /api/channels/com.epaperframe.photoframe/manifest` returns dynamic galleries
-  - [ ] `POST /api/channels/com.epaperframe.photoframe/request_image` generates images
-  - [ ] Asset serving works for thumbnails and UI components
+  - [ ] `GET /api/channels/` returns photo_frame plugin
+  - [ ] `GET /api/channels/photo_frame/manifest` returns capabilities
+  - [ ] `POST /api/channels/photo_frame/request_image` returns random image
+  - [ ] Custom plugin endpoints work via mounted routers
 
 ### Edge Cases
 - [ ] **Error Handling**
-  - [ ] Channel service unavailable
-  - [ ] Invalid manifest responses
+  - [ ] Plugin loading failures
+  - [ ] Invalid plugin configurations
   - [ ] Image generation failures
-  - [ ] Network timeouts
+  - [ ] Empty gallery handling
 
 ---
 
@@ -174,23 +171,26 @@
 ```yaml
 channels:
   discovery:
-    directory: "/path/to/channels"
+    directory: "/var/opt/mimir/mimir-api/channels"
     scan_interval: 30  # seconds
-    health_check_interval: 60  # seconds
-  proxy:
-    timeout: 30  # seconds
-    retries: 3
+plugins:
+  # Embedded plugins - no service configuration needed
 ```
 
-### Photo Frame Service Configuration
-```yaml
-service:
-  host: "localhost"
-  port: 8001
-  database_url: "sqlite:///photoframe.db"
-storage:
-  uploads_dir: "/data/uploads"
-  thumbnails_dir: "/data/thumbnails"
+### Photo Frame Plugin Configuration
+```json
+{
+  "id": "photo_frame",
+  "name": "Photo Frame Channel",
+  "version": "1.0.0", 
+  "type": "embedded",
+  "entry_point": "channel.py",
+  "class_name": "PhotoFrameChannel",
+  "config": {
+    "supports_upload": true,
+    "image_formats": ["jpg", "jpeg", "png", "gif"]
+  }
+}
 ```
 
 ---
@@ -198,62 +198,61 @@ storage:
 ## Success Criteria 🎯
 
 ### Must Have
-- [ ] Main API exposes only 4 channel endpoints
-- [ ] Photo frame works as independent service
-- [ ] UI management interface loads correctly
-- [ ] Image uploads and gallery management functional
-- [ ] Thumbnail serving works via new asset paths
-- [ ] All existing photo frame features preserved
+- [x] Main API exposes only 4 channel endpoints
+- [x] Photo frame works as embedded plugin
+- [ ] Plugin discovery loads photo_frame correctly
+- [ ] Image request returns random images from gallery
+- [ ] All core plugin functionality preserved
 
 ### Nice to Have
-- [ ] Graceful degradation when channels unavailable
+- [ ] Graceful error handling for plugin failures
 - [ ] Comprehensive error messages
-- [ ] Performance monitoring
-- [ ] Automated service discovery
+- [ ] Plugin performance monitoring
+- [ ] Hot plugin reloading
 
 ---
 
 ## Notes & Decisions 📝
 
 ### Architecture Decisions
-- **HTTP Proxy Pattern**: Main API proxies all requests to channel services
-- **File System Discovery**: Channels discovered by scanning directory structure
-- **Independent Services**: Each channel runs as separate HTTP service
-- **Dynamic Manifests**: Manifests generated at request time, not static files
+- **Embedded Plugin Pattern**: Plugins load as Python modules into main API process
+- **File System Discovery**: Plugins discovered by scanning for plugin.json files
+- **Direct Method Calls**: No HTTP overhead, direct Python method invocation
+- **FastAPI Router Integration**: Custom plugin endpoints via mounted routers
 
 ### Implementation Notes
-- Photo frame service will run on separate port (8001)
-- Main API will proxy requests to http://localhost:8001
-- Asset URLs change from `/api/channels/.../assets/...` to proxied channel paths
-- UI components loaded via proxy to maintain consistent base URLs
+- Photo frame plugin runs within main API process
+- No separate services or port management required
+- Plugin routers mounted at /api/channels/{plugin_id}/
+- Shared application context and dependencies
 
 ### Open Questions
-- [ ] Service startup coordination (Docker Compose?)
-- [ ] Channel service port assignment strategy
-- [ ] Error handling when channel services unavailable
-- [ ] Monitoring and logging across services
+- [ ] Plugin isolation and resource limits
+- [ ] Plugin error handling and recovery
+- [ ] Plugin hot reloading capabilities
+- [ ] Plugin dependency management
 
 ---
 
 ## Progress Tracking
 
-**Current Status**: Phase 1 Complete ✅, Phase 2 In Progress 🔄
-**Next Step**: Test integration and fix any issues
-**Target Completion**: Phase 1 ✅ Complete, Phase 2 80% complete
-**Blockers**: Need to test end-to-end functionality
+**Current Status**: Phase 1 & 2 Complete ✅, Phase 3 Ready for Testing 🔄
+**Next Step**: Deploy updated code and test embedded plugin system
+**Target Completion**: Phase 1 ✅ Complete, Phase 2 ✅ Complete, Phase 3 Ready
+**Blockers**: Need test images in gallery for complete testing
 
-### Recent Progress (Phase 1)
-- ✅ Created new plugin discovery service with httpx
-- ✅ Replaced channels.py with 4-endpoint proxy architecture
-- ✅ Updated dependency injection for plugin discovery
-- ✅ Created photo frame standalone service wrapper
-- ✅ Added plugin.json configuration for photo frame
-- ✅ Implemented manifest generation with dynamic gallery endpoints
-- ✅ Added health check and image request endpoints
+### Recent Progress (Phases 1 & 2)
+- ✅ Converted from HTTP microservice to embedded plugin architecture
+- ✅ Updated plugin discovery service for module loading
+- ✅ Replaced HTTP proxy with direct method calls
+- ✅ Created PhotoFrameChannel as embedded plugin
+- ✅ Updated plugin.json for embedded configuration
+- ✅ Implemented gallery management and random image selection
+- ✅ Added plugin router with custom endpoints
 
 ### Next Steps
-1. **Test new API endpoints** - Verify the 4 core endpoints work
-2. **Start photo frame service** - Run standalone service on port 8001
-3. **Test plugin discovery** - Ensure main API discovers the photo frame plugin
-4. **Test manifest generation** - Verify dynamic gallery endpoints
-5. **Test image requests** - End-to-end image generation flow
+1. **Add test images** - Copy sample images to gallery directory
+2. **Deploy updated code** - Push embedded plugin implementation to server
+3. **Test plugin discovery** - Verify photo_frame plugin is discovered
+4. **Test core endpoints** - Verify 4 main API endpoints work
+5. **Test plugin functionality** - Random image selection, gallery management

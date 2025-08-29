@@ -1,17 +1,22 @@
 """
-Plugin Discovery Service for New Channel Architecture
-Handles discovery and management of independent channel services
+Plugin Discovery Service for Embedded Channel Architecture
+Handles discovery and loading of channel plugins into the main API process
 """
 import json
-import asyncio
-import httpx
+import sys
+import importlib.util
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 import time
 
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+
 from app.config import settings
 from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 logger = get_logger(__name__)
 
@@ -23,22 +28,22 @@ class ChannelPlugin:
     name: str
     description: str
     icon: Optional[str]
-    service_url: str
     config_path: Path
+    plugin_path: Path
+    instance: Optional[Any] = None
     last_health_check: Optional[float] = None
-    healthy: bool = False
+    healthy: bool = True  # Embedded plugins are healthy if loaded
 
 
 class PluginDiscoveryService:
-    """Service for discovering and managing channel plugins"""
+    """Service for discovering and managing embedded channel plugins"""
     
     def __init__(self, channels_dir: Optional[str] = None):
         self.channels_dir = Path(channels_dir or settings.channels_directory)
         self.plugins: Dict[str, ChannelPlugin] = {}
-        self.http_timeout = 30  # seconds
         
-    async def discover_plugins(self) -> List[ChannelPlugin]:
-        """Discover channel plugins by scanning filesystem"""
+    async def discover_plugins(self, app: FastAPI) -> List[ChannelPlugin]:
+        """Discover and load channel plugins into the main API"""
         if not self.channels_dir.exists():
             self.channels_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Created channels directory: {self.channels_dir}")
@@ -59,15 +64,22 @@ class PluginDiscoveryService:
             # Look for plugin.json configuration file
             config_file = plugin_path / "plugin.json"
             if not config_file.exists():
-                logger.debug(f"No plugin.json found in {plugin_path.name}, skipping")
-                continue
+                logger.debug(f"No plugin.json found in {plugin_path.name}, trying config.json for backward compatibility")
+                # Fallback to config.json for backward compatibility
+                config_file = plugin_path / "config.json"
+                if not config_file.exists():
+                    logger.debug(f"No plugin.json or config.json found in {plugin_path.name}, skipping")
+                    continue
             
             try:
                 plugin = await self._load_plugin_config(config_file, plugin_path)
                 if plugin:
+                    # Load the plugin instance
+                    await self._load_plugin_instance(plugin, app)
+                    
                     discovered_plugins.append(plugin)
                     self.plugins[plugin.id] = plugin
-                    logger.info(f"Discovered plugin: {plugin.id} at {plugin.service_url}")
+                    logger.info(f"Discovered plugin: {plugin.id} at {plugin.plugin_path}")
                     
             except Exception as e:
                 logger.error(f"Error loading plugin from {plugin_path}: {e}")
@@ -76,113 +88,197 @@ class PluginDiscoveryService:
         return discovered_plugins
     
     async def _load_plugin_config(self, config_file: Path, plugin_path: Path) -> Optional[ChannelPlugin]:
-        """Load plugin configuration from plugin.json"""
+        """Load plugin configuration from plugin.json or config.json"""
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
             
-            # Validate required fields
-            required_fields = ['id', 'name', 'description', 'service_url']
-            missing_fields = [field for field in required_fields if field not in config]
-            
-            if missing_fields:
-                logger.warning(f"Plugin {plugin_path.name} missing required fields: {missing_fields}")
-                return None
-            
-            plugin = ChannelPlugin(
-                id=config['id'],
-                name=config['name'],
-                description=config['description'],
-                icon=config.get('icon'),
-                service_url=config['service_url'],
-                config_path=config_file
-            )
+            # Handle both plugin.json and config.json formats
+            if config_file.name == "plugin.json":
+                # New plugin.json format
+                required_fields = ['id', 'name', 'description']
+                missing_fields = [field for field in required_fields if field not in config]
+                
+                if missing_fields:
+                    logger.warning(f"Plugin {plugin_path.name} missing required fields: {missing_fields}")
+                    return None
+                
+                plugin = ChannelPlugin(
+                    id=config['id'],
+                    name=config['name'],
+                    description=config['description'],
+                    icon=config.get('icon'),
+                    config_path=config_file,
+                    plugin_path=plugin_path
+                )
+            else:
+                # Legacy config.json format
+                required_fields = ['name', 'description']
+                missing_fields = [field for field in required_fields if field not in config]
+                
+                if missing_fields:
+                    logger.warning(f"Plugin {plugin_path.name} missing required fields: {missing_fields}")
+                    return None
+                
+                # Use directory name or config id
+                plugin_id = config.get('id', plugin_path.name)
+                
+                plugin = ChannelPlugin(
+                    id=plugin_id,
+                    name=config['name'],
+                    description=config['description'],
+                    icon=config.get('icon'),
+                    config_path=config_file,
+                    plugin_path=plugin_path
+                )
             
             return plugin
             
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing plugin.json for {plugin_path.name}: {e}")
+            logger.error(f"Error parsing {config_file.name} for {plugin_path.name}: {e}")
             return None
     
-    async def check_plugin_health(self, plugin: ChannelPlugin) -> bool:
-        """Check if a plugin service is healthy"""
+    async def _load_plugin_instance(self, plugin: ChannelPlugin, app: FastAPI):
+        """Load and initialize plugin instance"""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                health_url = f"{plugin.service_url.rstrip('/')}/health"
-                response = await client.get(health_url)
-                plugin.last_health_check = time.time()
-                plugin.healthy = response.status_code == 200
-                return plugin.healthy
-                    
+            # Look for channel.py file
+            channel_file = plugin.plugin_path / "channel.py"
+            if not channel_file.exists():
+                logger.warning(f"No channel.py found for plugin {plugin.id}")
+                plugin.healthy = False
+                return
+            
+            # Import the channel module
+            spec = importlib.util.spec_from_file_location(
+                f"plugin_{plugin.id.replace('.', '_')}", 
+                channel_file
+            )
+            if spec is None or spec.loader is None:
+                logger.error(f"Failed to create module spec for {plugin.id}")
+                plugin.healthy = False
+                return
+            
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[f"plugin_{plugin.id.replace('.', '_')}"] = module
+            spec.loader.exec_module(module)
+            
+            # Find and instantiate the channel class
+            channel_class = self._find_channel_class(module, plugin.id)
+            if not channel_class:
+                logger.error(f"No suitable channel class found for {plugin.id}")
+                plugin.healthy = False
+                return
+            
+            # Instantiate the channel
+            plugin.instance = channel_class(str(plugin.plugin_path))
+            
+            # Mount plugin router if available
+            if hasattr(plugin.instance, 'get_router'):
+                router = plugin.instance.get_router()
+                if router:
+                    mount_path = f"/api/channels/{plugin.id}"
+                    app.include_router(router, prefix=mount_path, tags=[f"plugin-{plugin.id}"])
+                    logger.info(f"Mounted plugin router: {mount_path}")
+            
+            # Mount static assets
+            self._mount_static_assets(app, plugin)
+            
+            plugin.healthy = True
+            logger.info(f"Successfully loaded plugin instance for {plugin.id}")
+            
         except Exception as e:
-            logger.debug(f"Health check failed for {plugin.id}: {e}")
-            plugin.last_health_check = time.time()
+            logger.error(f"Error loading plugin instance for {plugin.id}: {e}")
             plugin.healthy = False
-            return False
+    
+    def _find_channel_class(self, module: Any, plugin_id: str) -> Optional[type]:
+        """Find the appropriate channel class in the module"""
+        # 1. Look for ChannelClass export (preferred)
+        if hasattr(module, 'ChannelClass'):
+            return getattr(module, 'ChannelClass')
+            
+        # 2. Look for class with "Channel" in the name
+        class_name = f'{plugin_id.split(".")[-1].title()}Channel'
+        if hasattr(module, class_name):
+            return getattr(module, class_name)
+            
+        # 3. Look for any class ending with "Channel"
+        for attr_name in dir(module):
+            attr = getattr(module, attr_name)
+            if (isinstance(attr, type) and 
+                attr_name.endswith('Channel') and 
+                attr.__module__ == module.__name__):
+                return attr
+                
+        return None
+    
+    def _mount_static_assets(self, app: FastAPI, plugin: ChannelPlugin):
+        """Mount static assets for the plugin"""
+        try:
+            # Mount UI directory if it exists
+            ui_path = plugin.plugin_path / "ui"
+            if ui_path.exists() and ui_path.is_dir():
+                mount_path = f"/api/channels/{plugin.id}/ui"
+                app.mount(mount_path, StaticFiles(directory=str(ui_path)), name=f"{plugin.id}-ui")
+                logger.info(f"Mounted UI assets: {mount_path} -> {ui_path}")
+
+            # Mount assets directory if it exists
+            assets_path = plugin.plugin_path / "assets"
+            if assets_path.exists() and assets_path.is_dir():
+                mount_path = f"/api/channels/{plugin.id}/assets"
+                app.mount(mount_path, StaticFiles(directory=str(assets_path)), name=f"{plugin.id}-assets")
+                logger.info(f"Mounted assets: {mount_path} -> {assets_path}")
+
+        except Exception as e:
+            logger.error(f"Error mounting static assets for {plugin.id}: {e}")
+    
+    async def check_plugin_health(self, plugin: ChannelPlugin) -> bool:
+        """Check if a plugin is healthy"""
+        plugin.last_health_check = time.time()
+        # For embedded plugins, health is determined by successful loading
+        return plugin.healthy
     
     async def get_plugin_manifest(self, plugin_id: str) -> Optional[Dict[str, Any]]:
-        """Get manifest from plugin service"""
+        """Get manifest from plugin instance"""
         plugin = self.plugins.get(plugin_id)
-        if not plugin:
+        if not plugin or not plugin.instance:
             return None
         
         try:
-            async with httpx.AsyncClient(timeout=self.http_timeout) as client:
-                manifest_url = f"{plugin.service_url.rstrip('/')}/manifest"
-                response = await client.get(manifest_url)
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    logger.error(f"Failed to get manifest for {plugin_id}: {response.status_code}")
-                    return None
+            # Try to get manifest from plugin instance
+            if hasattr(plugin.instance, 'get_manifest'):
+                return plugin.instance.get_manifest()
+            
+            # Fallback to basic manifest generation
+            return {
+                "id": plugin.id,
+                "name": plugin.name,
+                "description": plugin.description,
+                "icon": plugin.icon,
+                "imageEndpoints": [],  # Plugin should override this
+                "uiComponent": f"/api/channels/{plugin.id}/ui/manage.esm.js",
+                "staticAssets": f"/api/channels/{plugin.id}/assets"
+            }
                         
         except Exception as e:
             logger.error(f"Error getting manifest for {plugin_id}: {e}")
             return None
     
     async def request_plugin_image(self, plugin_id: str, request_data: Dict[str, Any]) -> Optional[bytes]:
-        """Request image generation from plugin service"""
+        """Request image generation from plugin instance"""
         plugin = self.plugins.get(plugin_id)
-        if not plugin:
+        if not plugin or not plugin.instance:
             return None
         
         try:
-            async with httpx.AsyncClient(timeout=self.http_timeout) as client:
-                request_url = f"{plugin.service_url.rstrip('/')}/request_image"
-                response = await client.post(request_url, json=request_data)
-                if response.status_code == 200:
-                    return response.content
-                else:
-                    logger.error(f"Failed to request image from {plugin_id}: {response.status_code}")
-                    return None
+            # Try to call image request method on plugin instance
+            if hasattr(plugin.instance, 'request_image'):
+                return plugin.instance.request_image(request_data)
+            
+            logger.error(f"Plugin {plugin_id} does not support image requests")
+            return None
                         
         except Exception as e:
             logger.error(f"Error requesting image from {plugin_id}: {e}")
-            return None
-    
-    async def proxy_request(self, plugin_id: str, path: str, method: str = "GET", 
-                          json_data: Optional[Dict[str, Any]] = None,
-                          query_params: Optional[Dict[str, str]] = None) -> Optional[httpx.Response]:
-        """Generic proxy request to plugin service"""
-        plugin = self.plugins.get(plugin_id)
-        if not plugin:
-            return None
-        
-        try:
-            async with httpx.AsyncClient(timeout=self.http_timeout) as client:
-                url = f"{plugin.service_url.rstrip('/')}/{path.lstrip('/')}"
-                
-                kwargs = {}
-                if json_data:
-                    kwargs['json'] = json_data
-                if query_params:
-                    kwargs['params'] = query_params
-                
-                response = await client.request(method, url, **kwargs)
-                return response
-                    
-        except Exception as e:
-            logger.error(f"Error proxying request to {plugin_id}: {e}")
             return None
     
     def get_plugin(self, plugin_id: str) -> Optional[ChannelPlugin]:

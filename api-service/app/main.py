@@ -34,8 +34,8 @@ def _initialize_services(app: FastAPI, logger):
     import asyncio
     
     async def discover_plugins():
-        discovered_plugins = await plugin_discovery_service.discover_plugins()
-        logger.info(f"Discovered {len(discovered_plugins)} channel plugins")
+        discovered_plugins = await plugin_discovery_service.discover_plugins(app)
+        logger.info(f"Discovered and loaded {len(discovered_plugins)} channel plugins")
     
     # Run plugin discovery
     asyncio.create_task(discover_plugins())

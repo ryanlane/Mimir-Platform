@@ -1,6 +1,6 @@
 """
 Channel Plugin API Routes
-FastAPI router for the new plugin-based channel architecture
+FastAPI router for the new embedded plugin architecture
 
 This file implements the 4-endpoint plugin architecture:
 1. GET /api/channels/ - List available channel plugins
@@ -8,12 +8,11 @@ This file implements the 4-endpoint plugin architecture:
 3. GET /api/channels/{channel_id}/health - Check channel health
 4. POST /api/channels/{channel_id}/request_image - Request image generation
 
-All other channel operations are proxied directly to the channel services.
+Channel plugins are loaded directly into the main API process and their routes
+are mounted at /api/channels/{channel_id}/* by the plugin discovery service.
 """
-from fastapi import APIRouter, HTTPException, Depends, Request
-from fastapi.responses import Response
-from typing import Dict, Any, List
-import httpx
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Dict, Any
 
 from app.services.deps import get_plugin_discovery_service
 from app.services.plugin_discovery import PluginDiscoveryService
@@ -68,74 +67,43 @@ async def get_channel_health(
     if not plugin:
         raise HTTPException(status_code=404, detail="Channel not found")
     
-    # Perform health check
-    healthy = await plugin_discovery.check_plugin_health(plugin)
+    # For embedded plugins, check if instance is available and working
+    healthy = plugin.instance is not None
     
     return {
         "channelId": channel_id,
         "name": plugin.name,
         "healthy": healthy,
         "lastCheck": plugin.last_health_check,
-        "serviceUrl": plugin.service_url
+        "pluginPath": plugin.plugin_path
     }
 
 
 @router.post("/{channel_id}/request_image")
 async def request_channel_image(
     channel_id: str,
-    request_data: Dict[str, Any],
+    request_data: Dict[str, Any] = None,
     plugin_discovery: PluginDiscoveryService = Depends(get_plugin_discovery_service)
 ):
     """Request image generation from channel"""
-    image_data = await plugin_discovery.request_plugin_image(channel_id, request_data)
-    if not image_data:
-        raise HTTPException(status_code=404, detail="Channel not found or failed to generate image")
-    
-    # Return image as response
-    return Response(content=image_data, media_type="image/jpeg")
-
-
-@router.api_route("/{channel_id}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def proxy_to_channel(
-    channel_id: str,
-    path: str,
-    request: Request,
-    plugin_discovery: PluginDiscoveryService = Depends(get_plugin_discovery_service)
-):
-    """Proxy all other requests to the channel service"""
     plugin = plugin_discovery.get_plugin(channel_id)
     if not plugin:
         raise HTTPException(status_code=404, detail="Channel not found")
     
-    # Extract request data
-    method = request.method
-    query_params = dict(request.query_params) if request.query_params else None
+    if not plugin.instance:
+        raise HTTPException(status_code=503, detail="Channel plugin not loaded")
     
-    # Handle request body for POST/PUT/PATCH requests
-    json_data = None
-    if method in ["POST", "PUT", "PATCH"]:
-        try:
-            json_data = await request.json()
-        except:
-            # If not JSON, we'll pass through without body for now
-            pass
-    
-    # Proxy the request
-    response = await plugin_discovery.proxy_request(
-        channel_id, 
-        path, 
-        method=method,
-        json_data=json_data,
-        query_params=query_params
-    )
-    
-    if not response:
-        raise HTTPException(status_code=503, detail="Channel service unavailable")
-    
-    # Return the proxied response
-    return Response(
-        content=response.content,
-        status_code=response.status_code,
-        headers=dict(response.headers),
-        media_type=response.headers.get("content-type", "application/json")
-    )
+    try:
+        # Call the request_image method on the embedded plugin instance
+        image_data = await plugin.instance.request_image(request_data or {})
+        
+        # Return the image data (assuming it's base64 encoded or binary)
+        return {"image": image_data}
+    except Exception as e:
+        logger.error(f"Error generating image from plugin {channel_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
+
+
+# Embedded plugins don't need a general proxy endpoint
+# All plugin functionality is exposed through their specific routes
+# which are mounted by the plugin discovery service
