@@ -4,6 +4,7 @@ import { Monitor, Plus, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw } from 
 import { api } from '../../services/api';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import featureDetection from '../../services/featureDetection';
 import DisplayCard from './DisplayCard';
 import DisplayRegistration from './DisplayRegistration';
 import SceneAssignment from './SceneAssignment';
@@ -39,6 +40,12 @@ const Displays = () => {
   
   // Discovery service status
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
+
+  // Clear feature detection cache on fresh page loads to avoid stale errors
+  useEffect(() => {
+    // Clear expired cache on component mount
+    featureDetection.clearExpiredCache();
+  }, []);
 
   const loadDisplays = useCallback(async () => {
     if (!supportsDisplayManagement()) {

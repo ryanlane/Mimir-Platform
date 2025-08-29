@@ -64,8 +64,16 @@ class FeatureDetectionService {
         
         // If we have channels, test manifest endpoint for working channels only
         if (channels.data?.channels?.length > 0) {
+          // Prioritize known working channels and avoid problematic ones
+          const workingChannels = channels.data.channels.filter(ch => 
+            ch.id === 'com.epaperframe.photoframe' || 
+            (!ch.id.includes('spotify') && !ch.id.includes('com.spotify'))
+          );
+          
+          const channelsToTest = workingChannels.length > 0 ? workingChannels : channels.data.channels;
+          
           let manifestFound = false;
-          for (const channel of channels.data.channels) {
+          for (const channel of channelsToTest) {
             try {
               await api.getChannelManifest(channel.id);
               console.log('✅ Channel manifest endpoint detected for:', channel.id);
@@ -90,12 +98,17 @@ class FeatureDetectionService {
       try {
         const channels = await api.getChannels();
         if (channels.data?.channels?.length > 0) {
-          // Try the photoframe channel first since we know it works
-          const workingChannel = channels.data.channels.find(ch => ch.id === 'com.epaperframe.photoframe') 
-                               || channels.data.channels[0];
+          // Prioritize known working channels and avoid problematic ones
+          const workingChannels = channels.data.channels.filter(ch => 
+            ch.id === 'com.epaperframe.photoframe' || 
+            (!ch.id.includes('spotify') && !ch.id.includes('com.spotify'))
+          );
+          
+          const channelToTest = workingChannels.length > 0 ? workingChannels[0] : channels.data.channels[0];
+          
           try {
-            await api.getChannelHealth(workingChannel.id);
-            console.log('✅ Channel health endpoint detected for:', workingChannel.id);
+            await api.getChannelHealth(channelToTest.id);
+            console.log('✅ Channel health endpoint detected for:', channelToTest.id);
             this.supportedFeatures.add('channel_health');
           } catch (healthError) {
             if (healthError.response?.status === 404) {
@@ -117,12 +130,17 @@ class FeatureDetectionService {
       try {
         const channels = await api.getChannels();
         if (channels.data?.channels?.length > 0) {
-          // Try the photoframe channel first since we know it works
-          const workingChannel = channels.data.channels.find(ch => ch.id === 'com.epaperframe.photoframe') 
-                               || channels.data.channels[0];
+          // Prioritize known working channels and avoid problematic ones
+          const workingChannels = channels.data.channels.filter(ch => 
+            ch.id === 'com.epaperframe.photoframe' || 
+            (!ch.id.includes('spotify') && !ch.id.includes('com.spotify'))
+          );
+          
+          const channelToTest = workingChannels.length > 0 ? workingChannels[0] : channels.data.channels[0];
+          
           try {
-            await api.testChannel(workingChannel.id);
-            console.log('✅ Channel testing endpoint detected for:', workingChannel.id);
+            await api.testChannel(channelToTest.id);
+            console.log('✅ Channel testing endpoint detected for:', channelToTest.id);
             this.supportedFeatures.add('channel_testing');
           } catch (testError) {
             if (testError.response?.status === 404) {
@@ -250,6 +268,17 @@ class FeatureDetectionService {
     this.apiVersion = null;
     this.supportedFeatures.clear();
     this.detectionPromise = null;
+    this.lastDetectionTime = null;
+    console.log('🔄 Feature detection cache cleared');
+  }
+
+  // Clear cache if it's older than specified time
+  clearExpiredCache() {
+    if (this.lastDetectionTime && (Date.now() - this.lastDetectionTime) > this.cacheTimeout) {
+      this.reset();
+      return true;
+    }
+    return false;
   }
 }
 

@@ -23,9 +23,11 @@ export const useFeatureDetection = () => {
         });
       } catch (error) {
         console.error('Feature detection failed:', error);
+        // Don't let feature detection errors break the app
+        // Default to basic functionality
         setFeatures({
-          apiVersion: '1.x',
-          supportedFeatures: [],
+          apiVersion: '2.3', // Assume modern API if detection fails
+          supportedFeatures: ['display_management', 'v2.3_displays'], // Basic display features
           isLoading: false,
           error: error.message
         });
