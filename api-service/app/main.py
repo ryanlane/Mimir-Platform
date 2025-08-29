@@ -35,10 +35,19 @@ def _initialize_services(app: FastAPI, logger):
     
     async def discover_plugins():
         discovered_plugins = await plugin_discovery_service.discover_plugins(app)
-        logger.info(f"Discovered and loaded {len(discovered_plugins)} channel plugins")
+        print(f"🔌 Plugins discovered: {len(discovered_plugins)} channel plugins loaded")
+        for plugin in discovered_plugins:
+            print(f"   - {plugin.id}: {plugin.name}")
+        return discovered_plugins
     
-    # Run plugin discovery
-    asyncio.create_task(discover_plugins())
+    # Run plugin discovery synchronously during startup
+    try:
+        loop = asyncio.get_event_loop()
+        discovered_plugins = loop.run_until_complete(discover_plugins())
+    except Exception as e:
+        print(f"❌ Plugin discovery failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Start distribution monitoring if enabled
     if settings.distribution_enabled:
