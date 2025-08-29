@@ -30,33 +30,36 @@ def _initialize_services(app: FastAPI, logger):
     """Initialize all services"""
     logger.info("Initializing services...")
     
-    # Initialize plugin discovery and discover channel plugins
-    import asyncio
-    
-    async def discover_plugins():
-        discovered_plugins = await plugin_discovery_service.discover_plugins(app)
-        print(f"🔌 Plugins discovered: {len(discovered_plugins)} channel plugins loaded")
-        for plugin in discovered_plugins:
-            print(f"   - {plugin.id}: {plugin.name}")
-        return discovered_plugins
-    
-    # Run plugin discovery synchronously during startup
-    try:
-        loop = asyncio.get_event_loop()
-        discovered_plugins = loop.run_until_complete(discover_plugins())
-    except Exception as e:
-        print(f"❌ Plugin discovery failed: {e}")
-        import traceback
-        traceback.print_exc()
+    # Store the app reference for plugin discovery
+    app.state.plugin_discovery_initialized = False
     
     # Start distribution monitoring if enabled
     if settings.distribution_enabled:
+        import asyncio
         asyncio.create_task(distribution_service.start_distribution_monitoring())
         logger.info("Distribution monitoring started")
     
     # Log service status
     capabilities = distribution_service.get_capability_flags()
     logger.info(f"Service capabilities: {capabilities}")
+
+
+async def initialize_plugins(app: FastAPI):
+    """Initialize plugins during startup event"""
+    if hasattr(app.state, 'plugin_discovery_initialized') and app.state.plugin_discovery_initialized:
+        return
+        
+    print("🔍 Starting plugin discovery...")
+    try:
+        discovered_plugins = await plugin_discovery_service.discover_plugins(app)
+        print(f"🔌 Plugins discovered: {len(discovered_plugins)} channel plugins loaded")
+        for plugin in discovered_plugins:
+            print(f"   - {plugin.id}: {plugin.name}")
+        app.state.plugin_discovery_initialized = True
+    except Exception as e:
+        print(f"❌ Plugin discovery failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def create_app() -> FastAPI:
@@ -125,6 +128,9 @@ async def startup_event():
     print(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
     print(f"📁 Channels Directory: {settings.channels_directory}")
     print(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
+    
+    # Initialize plugins
+    await initialize_plugins(app)
     
     if settings.redis_enabled:
         print(f"🔴 Redis: enabled at {settings.redis_url}")
