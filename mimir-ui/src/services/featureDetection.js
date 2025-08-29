@@ -78,11 +78,17 @@ class FeatureDetectionService {
         this.apiVersion = '1.x';
       }
 
-      // Test for channel health endpoint (sample test)
+      // Test for channel health endpoint with actual available channels
       try {
-        // We'll test with a known channel or handle 404s gracefully
-        await api.getChannelHealth('weather_channel');
-        this.supportedFeatures.add('channel_health');
+        const channels = await api.getChannels();
+        if (channels.data?.channels?.length > 0) {
+          const firstChannel = channels.data.channels[0];
+          await api.getChannelHealth(firstChannel.id);
+          console.log('✅ Channel health endpoint detected');
+          this.supportedFeatures.add('channel_health');
+        } else {
+          console.log('❌ No channels available to test health endpoint');
+        }
       } catch (error) {
         if (error.response?.status === 404) {
           // Channel not found is OK, endpoint exists
@@ -92,10 +98,17 @@ class FeatureDetectionService {
         }
       }
 
-      // Test for channel testing endpoint
+      // Test for channel testing endpoint with actual available channels
       try {
-        await api.testChannel('weather_channel');
-        this.supportedFeatures.add('channel_testing');
+        const channels = await api.getChannels();
+        if (channels.data?.channels?.length > 0) {
+          const firstChannel = channels.data.channels[0];
+          await api.testChannel(firstChannel.id);
+          console.log('✅ Channel testing endpoint detected');
+          this.supportedFeatures.add('channel_testing');
+        } else {
+          console.log('❌ No channels available to test testing endpoint');
+        }
       } catch (error) {
         if (error.response?.status === 404) {
           // Channel not found is OK, endpoint exists
@@ -179,9 +192,9 @@ class FeatureDetectionService {
     const featureAPI = { ...api };
 
     // Add safe wrappers for v2.1 features
-    featureAPI.getChannelsManifestSafe = async () => {
+    featureAPI.getChannelManifestSafe = async (channelId) => {
       if (this.hasFeature('channel_manifest')) {
-        return api.getChannelsManifest();
+        return api.getChannelManifest(channelId);
       }
       throw new Error('Channel manifest not supported in this API version');
     };
