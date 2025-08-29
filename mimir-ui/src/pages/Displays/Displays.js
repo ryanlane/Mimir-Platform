@@ -50,6 +50,7 @@ const Displays = () => {
   
   // Discovery service status
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
+  const [discoveredDisplayStats, setDiscoveredDisplayStats] = useState(null);
 
   // Clear feature detection cache on fresh page loads to avoid stale errors
   useEffect(() => {
@@ -83,6 +84,7 @@ const Displays = () => {
         console.log('🚀 Using cached displays data');
         setDisplays(displaysCache.displays || []);
         setDiscoveryStatus(displaysCache.discoveryStatus);
+        setDiscoveredDisplayStats(displaysCache.stats);
         setLoading(false);
         return;
       }
@@ -104,16 +106,21 @@ const Displays = () => {
       }
 
       // Fetch displays and discovery status
-      const [displaysResponse, discoveryResponse] = await Promise.all([
+      const [displaysResponse, discoveryResponse, statsResponse] = await Promise.all([
         api.getDisplays(params),
         api.getDiscoveryStatus().catch(err => {
           console.warn('Discovery status not available:', err);
+          return null;
+        }),
+        api.getDiscoveredDisplayStats().catch(err => {
+          console.warn('Discovered display stats not available:', err);
           return null;
         })
       ]);
 
       const allDisplays = displaysResponse.data?.data || displaysResponse.data || [];
       const discoveryData = discoveryResponse?.data || null;
+      const statsData = statsResponse?.data || null;
 
       // Normalize the display data and set source based on displayType
       const normalizedDisplays = allDisplays.map(display => ({
@@ -132,12 +139,13 @@ const Displays = () => {
       });
 
       // Update cache
-      displaysCache = { displays: normalizedDisplays, discoveryStatus: discoveryData };
+      displaysCache = { displays: normalizedDisplays, discoveryStatus: discoveryData, stats: statsData };
       displaysCacheTime = Date.now();
 
       console.log('🎯 About to set displays state with:', normalizedDisplays.length, 'displays');
       setDisplays(normalizedDisplays);
       setDiscoveryStatus(discoveryData);
+      setDiscoveredDisplayStats(statsData);
       console.log('✅ Displays state set complete');
     } catch (error) {
       console.error('Error loading displays:', error);
@@ -369,6 +377,35 @@ const Displays = () => {
                 <span>{discoveryStatus.service_status.online_displays} online</span>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Discovered Display Assignment Stats */}
+      {discoveredDisplayStats && (
+        <div className="assignment-stats">
+          <div className="assignment-info">
+            <div className="stats-header">
+              <h3>Assignment Status</h3>
+            </div>
+            <div className="assignment-stats-grid">
+              <div className="stat-item">
+                <span className="stat-value">{discoveredDisplayStats.total_assignments}</span>
+                <span className="stat-label">Total Assignments</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{discoveredDisplayStats.online_discovered_displays}</span>
+                <span className="stat-label">Online Discovered</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{discoveredDisplayStats.unassigned_discovered_displays}</span>
+                <span className="stat-label">Unassigned</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{discoveredDisplayStats.scenes_with_discovered_displays}</span>
+                <span className="stat-label">Scenes with Displays</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

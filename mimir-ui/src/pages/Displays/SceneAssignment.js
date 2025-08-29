@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Play, X, Image, CheckCircle } from 'lucide-react';
 import { api } from '../../services/api';
+import './Displays.css';
 
 const SceneAssignment = ({ display, onClose, onSuccess }) => {
   const [scenes, setScenes] = useState([]);
@@ -32,11 +33,23 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
 
     try {
       if (sceneId) {
-        await api.assignSceneToDisplay(display.id, sceneId);
-        console.log(`✅ Scene assigned to display: ${sceneId} -> ${display.name}`);
+        // Use appropriate assignment endpoint based on display type
+        if (display.displayType === 'discovered') {
+          await api.assignSceneToDiscoveredDisplay(display.id, sceneId);
+          console.log(`✅ Scene assigned to discovered display: ${sceneId} -> ${display.name}`);
+        } else {
+          await api.assignSceneToDisplay(display.id, sceneId);
+          console.log(`✅ Scene assigned to registered display: ${sceneId} -> ${display.name}`);
+        }
       } else {
-        await api.unassignSceneFromDisplay(display.id);
-        console.log(`✅ Scene unassigned from display: ${display.name}`);
+        // Unassign scene
+        if (display.displayType === 'discovered') {
+          await api.unassignSceneFromDiscoveredDisplay(display.id);
+          console.log(`✅ Scene unassigned from discovered display: ${display.name}`);
+        } else {
+          await api.unassignSceneFromDisplay(display.id);
+          console.log(`✅ Scene unassigned from registered display: ${display.name}`);
+        }
       }
       onSuccess(display.id, sceneId);
     } catch (error) {
@@ -92,7 +105,15 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
             <div className="display-summary">
               <Monitor size={20} />
               <div>
-                <strong>{display.name}</strong>
+                <div className="display-title-row">
+                  <strong>{display.name}</strong>
+                  {display.displayType === 'discovered' && (
+                    <span className="display-type-badge discovered">Discovered</span>
+                  )}
+                  {display.displayType === 'registered' && (
+                    <span className="display-type-badge registered">Registered</span>
+                  )}
+                </div>
                 <div className="display-specs">
                   {display.resolution[0]}×{display.resolution[1]} • {display.orientation}
                   {display.location && ` • ${display.location}`}
