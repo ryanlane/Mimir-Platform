@@ -94,9 +94,109 @@ const ChannelSettings = ({ channel, onClose }) => {
   const [settingsType, setSettingsType] = useState('simple');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showManagementInterface, setShowManagementInterface] = useState(false);
 
   useEffect(() => {
+    const loadManagementComponent = async (configData) => {
+      try {
+        // Find management component with route
+        const managementComponent = configData?.ui?.find(ui => ui.route);
+        
+        if (managementComponent) {
+          // Construct full URL for the module
+          // The moduleUrl from manifest is relative like "/api/channels/..."
+          // We need to prepend the server base URL
+          const serverBaseUrl = getServerBaseUrl(); // Use dynamic server URL
+          let fullModuleUrl = managementComponent.moduleUrl.startsWith('http') 
+            ? managementComponent.moduleUrl 
+            : `${serverBaseUrl}${managementComponent.moduleUrl}`;
+          
+          // Add cache-busting parameter to ensure fresh module loading
+          const cacheBuster = Date.now();
+          fullModuleUrl += fullModuleUrl.includes('?') ? `&v=${cacheBuster}` : `?v=${cacheBuster}`;
+          
+          console.log(`Loading Management Component: ${managementComponent.element} from ${fullModuleUrl}`);
+          
+          // Check if component is already loaded
+          if (!customElements.get(managementComponent.element)) {
+            // Set global API configuration for the Web Component
+            window.mimirApiBaseUrl = getApiBaseUrl();
+            window.mimirServerBaseUrl = getServerBaseUrl(); // Provide server base URL for Web Components
+            
+            // Store original fetch before overriding
+            const originalFetch = window.fetch;
+            
+            // Override global fetch to redirect API calls to the correct server
+            window.fetch = function(input, init = {}) {
+              let url = input;
+              
+              // Handle Request objects
+              if (input instanceof Request) {
+                url = input.url;
+              }
+              
+              // If it's a relative URL starting with /api, redirect to the server
+              if (typeof url === 'string' && url.startsWith('/api/')) {
+                url = `${getServerBaseUrl()}${url}`;
+                
+                // Asset URLs (like uploaded images) don't need credentials for CORS compatibility
+                const isAssetUrl = url.includes('/assets/') || url.includes('/uploads/');
+                const needsCredentials = !isAssetUrl && (url.includes('/upload') || url.includes('/settings') || url.includes('/delete') || (init.method && init.method !== 'GET'));
+                
+                init = {
+                  ...init,
+                  ...(needsCredentials && { credentials: 'include' }),
+                  headers: {
+                    ...init.headers,
+                  }
+                };
+              }
+              
+              return originalFetch.call(this, url, init);
+            };
+            
+            // Provide a global API client for Web Components to use
+            window.mimirAPI = {
+              baseUrl: getApiBaseUrl(),
+              async fetch(endpoint, options = {}) {
+                const url = endpoint.startsWith('http') ? endpoint : `${getServerBaseUrl()}${endpoint}`;
+                return fetch(url, {
+                  ...options,
+                  credentials: 'include', // As required by the integration guide
+                  headers: {
+                    ...options.headers,
+                    // Add any additional required headers
+                  }
+                });
+              },
+              // Channel-specific API helpers
+              uploadFiles: async (channelId, files) => {
+                const formData = new FormData();
+                files.forEach(file => formData.append('files', file));
+                return window.mimirAPI.fetch(`/api/channels/${channelId}/upload`, {
+                  method: 'POST',
+                  body: formData
+                });
+              }
+            };
+            
+            await import(/* webpackIgnore: true */ fullModuleUrl);
+            console.log(`✅ Management Component ${managementComponent.element} loaded successfully`);
+            
+            // Restore original fetch after component is loaded (optional)
+            // window.fetch = originalFetch;
+          }
+          
+          return managementComponent;
+        } else {
+          console.log(`No management component found for ${channel.id}`);
+          return null;
+        }
+      } catch (error) {
+        console.error('Error loading Management Component:', error);
+        return null;
+      }
+    };
+
     const loadChannelData = async () => {
       try {
         // Set global API configuration early for any Web Components
@@ -121,6 +221,11 @@ const ChannelSettings = ({ channel, onClose }) => {
           setSettingsSchema(settingsData.schema || null);
           setSettingsType(settingsData.settingsType || 'simple');
           setSettings(settingsData.current || {});
+        }
+
+        // Auto-load management component if available
+        if (configResponse.data?.ui?.some(ui => ui.route)) {
+          await loadManagementComponent(configResponse.data);
         }
       } catch (error) {
         console.error('Error loading channel data:', error);
@@ -151,113 +256,12 @@ const ChannelSettings = ({ channel, onClose }) => {
     }));
   };
 
-  const loadManagementComponent = async (configData) => {
-    try {
-      // Find management component with route
-      const managementComponent = configData?.ui?.find(ui => ui.route);
-      
-      if (managementComponent) {
-        // Construct full URL for the module
-        // The moduleUrl from manifest is relative like "/api/channels/..."
-        // We need to prepend the server base URL
-        const serverBaseUrl = getServerBaseUrl(); // Use dynamic server URL
-        let fullModuleUrl = managementComponent.moduleUrl.startsWith('http') 
-          ? managementComponent.moduleUrl 
-          : `${serverBaseUrl}${managementComponent.moduleUrl}`;
-        
-        // Add cache-busting parameter to ensure fresh module loading
-        const cacheBuster = Date.now();
-        fullModuleUrl += fullModuleUrl.includes('?') ? `&v=${cacheBuster}` : `?v=${cacheBuster}`;
-        
-        console.log(`Loading Management Component: ${managementComponent.element} from ${fullModuleUrl}`);
-        
-        // Check if component is already loaded
-        if (!customElements.get(managementComponent.element)) {
-          // Set global API configuration for the Web Component
-          window.mimirApiBaseUrl = getApiBaseUrl();
-          window.mimirServerBaseUrl = getServerBaseUrl(); // Provide server base URL for Web Components
-          
-          // Store original fetch before overriding
-          const originalFetch = window.fetch;
-          
-          // Override global fetch to redirect API calls to the correct server
-          window.fetch = function(input, init = {}) {
-            let url = input;
-            
-            // Handle Request objects
-            if (input instanceof Request) {
-              url = input.url;
-            }
-            
-            // If it's a relative URL starting with /api, redirect to the server
-            if (typeof url === 'string' && url.startsWith('/api/')) {
-              url = `${getServerBaseUrl()}${url}`;
-              
-              // Asset URLs (like uploaded images) don't need credentials for CORS compatibility
-              const isAssetUrl = url.includes('/assets/') || url.includes('/uploads/');
-              const needsCredentials = !isAssetUrl && (url.includes('/upload') || url.includes('/settings') || url.includes('/delete') || (init.method && init.method !== 'GET'));
-              
-              init = {
-                ...init,
-                ...(needsCredentials && { credentials: 'include' }),
-                headers: {
-                  ...init.headers,
-                }
-              };
-            }
-            
-            return originalFetch.call(this, url, init);
-          };
-          
-          // Provide a global API client for Web Components to use
-          window.mimirAPI = {
-            baseUrl: getApiBaseUrl(),
-            async fetch(endpoint, options = {}) {
-              const url = endpoint.startsWith('http') ? endpoint : `${getServerBaseUrl()}${endpoint}`;
-              return fetch(url, {
-                ...options,
-                credentials: 'include', // As required by the integration guide
-                headers: {
-                  ...options.headers,
-                  // Add any additional required headers
-                }
-              });
-            },
-            // Channel-specific API helpers
-            uploadFiles: async (channelId, files) => {
-              const formData = new FormData();
-              files.forEach(file => formData.append('files', file));
-              return window.mimirAPI.fetch(`/api/channels/${channelId}/upload`, {
-                method: 'POST',
-                body: formData
-              });
-            }
-          };
-          
-          await import(/* webpackIgnore: true */ fullModuleUrl);
-          console.log(`✅ Management Component ${managementComponent.element} loaded successfully`);
-          
-          // Restore original fetch after component is loaded (optional)
-          // window.fetch = originalFetch;
-        }
-        
-        return managementComponent;
-      } else {
-        console.log(`No management component found for ${channel.id}`);
-        return null;
-      }
-    } catch (error) {
-      console.error('Error loading Management Component:', error);
-      return null;
-    }
-  };
-
   const hasManagementInterface = () => {
     return config?.ui?.some(ui => ui.route) || false;
   };
 
   const renderManagementComponent = () => {
-    if (!config?.ui || !showManagementInterface) return null;
+    if (!config?.ui) return null;
 
     // Find management component with route
     const managementComponent = config.ui.find(ui => ui.route);
@@ -286,7 +290,7 @@ const ChannelSettings = ({ channel, onClose }) => {
       },
       onSettingsChange: handleSettingChange,
       onSave: handleSave,
-      onClose: () => setShowManagementInterface(false)
+      onClose: onClose
     };
 
     // Create the Management Web Component element
@@ -438,87 +442,35 @@ const ChannelSettings = ({ channel, onClose }) => {
         </div>
 
         <div className="channel-settings-body">
-          {/* Show management interface if loaded */}
-          {showManagementInterface ? (
-            <div className="management-interface">
-              <div className="management-header">
-                <h3>Management Interface</h3>
-                <button 
-                  className="btn btn-sm" 
-                  onClick={() => setShowManagementInterface(false)}
-                >
-                  ← Back to Settings
-                </button>
-              </div>
-              <div className="management-content">
-                {renderManagementComponent()}
-              </div>
+          {/* Inject channel UI component directly if available */}
+          {hasManagementInterface() ? (
+            renderManagementComponent()
+          ) : settingsType === 'simple' && settingsSchema?.properties ? (
+            /* Show simple settings form for channels with settingsType: simple */
+            <div className="settings-form">
+              {Object.entries(settingsSchema.properties).map(([key, setting]) => (
+                <div key={key} className="form-group">
+                  <label className="form-label">
+                    {setting.title || setting.label || key}
+                    {setting.required && <span className="required">*</span>}
+                  </label>
+                  {setting.description && (
+                    <p className="setting-description">{setting.description}</p>
+                  )}
+                  {renderSettingField(key, setting)}
+                </div>
+              ))}
             </div>
           ) : (
-            <>
-              {/* For advanced channels with custom UI, show management interface option */}
-              {settingsType === 'advanced' ? (
-                <div className="custom-ui-info">
-                  <p className="text-tertiary">
-                    This channel has a custom management interface with advanced features.
-                  </p>
-                  
-                  {/* Debug info - remove this later */}
-                  {console.log('Debug - settingsType:', settingsType)}
-                  {console.log('Debug - hasManagementInterface():', hasManagementInterface())}
-                  {console.log('Debug - config?.ui:', config?.ui)}
-                  
-                  {hasManagementInterface() ? (
-                    <div className="custom-ui-actions">
-                      <button
-                        className="btn btn-primary"
-                        onClick={async () => {
-                          // Load and show the management component
-                          const managementComponent = await loadManagementComponent(config);
-                          if (managementComponent) {
-                            setShowManagementInterface(true);
-                          }
-                        }}
-                      >
-                        Open Management Interface
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="debug-info">
-                      <p style={{color: 'red', fontSize: '12px'}}>
-                        Debug: No management interface found. UI components: {JSON.stringify(config?.ui?.map(ui => ({element: ui.element, route: ui.route})))}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ) : settingsType === 'simple' && settingsSchema?.properties ? (
-                /* Show simple settings form for channels with settingsType: simple */
-                <div className="settings-form">
-                  {Object.entries(settingsSchema.properties).map(([key, setting]) => (
-                    <div key={key} className="form-group">
-                      <label className="form-label">
-                        {setting.title || setting.label || key}
-                        {setting.required && <span className="required">*</span>}
-                      </label>
-                      {setting.description && (
-                        <p className="setting-description">{setting.description}</p>
-                      )}
-                      {renderSettingField(key, setting)}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                /* Fallback for channels with no settings or unrecognized type */
-                <div className="no-settings">
-                  <p className="text-tertiary">
-                    {settingsType === 'advanced' ? 
-                      'This channel uses a custom settings interface.' :
-                      'No configurable settings available for this channel.'
-                    }
-                  </p>
-                </div>
-              )}
-            </>
+            /* Fallback for channels with no settings or unrecognized type */
+            <div className="no-settings">
+              <p className="text-tertiary">
+                {settingsType === 'advanced' ? 
+                  'This channel uses a custom settings interface.' :
+                  'No configurable settings available for this channel.'
+                }
+              </p>
+            </div>
           )}
         </div>
 
