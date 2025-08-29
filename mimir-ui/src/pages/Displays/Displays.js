@@ -63,7 +63,21 @@ const Displays = () => {
     console.log('🔄 Displays data:', displays);
   }, [displays]);
 
+  // Load displays when feature detection completes or filters change
+  useEffect(() => {
+    if (!isLoading) {
+      console.log('🔄 Feature detection completed, loading displays...');
+      loadDisplays();
+    }
+  }, [loadDisplays, isLoading]);
+
   const loadDisplays = useCallback(async () => {
+    // Wait for feature detection to complete
+    if (isLoading) {
+      console.log('🔄 Feature detection still loading, waiting...');
+      return;
+    }
+    
     if (!supportsDisplayManagement()) {
       setError('Display management is not available in this API version');
       setLoading(false);
@@ -139,7 +153,15 @@ const Displays = () => {
     } finally {
       setLoading(false);
     }
-  }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter, includeDiscovered]);
+  }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter, includeDiscovered, isLoading]);
+
+  // Load displays when feature detection completes or filters change
+  useEffect(() => {
+    if (!isLoading) {
+      console.log('🔄 Feature detection completed, loading displays...');
+      loadDisplays();
+    }
+  }, [loadDisplays, isLoading]);
 
   // Manual refresh that bypasses cache
   const refreshDisplays = useCallback(async () => {
