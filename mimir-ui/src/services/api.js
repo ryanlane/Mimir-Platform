@@ -296,13 +296,14 @@ export const api = {
   unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/assign_scene`),
 
   // Discovered Display Assignment endpoints (v2.3.1)
-  assignSceneToDiscoveredDisplay: (displayId, sceneId) => apiClient.post('/discovered-displays/assignments', { display_id: displayId, scene_id: sceneId }),
+  assignSceneToDiscoveredDisplay: (displayId, sceneId) => apiClient.post(`/discovered-displays/assignments/${displayId}`, { scene_id: sceneId }),
   unassignSceneFromDiscoveredDisplay: (displayId) => apiClient.delete(`/discovered-displays/assignments/${displayId}`),
   getDiscoveredDisplayAssignments: () => apiClient.get('/discovered-displays/assignments'),
   getUnassignedDiscoveredDisplays: () => apiClient.get('/discovered-displays/unassigned'),
   getDiscoveredDisplaysForScene: (sceneId) => apiClient.get(`/discovered-displays/scene/${sceneId}`),
   getDiscoveredDisplayStats: () => apiClient.get('/discovered-displays/stats'),
-  bulkAssignDiscoveredDisplays: (assignments) => apiClient.post('/discovered-displays/assignments/bulk', { assignments }),
+  getDiscoveredDisplayAssignment: (displayId) => apiClient.get(`/discovered-displays/assignment/${displayId}`),
+  bulkAssignDiscoveredDisplays: (displayIds, sceneId) => apiClient.post('/discovered-displays/assignments/bulk', { display_ids: displayIds, scene_id: sceneId }),
 
   // Enhanced Display Scene Management (handles both registered and discovered)
   getDisplaysForScene: (sceneId) => apiClient.get(`/display-scene/scene/${sceneId}/displays`),
