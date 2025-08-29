@@ -122,14 +122,37 @@ const Displays = () => {
       const discoveryData = discoveryResponse?.data || null;
       const statsData = statsResponse?.data || null;
 
+      // Get discovered display assignments
+      let discoveredAssignments = {};
+      try {
+        const assignmentsResponse = await api.getDiscoveredDisplayAssignments();
+        discoveredAssignments = assignmentsResponse.data?.assignments || {};
+        console.log('🔍 Debug - Discovered assignments:', discoveredAssignments);
+      } catch (err) {
+        console.warn('Could not fetch discovered display assignments:', err);
+      }
+
       // Normalize the display data and set source based on displayType
-      const normalizedDisplays = allDisplays.map(display => ({
-        ...display,
-        source: display.displayType || 'registered', // Use displayType as source
-        is_online: display.isOnline !== undefined ? display.isOnline : display.is_online,
-        last_seen: display.lastSeen || display.last_seen,
-        resolution: display.resolution || (display.width && display.height ? [display.width, display.height] : null)
-      }));
+      const normalizedDisplays = allDisplays.map(display => {
+        const normalized = {
+          ...display,
+          source: display.displayType || 'registered', // Use displayType as source
+          is_online: display.isOnline !== undefined ? display.isOnline : display.is_online,
+          last_seen: display.lastSeen || display.last_seen,
+          resolution: display.resolution || (display.width && display.height ? [display.width, display.height] : null)
+        };
+
+        // For discovered displays, check in-memory assignments
+        if (display.displayType === 'discovered' && discoveredAssignments[display.id]) {
+          const assignment = discoveredAssignments[display.id];
+          normalized.assigned_scene_id = assignment.scene_id;
+          normalized.assignedSceneId = assignment.scene_id; // Keep both formats for compatibility
+          normalized.assigned_at = assignment.assigned_at;
+          console.log(`🔍 Debug - Found assignment for ${display.id}: ${assignment.scene_id}`);
+        }
+
+        return normalized;
+      });
 
       console.log('🔍 Debug - Total displays from API:', allDisplays.length);
       console.log('🔍 Debug - Normalized displays:', normalizedDisplays.length);
