@@ -2,6 +2,7 @@
 Mimir API Application Factory
 Creates and configures the FastAPI application with modular architecture
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +11,8 @@ from app.config import settings
 # Import infrastructure components
 from app.db.base import engine
 from app.core.logging import setup_logging, get_logger
+from app.core.metrics import setup_metrics, metrics_middleware, metrics_app
+from app.core.scheduler import scheduler_service
 
 # Import services
 from app.services.channel_discovery import channel_discovery_service
@@ -18,6 +21,7 @@ from app.services.websocket import websocket_service
 from app.services.distribution import distribution_service
 from app.services.caching import cache_service
 from app.services.mdns_discovery import mdns_discovery_service
+from app.services.mqtt_presence import mqtt_presence_service, setup_mqtt_integration
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -29,24 +33,92 @@ from app.api.routes.websockets import router as websockets_router
 from app.api.routes.admin import health_router, admin_router
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan context manager for startup and shutdown"""
+    logger = get_logger("app.main")
+    
+    # Startup
+    logger.info("🚀 Mimir API v2.1.0 starting up...")
+    
+    # Initialize core services
+    setup_metrics()
+    logger.info("📊 OpenTelemetry metrics initialized")
+    
+    # Setup and start scheduler
+    if scheduler_service.setup_scheduler():
+        await scheduler_service.start() 
+        logger.info("⏰ APScheduler started with background jobs")
+    else:
+        logger.warning("⚠️ APScheduler failed to initialize - using fallback mode")
+    
+    # Initialize plugins
+    await initialize_plugins(app)
+    
+    # Report service status
+    logger.info(f"📊 Database: {settings.database_url}")
+    logger.info(f"🌐 CORS Origins: {len(settings.cors_origins)} configured") 
+    logger.info(f"📁 Channels Directory: {settings.channels_directory}")
+    logger.info(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
+    
+    if settings.redis_enabled:
+        logger.info(f"🔴 Redis: enabled at {settings.redis_url}")
+    
+    if settings.distribution_enabled:
+        logger.info(f"📡 Distribution: enabled (mode: {settings.distribution_default_mode})")
+    
+    # Report mDNS discovery status and start service
+    if settings.mdns_discovery_enabled:
+        if mdns_discovery_service.is_available:
+            # Start mDNS discovery (now managed by scheduler)
+            await mdns_discovery_service.start_discovery()
+            logger.info(f"🔍 mDNS Discovery: enabled (continuous background monitoring)")
+            logger.info(f"   Update interval: {settings.mdns_update_interval}s")
+            logger.info(f"   Offline timeout: {settings.mdns_offline_timeout}s")
+        else:
+            logger.info(f"⚠️ mDNS Discovery: disabled (zeroconf library not available)")
+    else:
+        logger.info(f"🔍 mDNS Discovery: disabled by configuration")
+    
+    # Setup MQTT presence detection for instant online/offline
+    if settings.mqtt_enabled:
+        mqtt_success = await setup_mqtt_integration()
+        if mqtt_success:
+            logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+            logger.info(f"   Instant online/offline detection via Last Will & Testament")
+        else:
+            logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+    else:
+        logger.info(f"📡 MQTT Presence: disabled by configuration")
+    
+    # Log service capabilities
+    capabilities = distribution_service.get_capability_flags()
+    logger.info(f"🔧 Service capabilities: {capabilities}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Mimir API shutting down...")
+    
+    # Stop mDNS discovery service
+    if settings.mdns_discovery_enabled:
+        await mdns_discovery_service.stop_discovery()
+        logger.info("🔍 mDNS discovery service stopped")
+    
+    # Stop scheduler
+    await scheduler_service.stop()
+    logger.info("⏰ APScheduler stopped")
+
+
 def _initialize_services(app: FastAPI, logger):
-    """Initialize all services"""
+    """Initialize all services (now using modern scheduler approach)"""
     logger.info("Initializing services...")
     
     # Store the app reference for plugin discovery
     app.state.plugin_discovery_initialized = False
     
-    # Start distribution monitoring if enabled
-    if settings.distribution_enabled:
-        import asyncio
-        asyncio.create_task(distribution_service.start_distribution_monitoring())
-        logger.info("Distribution monitoring started")
-    
-    # Start mDNS discovery service if enabled
-    if settings.mdns_discovery_enabled:
-        import asyncio
-        asyncio.create_task(mdns_discovery_service.start_discovery())
-        logger.info("mDNS discovery service started")
+    # Note: Background jobs are now managed by APScheduler in the lifespan function
+    # The old asyncio.create_task() calls have been replaced with scheduled jobs
     
     # Log service status
     capabilities = distribution_service.get_capability_flags()
@@ -78,15 +150,19 @@ def create_app() -> FastAPI:
     setup_logging()
     logger = get_logger("app.main")
     
-    # Create FastAPI app
+    # Create FastAPI app with lifespan management
     app = FastAPI(
         title="Mimir API",
         description="Multi-display content management system",
-        version="2.1.0",
+        version="2.1.0", 
         debug=settings.debug,
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
+        lifespan=lifespan
     )
+    
+    # Add metrics middleware for automatic HTTP request instrumentation
+    app.middleware("http")(metrics_middleware)
     
     # Configure CORS
     app.add_middleware(
@@ -98,7 +174,6 @@ def create_app() -> FastAPI:
     )
     
     # Initialize services
-    _initialize_services(app, logger)
     
     # Database is managed by Alembic migrations
     # Run `alembic upgrade head` to ensure latest schema
@@ -115,6 +190,13 @@ def create_app() -> FastAPI:
     # Include WebSocket routes (no prefix for WebSockets)
     app.include_router(websockets_router)
     
+    # Mount Prometheus metrics endpoint for observability
+    try:
+        app.mount("/metrics", metrics_app, name="metrics")
+        logger.info("📊 OpenTelemetry metrics endpoint mounted at /metrics")
+    except Exception as e:
+        logger.warning(f"Failed to mount metrics endpoint: {e}")
+    
     # Mount static files for channels
     # TODO: This should be handled by the channel manager service
     try:
@@ -128,48 +210,6 @@ def create_app() -> FastAPI:
 
 # Create app instance
 app = create_app()
-
-
-# Application lifecycle events
-@app.on_event("startup")
-async def startup_event():
-    """Application startup event"""
-    print(f"🚀 Mimir API v2.1.0 starting up...")
-    print(f"📊 Database: {settings.database_url}")
-    print(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
-    print(f"📁 Channels Directory: {settings.channels_directory}")
-    print(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
-    
-    # Initialize plugins
-    await initialize_plugins(app)
-    
-    if settings.redis_enabled:
-        print(f"🔴 Redis: enabled at {settings.redis_url}")
-    
-    if settings.distribution_enabled:
-        print(f"📡 Distribution: enabled (mode: {settings.distribution_default_mode})")
-    
-    # Report mDNS discovery status
-    if settings.mdns_discovery_enabled:
-        if mdns_discovery_service.is_available:
-            print(f"🔍 mDNS Discovery: enabled (continuous background monitoring)")
-            print(f"   Update interval: {settings.mdns_update_interval}s")
-            print(f"   Offline timeout: {settings.mdns_offline_timeout}s")
-        else:
-            print(f"⚠️ mDNS Discovery: disabled (zeroconf library not available)")
-    else:
-        print(f"🔍 mDNS Discovery: disabled by configuration")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Application shutdown event"""
-    print("🛑 Mimir API shutting down...")
-    
-    # Stop mDNS discovery service
-    if settings.mdns_discovery_enabled:
-        await mdns_discovery_service.stop_discovery()
-        print("🔍 mDNS discovery service stopped")
 
 
 # Development server entry point

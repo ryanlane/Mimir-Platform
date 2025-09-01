@@ -9,6 +9,12 @@ from enum import Enum
 from app.config import settings
 from app.core.logging import get_logger
 
+# Import metrics for instrumentation
+try:
+    from app.core.metrics import metrics
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -57,6 +63,9 @@ class DistributionService:
         """Distribute content to displays based on mode"""
         if not self.is_redis_available():
             logger.warning("Content distribution requested but Redis not available")
+            # Record error metric
+            if METRICS_AVAILABLE:
+                metrics.distribution_error(scene_id, "distribute", "redis_unavailable")
             return {"status": "redis_unavailable", "distributed_to": []}
         
         try:
@@ -64,11 +73,19 @@ class DistributionService:
                 scene_id, content_data, distribution_mode, target_displays
             )
             
+            # Record successful distribution
+            if METRICS_AVAILABLE and distribution_result.get("status") == "success":
+                for display_id in distribution_result.get("distributed_to", []):
+                    metrics.distribution_content_assigned(scene_id, display_id, content_data.get("content_id", "unknown"))
+            
             logger.info(f"Content distributed for scene {scene_id}: {distribution_mode.value}")
             return distribution_result
             
         except Exception as e:
             logger.error(f"Distribution failed for scene {scene_id}: {e}")
+            # Record error metric
+            if METRICS_AVAILABLE:
+                metrics.distribution_error(scene_id, "distribute", str(e))
             return {"status": "error", "error": str(e), "distributed_to": []}
     
     async def _execute_distribution(self, scene_id: str, content_data: Dict[str, Any],

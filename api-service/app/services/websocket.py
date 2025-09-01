@@ -11,6 +11,13 @@ from app.db.base import SessionLocal
 from app.db.models import DisplayClient
 from app.core.logging import get_logger
 
+# Import metrics for instrumentation
+try:
+    from app.core.metrics import metrics
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
+
 
 logger = get_logger(__name__)
 
@@ -32,6 +39,12 @@ class WebSocketService:
             "type": connection_type,
             "connected_at": datetime.datetime.now()
         }
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            connection_id = f"{connection_type}_{id(websocket)}"
+            metrics.websocket_connection_opened(connection_id)
+        
         logger.info(f"WebSocket connected: {connection_type}")
 
     async def connect_display_client(self, websocket: WebSocket, display_client_id: str):
@@ -45,6 +58,10 @@ class WebSocketService:
             "connected_at": datetime.datetime.now()
         }
         
+        # Record metrics
+        if METRICS_AVAILABLE:
+            metrics.websocket_connection_opened(display_client_id)
+        
         # Update database status
         await self._update_display_status(display_client_id, is_online=True)
         logger.info(f"Display client connected: {display_client_id}")
@@ -56,6 +73,17 @@ class WebSocketService:
             
         # Handle display client disconnection
         metadata = self.connection_metadata.get(websocket, {})
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            if metadata.get("type") == "display":
+                display_id = metadata.get("display_id", f"unknown_{id(websocket)}")
+                metrics.websocket_connection_closed(display_id)
+            else:
+                connection_type = metadata.get("type", "unknown")
+                connection_id = f"{connection_type}_{id(websocket)}"
+                metrics.websocket_connection_closed(connection_id)
+        
         if metadata.get("type") == "display":
             display_id = metadata.get("display_id")
             if display_id and display_id in self.display_connections:
@@ -185,6 +213,12 @@ class WebSocketService:
                 logger.warning(f"Failed to broadcast to connection: {e}")
                 self.disconnect(websocket)
                 results.append({"status": "failed", "error": str(e)})
+        
+        # Record metrics
+        if METRICS_AVAILABLE:
+            event_type = message.get("type", "unknown")
+            successful_sends = sum(1 for r in results if r["status"] == "sent")
+            metrics.websocket_message_sent(event_type, successful_sends)
         
         logger.info(f"Global broadcast complete: {len(results)} connections")
         return results

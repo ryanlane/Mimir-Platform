@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     mdns_update_interval: int = Field(30, validation_alias=AliasChoices("MDNS_UPDATE_INTERVAL",))  # seconds
     mdns_offline_timeout: int = Field(120, validation_alias=AliasChoices("MDNS_OFFLINE_TIMEOUT",))  # seconds
 
+    # --- MQTT Presence (for instant online/offline detection) ---
+    mqtt_enabled: bool = Field(True, validation_alias=AliasChoices("MQTT_ENABLED",))
+    mqtt_broker_host: str = Field("oak", validation_alias=AliasChoices("MQTT_BROKER_HOST", "MQTT_HOST"))
+    mqtt_broker_port: int = Field(1883, validation_alias=AliasChoices("MQTT_BROKER_PORT", "MQTT_PORT"))
+    mqtt_username: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_USERNAME", "MQTT_USER"))
+    mqtt_password: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_PASSWORD", "MQTT_PASS"))
+    mqtt_client_id_prefix: str = Field("mimir", validation_alias=AliasChoices("MQTT_CLIENT_ID_PREFIX",))
+
     @property
     def redis_dsn(self) -> str | None:
         """Build a Redis URL when REDIS_URL isn't provided."""

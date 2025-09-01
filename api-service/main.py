@@ -11,6 +11,7 @@ from app.config import settings
 # Import infrastructure components
 from app.db.base import engine
 from app.core.logging import setup_logging, get_logger
+from app.core.metrics import setup_metrics, metrics_middleware, metrics_app
 
 # Import services
 from app.services.channel_discovery import channel_discovery_service
@@ -82,6 +83,9 @@ def create_app() -> FastAPI:
     setup_logging()
     logger = get_logger("app.main")
     
+    # Setup OpenTelemetry metrics
+    setup_metrics()
+    
     # Create FastAPI app
     app = FastAPI(
         title="Mimir API",
@@ -101,6 +105,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # Add metrics middleware for HTTP request monitoring
+    app.middleware("http")(metrics_middleware)
     
     # Initialize services
     _initialize_services(app, logger)
@@ -124,6 +131,9 @@ def create_app() -> FastAPI:
     
     # Include WebSocket routes (no prefix for WebSockets)
     app.include_router(websockets_router)
+    
+    # Mount Prometheus metrics endpoint
+    app.mount("/metrics", metrics_app, name="metrics")
     
     # Mount static files for channels
     # TODO: This should be handled by the channel manager service

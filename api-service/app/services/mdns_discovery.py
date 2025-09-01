@@ -20,6 +20,12 @@ from app.core.logging import get_logger
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient
 
+# Import metrics for instrumentation
+try:
+    from app.core.metrics import metrics
+    METRICS_AVAILABLE = True
+except ImportError:
+    METRICS_AVAILABLE = False
 
 logger = get_logger(__name__)
 
@@ -282,11 +288,21 @@ class MdnsDiscoveryService:
                 existing.addresses = display.addresses
                 existing.properties = display.properties
                 logger.debug(f"Updated discovered display: {display.display_name} ({display.hostname})")
+                
+                # Record metrics for display update
+                if METRICS_AVAILABLE:
+                    metrics.discovery_display_updated(display.display_id)
+                
                 self._notify_callbacks(existing, "updated")
             else:
                 # New display
                 self.discovered_displays[display.service_name] = display
                 logger.info(f"Discovered new display: {display.display_name} ({display.hostname}) at {display.addresses}")
+                
+                # Record metrics for new display discovery
+                if METRICS_AVAILABLE:
+                    metrics.discovery_display_found(display.display_id)
+                
                 self._notify_callbacks(display, "discovered")
     
     def _on_display_updated(self, display: DiscoveredDisplay):
@@ -300,6 +316,11 @@ class MdnsDiscoveryService:
             if display:
                 display.is_online = False
                 logger.info(f"Display went offline: {display.display_name} ({display.hostname})")
+                
+                # Record metrics for display going offline
+                if METRICS_AVAILABLE:
+                    metrics.discovery_display_lost(display.display_id)
+                
                 self._notify_callbacks(display, "lost")
     
     def _notify_callbacks(self, display: DiscoveredDisplay, event: str):
@@ -328,10 +349,28 @@ class MdnsDiscoveryService:
                             if time_since_seen > self.offline_timeout:
                                 display.is_online = False
                                 logger.info(f"Display marked offline due to timeout: {display.display_name}")
+                                
+                                # Record metrics for display timeout
+                                if METRICS_AVAILABLE:
+                                    metrics.discovery_display_lost(display.display_id)
+                                
                                 self._notify_callbacks(display, "lost")
+                
+                # Record general discovery metrics
+                if METRICS_AVAILABLE:
+                    total_displays = len(self.discovered_displays)
+                    online_displays = sum(1 for d in self.discovered_displays.values() if d.is_online)
+                    metrics.discovery_displays_total(total_displays)
+                    metrics.discovery_displays_online(online_displays)
                 
             except asyncio.CancelledError:
                 break
+            except Exception as e:
+                logger.error(f"Error in discovery monitoring loop: {e}")
+                
+                # Record metrics for monitoring errors
+                if METRICS_AVAILABLE:
+                    metrics.discovery_error(str(e))
             except Exception as e:
                 logger.error(f"Error in mDNS monitoring loop: {e}")
                 await asyncio.sleep(10)  # Wait before retrying

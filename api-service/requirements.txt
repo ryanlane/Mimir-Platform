@@ -15,3 +15,23 @@ python-dotenv
 httpx>=0.25.0
 zeroconf>=0.56.0
 Pillow>=10.0.0
+
+# Modern observability and scheduling
+APScheduler>=3.10.0
+prometheus-client>=0.17.0
+
+# OpenTelemetry stack for modern observability
+opentelemetry-api==1.26.0
+opentelemetry-sdk==1.26.0
+opentelemetry-exporter-prometheus==1.12.0rc1
+opentelemetry-instrumentation-fastapi==0.47b0
+
+# MQTT for instant presence detection
+paho-mqtt>=1.6.1
+aiomqtt>=1.0.0
+
+# OpenTelemetry stack
+opentelemetry-api>=1.21.0
+opentelemetry-sdk>=1.21.0
+opentelemetry-exporter-prometheus
+opentelemetry-instrumentation-fastapi>=0.42b0
