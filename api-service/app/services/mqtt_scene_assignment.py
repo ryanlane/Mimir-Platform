@@ -18,8 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
-from app.models.display_client import DisplayClient
-from app.models.scene import Scene
+from app.db.models import DisplayClient, Scene
 
 logger = get_logger(__name__)
 
@@ -140,7 +139,7 @@ class MqttSceneAssignmentService:
         error_msg = payload.get('message', 'Unknown error')
         logger.warning(f"Device {device_id} reported error: {error_msg}")
     
-    async def assign_scene_to_device(self, device_id: str, scene_id: int) -> bool:
+    async def assign_scene_to_device(self, device_id: str, scene_id: str) -> bool:
         """Assign a scene to a device via MQTT"""
         try:
             if not self.client:
@@ -170,11 +169,16 @@ class MqttSceneAssignmentService:
                 
                 # Send MQTT command to device
                 command_topic = f"mimir/{device_id}/cmd"
+                
+                # Build content URL using the configured API settings
+                api_base_url = f"http://{settings.api_host}:{settings.api_port}"
+                content_url = f"{api_base_url}/api/scenes/{scene_id}/content"
+                
                 command_payload = {
                     "command": "assign_scene",
                     "scene_id": scene_id,
                     "scene_name": scene.name,
-                    "content_url": f"{settings.platform_url}/api/scenes/{scene_id}/content",
+                    "content_url": content_url,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}"
                 }

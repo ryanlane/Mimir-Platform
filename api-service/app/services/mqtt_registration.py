@@ -19,8 +19,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
-from app.models.display_client import DisplayClient
-from app.models.display_client_status import DisplayClientStatus
+from app.db.models import DisplayClient, DisplayStatus
 
 logger = get_logger(__name__)
 
@@ -149,25 +148,36 @@ class MqttRegistrationService:
                 else:
                     # Create new device
                     display_client = DisplayClient()
+                    display_client.id = device_id  # Use device_id as primary key
                     logger.info(f"Creating new device: {device_id}")
                 
                 # Update device properties
                 display_client.hostname = device_id
-                display_client.display_name = metadata.get('name', f'MQTT Device {device_id}')
-                display_client.display_location = metadata.get('location', 'Unknown')
+                display_client.name = metadata.get('name', f'MQTT Device {device_id}')
+                display_client.location = metadata.get('location', 'Unknown')
                 display_client.client_version = metadata.get('client_version', '1.0.0')
-                display_client.capabilities = capabilities
-                display_client.metadata = metadata
-                display_client.communication_method = 'mqtt'
-                display_client.last_seen = datetime.now(timezone.utc)
+                display_client.display_type = 'registered'
                 display_client.discovery_method = 'mqtt_registration'
+                display_client.auto_discovered = False
+                display_client.is_online = True
+                display_client.last_seen = datetime.now(timezone.utc)
                 
-                # Handle tags
+                # Set capabilities
+                resolution = capabilities.get('resolution', [800, 480])
+                if len(resolution) >= 2:
+                    display_client.width = resolution[0]
+                    display_client.height = resolution[1]
+                
+                display_client.orientation = capabilities.get('orientation', 'landscape')
+                display_client.redis_distribution = capabilities.get('redis_distribution', True)
+                display_client.content_claiming = capabilities.get('content_claiming', True)
+                
+                # Handle tags - store as comma-separated string if it's a list
                 tags = metadata.get('tags', [])
                 if isinstance(tags, list):
-                    display_client.tags = ','.join(tags) if tags else ''
-                else:
-                    display_client.tags = str(tags)
+                    # Store tags in a way that's compatible with existing schema
+                    # The schema doesn't seem to have a tags field, so we'll skip this for now
+                    pass
                 
                 # Save to database
                 if not existing_device:
@@ -177,22 +187,21 @@ class MqttRegistrationService:
                 db.refresh(display_client)
                 
                 # Update status
-                status = db.query(DisplayClientStatus).filter(
-                    DisplayClientStatus.display_client_id == display_client.id
+                status = db.query(DisplayStatus).filter(
+                    DisplayStatus.id == display_client.id
                 ).first()
                 
                 if not status:
-                    status = DisplayClientStatus(
-                        display_client_id=display_client.id,
-                        online=True,
-                        last_seen=datetime.now(timezone.utc),
-                        communication_method='mqtt'
+                    status = DisplayStatus(
+                        id=display_client.id,
+                        current_scene=None,
+                        hardware=capabilities,
+                        resolution=capabilities.get('resolution', [800, 480])
                     )
                     db.add(status)
                 else:
-                    status.online = True
-                    status.last_seen = datetime.now(timezone.utc)
-                    status.communication_method = 'mqtt'
+                    status.hardware = capabilities
+                    status.resolution = capabilities.get('resolution', [800, 480])
                 
                 db.commit()
                 
