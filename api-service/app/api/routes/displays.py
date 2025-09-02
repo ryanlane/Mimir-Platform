@@ -24,6 +24,7 @@ from app.schemas.displays import (
 )
 from app.schemas.common import PaginationParams
 from app.services.mdns_discovery import mdns_discovery_service
+from app.services.mqtt_scene_assignment import mqtt_scene_service
 
 
 router = APIRouter(prefix="/displays", tags=["displays"])
@@ -678,3 +679,83 @@ async def update_display_content(
         db.commit()
     
     return {"message": f"Display {display_id} content updated"}
+
+
+@router.put("/{display_id}/scene/{scene_id}")
+async def assign_scene_to_display(
+    display_id: str,
+    scene_id: int,
+    db: Session = Depends(get_db)
+):
+    """Assign a scene to a display (supports both HTTP and MQTT)"""
+    # Get display client
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Get scene
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # Update database
+    client.assigned_scene_id = scene_id
+    client.scene_assigned_at = datetime.datetime.now()
+    db.commit()
+    
+    # Try MQTT assignment for MQTT-enabled displays
+    mqtt_success = False
+    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
+        try:
+            mqtt_success = await mqtt_scene_service.assign_scene_to_device(
+                client.hostname, scene_id
+            )
+        except Exception as e:
+            # Log error but don't fail the HTTP request
+            print(f"MQTT assignment failed, falling back to HTTP: {e}")
+    
+    return {
+        "message": f"Scene {scene_id} assigned to display {display_id}",
+        "scene_name": scene.name,
+        "assigned_at": client.scene_assigned_at.isoformat(),
+        "mqtt_assigned": mqtt_success,
+        "communication_method": getattr(client, 'communication_method', 'http')
+    }
+
+
+@router.delete("/{display_id}/scene")
+async def unassign_scene_from_display(
+    display_id: str,
+    db: Session = Depends(get_db)
+):
+    """Unassign scene from a display (supports both HTTP and MQTT)"""
+    # Get display client
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    # Store current assignment for response
+    current_scene_id = client.assigned_scene_id
+    
+    # Update database
+    client.assigned_scene_id = None
+    client.scene_assigned_at = None
+    db.commit()
+    
+    # Try MQTT unassignment for MQTT-enabled displays
+    mqtt_success = False
+    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
+        try:
+            mqtt_success = await mqtt_scene_service.unassign_scene_from_device(
+                client.hostname
+            )
+        except Exception as e:
+            # Log error but don't fail the HTTP request
+            print(f"MQTT unassignment failed: {e}")
+    
+    return {
+        "message": f"Scene unassigned from display {display_id}",
+        "previous_scene_id": current_scene_id,
+        "mqtt_unassigned": mqtt_success,
+        "communication_method": getattr(client, 'communication_method', 'http')
+    }

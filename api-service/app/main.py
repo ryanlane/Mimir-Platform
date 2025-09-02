@@ -1,6 +1,30 @@
 """
 Mimir API Application Factory
-Creates and configures the FastAPI application with modular architecture
+Creates and configures the FastAPI application w    # Setup MQTT presence detection for instant online/offline
+    if settings.mqtt_enabled:
+        mqtt_success = await setup_mqtt_integration()
+        registration_success = await setup_mqtt_registration()
+        scene_success = await setup_mqtt_scene_assignment()
+        
+        if mqtt_success:
+            logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+            logger.info(f"   Instant online/offline detection via Last Will & Testament")
+        else:
+            logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+        
+        if registration_success:
+            logger.info(f"📝 MQTT Registration: enabled - listening on mimir/registry/register")
+            logger.info(f"   Pure MQTT device registration workflow available")
+        else:
+            logger.warning(f"⚠️ MQTT Registration: failed to start")
+        
+        if scene_success:
+            logger.info(f"🎬 MQTT Scene Assignment: enabled - listening on mimir/+/evt")
+            logger.info(f"   Pure MQTT scene assignment workflow available")
+        else:
+            logger.warning(f"⚠️ MQTT Scene Assignment: failed to start")
+    else:
+        logger.info(f"📡 MQTT Services: disabled by configuration")ecture
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -22,6 +46,8 @@ from app.services.distribution import distribution_service
 from app.services.caching import cache_service
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt_presence import mqtt_presence_service, setup_mqtt_integration
+from app.services.mqtt_registration import mqtt_registration_service, setup_mqtt_registration
+from app.services.mqtt_scene_assignment import mqtt_scene_service, setup_mqtt_scene_assignment
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -83,13 +109,21 @@ async def lifespan(app: FastAPI):
     # Setup MQTT presence detection for instant online/offline
     if settings.mqtt_enabled:
         mqtt_success = await setup_mqtt_integration()
+        registration_success = await setup_mqtt_registration()
+        
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
             logger.info(f"   Instant online/offline detection via Last Will & Testament")
         else:
             logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+        
+        if registration_success:
+            logger.info(f"� MQTT Registration: enabled - listening on mimir/registry/register")
+            logger.info(f"   Pure MQTT device registration workflow available")
+        else:
+            logger.warning(f"⚠️ MQTT Registration: failed to start")
     else:
-        logger.info(f"📡 MQTT Presence: disabled by configuration")
+        logger.info(f"📡 MQTT Services: disabled by configuration")
     
     # Log service capabilities
     capabilities = distribution_service.get_capability_flags()
@@ -99,6 +133,12 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Mimir API shutting down...")
+    
+    # Stop MQTT services
+    if settings.mqtt_enabled:
+        await mqtt_scene_service.stop()
+        await mqtt_registration_service.stop()
+        logger.info("📝 MQTT services stopped")
     
     # Stop mDNS discovery service
     if settings.mdns_discovery_enabled:
