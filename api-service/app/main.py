@@ -5,6 +5,7 @@ Creates and configures the FastAPI application w    # Setup MQTT presence detect
         mqtt_success = await setup_mqtt_integration()
         registration_success = await setup_mqtt_registration()
         scene_success = await setup_mqtt_scene_assignment()
+        auto_reg_success = await setup_auto_registration()
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
@@ -23,6 +24,12 @@ Creates and configures the FastAPI application w    # Setup MQTT presence detect
             logger.info(f"   Pure MQTT scene assignment workflow available")
         else:
             logger.warning(f"⚠️ MQTT Scene Assignment: failed to start")
+            
+        if auto_reg_success:
+            logger.info(f"🔄 Auto-Registration: enabled - mDNS discovery → MQTT registration")
+            logger.info(f"   Automatic display registration and test image workflow")
+        else:
+            logger.warning(f"⚠️ Auto-Registration: failed to start")
     else:
         logger.info(f"📡 MQTT Services: disabled by configuration")ecture
 """
@@ -48,6 +55,7 @@ from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt_presence import mqtt_presence_service, setup_mqtt_integration
 from app.services.mqtt_registration import mqtt_registration_service, setup_mqtt_registration
 from app.services.mqtt_scene_assignment import mqtt_scene_service, setup_mqtt_scene_assignment
+from app.services.auto_registration import auto_registration_service, setup_auto_registration
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -244,6 +252,18 @@ def create_app() -> FastAPI:
     except RuntimeError as e:
         if settings.debug:
             print(f"Warning: Could not mount channels directory: {e}")
+    
+    # Mount static files for general content (test images, etc.)
+    try:
+        import os
+        static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+        if os.path.exists(static_dir):
+            app.mount("/static", StaticFiles(directory=static_dir), name="static")
+            logger.info(f"📁 Static files mounted at /static")
+        else:
+            logger.warning(f"Static directory not found: {static_dir}")
+    except Exception as e:
+        logger.warning(f"Failed to mount static files: {e}")
     
     return app
 
