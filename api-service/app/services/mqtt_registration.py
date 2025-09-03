@@ -1,270 +1,181 @@
 """
 MQTT Registration Service
-Handles device registration via MQTT for pure MQTT communication workflow
+Handles device registration requests via MQTT
 """
-import asyncio
 import json
-import uuid
-from typing import Dict, Optional
+import asyncio
 from datetime import datetime, timezone
-from contextlib import asynccontextmanager
+from typing import Optional
+
+from app.core.logging import get_logger
+from app.db.models import DisplayClient
+from app.db.base import SessionLocal
+from app.config import settings
 
 try:
-    from aiomqtt import Client, MqttError
-    AIOMQTT_AVAILABLE = True
+    import aiomqtt
 except ImportError:
-    AIOMQTT_AVAILABLE = False
+    aiomqtt = None
 
-from sqlalchemy.orm import Session
-from app.config import settings
-from app.core.logging import get_logger
-from app.db.base import SessionLocal
-from app.db.models import DisplayClient, DisplayStatus
+
+def get_db():
+    """Database dependency"""
+    return SessionLocal()
+
+db = get_db()  
 
 logger = get_logger(__name__)
 
-
 class MqttRegistrationService:
-    """MQTT-based device registration service"""
-    
     def __init__(self):
-        self.broker_host = getattr(settings, 'mqtt_broker_host', 'localhost')
-        self.broker_port = getattr(settings, 'mqtt_broker_port', 1883)
-        self.client_id = f"mimir-registration-{uuid.uuid4().hex[:8]}"
-        
-        # Client state
-        self.client: Optional[Client] = None
-        self.is_running = False
-        
-        logger.info(f"MQTT Registration Service initialized - Broker: {self.broker_host}:{self.broker_port}")
-    
+        self.client: Optional[aiomqtt.Client] = None
+        self.running = False
+
     async def start(self):
         """Start the MQTT registration service"""
-        if not AIOMQTT_AVAILABLE:
-            logger.error("aiomqtt not available - MQTT registration disabled")
-            return False
-        
-        if self.is_running:
-            logger.warning("MQTT registration service already running")
-            return True
-        
+        if not settings.mqtt_enabled or not aiomqtt:
+            logger.info("MQTT registration service disabled or aiomqtt not available")
+            return
+            
         try:
-            # Start the MQTT client task
-            self.is_running = True
-            asyncio.create_task(self._mqtt_registration_loop())
-            logger.info("MQTT registration service started")
-            return True
+            self.client = aiomqtt.Client(
+                hostname=settings.mqtt_broker_host,
+                port=settings.mqtt_broker_port,
+                identifier="mimir-registration-service"
+            )
+            
+            self.running = True
+            await self._connect_and_listen()
             
         except Exception as e:
             logger.error(f"Failed to start MQTT registration service: {e}")
-            self.is_running = False
-            return False
-    
+
     async def stop(self):
         """Stop the MQTT registration service"""
-        self.is_running = False
+        self.running = False
         if self.client:
-            try:
-                await self.client.disconnect()
-            except Exception as e:
-                logger.error(f"Error disconnecting MQTT registration client: {e}")
-        logger.info("MQTT registration service stopped")
-    
-    async def _mqtt_registration_loop(self):
-        """Main MQTT registration client loop with automatic reconnection"""
-        while self.is_running:
-            try:
-                async with Client(
-                    hostname=self.broker_host,
-                    port=self.broker_port,
-                    identifier=self.client_id,
-                ) as client:
-                    self.client = client
-                    
-                    # Subscribe to registration requests
-                    await client.subscribe("mimir/registry/register", qos=1)
-                    
-                    logger.info("MQTT registration service connected - listening for registrations")
-                    
-                    # Message processing loop
-                    async for message in client.messages:
-                        await self._handle_registration_request(message)
-                        
-            except MqttError as e:
-                logger.error(f"MQTT registration connection error: {e}")
-                    
-            except Exception as e:
-                logger.error(f"Unexpected error in MQTT registration loop: {e}")
-                
-            # Wait before reconnecting
-            if self.is_running:
-                logger.info("Reconnecting MQTT registration service in 5 seconds...")
-                await asyncio.sleep(5)
-    
-    async def _handle_registration_request(self, message):
-        """Handle incoming MQTT registration requests"""
+            await self.client.disconnect()
+
+    async def _connect_and_listen(self):
+        """Connect to MQTT broker and listen for registration requests"""
         try:
-            payload = json.loads(message.payload.decode())
-            logger.info(f"Received MQTT registration request: {payload.get('device_id', 'unknown')}")
+            await self.client.connect()
+            logger.info("MQTT registration service connected")
             
-            # Validate required fields
-            device_id = payload.get('device_id')
-            capabilities = payload.get('capabilities', {})
-            metadata = payload.get('metadata', {})
-            reply_to = payload.get('reply_to')
+            # Subscribe to registration requests
+            await self.client.subscribe("mimir/registry/register")
+            logger.info("Subscribed to mimir/registry/register")
             
-            if not device_id:
-                logger.error("Registration request missing device_id")
-                return
-            
-            if not reply_to:
-                logger.error("Registration request missing reply_to topic")
-                return
-            
-            # Process the registration
-            response = await self._process_registration(device_id, capabilities, metadata)
-            
-            # Send response back to device
-            await self._send_registration_response(reply_to, response)
-            
+            async for message in self.client.messages:
+                if not self.running:
+                    break
+                    
+                try:
+                    await self._handle_registration_request(message)
+                except Exception as e:
+                    logger.error(f"Error handling registration request: {e}")
+                    
         except Exception as e:
-            logger.error(f"Error handling MQTT registration request: {e}")
-    
-    async def _process_registration(self, device_id: str, capabilities: Dict, metadata: Dict) -> Dict:
-        """Process the device registration and update database"""
+            logger.error(f"MQTT registration service error: {e}")
+
+    async def _handle_registration_request(self, message):
+        """Handle a registration request from a display"""
         try:
-            db = SessionLocal()
+            # Parse the registration request
+            request_data = json.loads(message.payload.decode())
+            device_id = request_data.get("device_id")
+            reply_to = request_data.get("reply_to")
+            capabilities = request_data.get("capabilities", {})
+            metadata = request_data.get("metadata", {})
             
+            logger.info(f"Processing registration request for device: {device_id}")
+            
+            # Create or update the display client in database
+            db = next(get_db())
             try:
-                # Check if device already exists
-                existing_device = db.query(DisplayClient).filter(
-                    DisplayClient.hostname == device_id
+                # Check if display already exists
+                existing_display = db.query(DisplayClient).filter(
+                    DisplayClient.hostname == metadata.get("hostname", device_id)
                 ).first()
                 
-                if existing_device:
-                    # Update existing device
-                    display_client = existing_device
-                    logger.info(f"Updating existing device: {device_id}")
+                if existing_display:
+                    # Update existing display
+                    existing_display.name = metadata.get("name", "Unknown Display")
+                    existing_display.location = metadata.get("location", "Unknown")
+                    existing_display.is_online = True
+                    existing_display.last_seen = datetime.now(timezone.utc)
+                    existing_display.client_version = metadata.get("client_version", "unknown")
+                    existing_display.resolution = capabilities.get("resolution", [800, 480])
+                    existing_display.orientation = capabilities.get("orientation", "landscape")
+                    existing_display.refresh_rate_hz = capabilities.get("refresh_rate_hz", 1)
+                    existing_display.tags = metadata.get("tags", [])
+                    
+                    db.commit()
+                    assigned_id = existing_display.id
+                    logger.info(f"Updated existing display: {assigned_id}")
+                    
                 else:
-                    # Create new device
-                    display_client = DisplayClient()
-                    display_client.id = device_id  # Use device_id as primary key
-                    logger.info(f"Creating new device: {device_id}")
-                
-                # Update device properties
-                display_client.hostname = device_id
-                display_client.name = metadata.get('name', f'MQTT Device {device_id}')
-                display_client.location = metadata.get('location', 'Unknown')
-                display_client.client_version = metadata.get('client_version', '1.0.0')
-                display_client.display_type = 'registered'
-                display_client.discovery_method = 'mqtt_registration'
-                display_client.auto_discovered = False
-                display_client.is_online = True
-                display_client.last_seen = datetime.now(timezone.utc)
-                
-                # Set capabilities
-                resolution = capabilities.get('resolution', [800, 480])
-                if len(resolution) >= 2:
-                    display_client.width = resolution[0]
-                    display_client.height = resolution[1]
-                
-                display_client.orientation = capabilities.get('orientation', 'landscape')
-                display_client.redis_distribution = capabilities.get('redis_distribution', True)
-                display_client.content_claiming = capabilities.get('content_claiming', True)
-                
-                # Handle tags - store as comma-separated string if it's a list
-                tags = metadata.get('tags', [])
-                if isinstance(tags, list):
-                    # Store tags in a way that's compatible with existing schema
-                    # The schema doesn't seem to have a tags field, so we'll skip this for now
-                    pass
-                
-                # Save to database
-                if not existing_device:
-                    db.add(display_client)
-                
-                db.commit()
-                db.refresh(display_client)
-                
-                # Update status
-                status = db.query(DisplayStatus).filter(
-                    DisplayStatus.id == display_client.id
-                ).first()
-                
-                if not status:
-                    status = DisplayStatus(
-                        id=display_client.id,
-                        current_scene=None,
-                        hardware=capabilities,
-                        resolution=capabilities.get('resolution', [800, 480])
+                    # Create new display
+                    new_display = DisplayClient(
+                        name=metadata.get("name", "Unknown Display"),
+                        description=metadata.get("description", "MQTT registered display"),
+                        location=metadata.get("location", "Unknown"),
+                        hostname=metadata.get("hostname", device_id),
+                        is_online=True,
+                        last_seen=datetime.now(timezone.utc),
+                        client_version=metadata.get("client_version", "unknown"),
+                        resolution=capabilities.get("resolution", [800, 480]),
+                        orientation=capabilities.get("orientation", "landscape"),
+                        refresh_rate_hz=capabilities.get("refresh_rate_hz", 1),
+                        tags=metadata.get("tags", [])
                     )
-                    db.add(status)
-                else:
-                    status.hardware = capabilities
-                    status.resolution = capabilities.get('resolution', [800, 480])
+                    
+                    db.add(new_display)
+                    db.commit()
+                    db.refresh(new_display)
+                    assigned_id = new_display.id
+                    logger.info(f"Created new display: {assigned_id}")
                 
-                db.commit()
-                
-                # Prepare success response
+                # Send success response
                 response = {
                     "success": True,
-                    "assigned_id": device_id,  # Keep the same ID
-                    "display_id": display_client.id,
-                    "message": "Device registered successfully via MQTT",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "capabilities": capabilities,
-                    "communication_method": "mqtt"
+                    "assigned_id": str(assigned_id),
+                    "device_id": device_id,
+                    "message": "Registration successful",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
                 }
                 
-                logger.info(f"Successfully registered device {device_id} (DB ID: {display_client.id})")
-                return response
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Database error during registration: {e}")
                 
+                # Send error response
+                response = {
+                    "success": False,
+                    "error": f"Registration failed: {str(e)}",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
             finally:
                 db.close()
+            
+            # Send response back to the device
+            if reply_to and self.client:
+                await self.client.publish(
+                    reply_to,
+                    json.dumps(response)
+                )
+                logger.info(f"Sent registration response to {reply_to}")
                 
         except Exception as e:
-            logger.error(f"Database error during registration: {e}")
-            return {
-                "success": False,
-                "error": f"Registration failed: {str(e)}",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-    
-    async def _send_registration_response(self, reply_to: str, response: Dict):
-        """Send registration response back to the device"""
-        try:
-            if not self.client:
-                logger.error("Cannot send registration response - MQTT client not connected")
-                return
-            
-            payload = json.dumps(response)
-            await self.client.publish(reply_to, payload, qos=1)
-            
-            if response.get("success"):
-                logger.info(f"Sent successful registration response to {reply_to}")
-            else:
-                logger.error(f"Sent error registration response to {reply_to}: {response.get('error')}")
-                
-        except Exception as e:
-            logger.error(f"Error sending registration response: {e}")
-
+            logger.error(f"Error processing registration request: {e}")
 
 # Global service instance
 mqtt_registration_service = MqttRegistrationService()
 
-
 async def setup_mqtt_registration():
-    """Setup MQTT registration service"""
-    try:
-        success = await mqtt_registration_service.start()
-        
-        if success:
-            logger.info("MQTT registration service setup completed")
-        else:
-            logger.warning("MQTT registration service failed to start")
-            
-        return success
-        
-    except Exception as e:
-        logger.error(f"Failed to setup MQTT registration: {e}")
-        return False
+    """Setup the MQTT registration service"""
+    await mqtt_registration_service.start()
+
+async def cleanup_mqtt_registration():
+    """Cleanup the MQTT registration service"""
+    await mqtt_registration_service.stop()
