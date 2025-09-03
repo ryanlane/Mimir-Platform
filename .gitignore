@@ -185,6 +185,7 @@ api-service/app.db
 api-service/channels/photo_frame/
 api-service/channels/example_channel/assets/current.jpg
 deployment-manager
+
 __init__.py
 /api-service/mimir.db
 /api-service/deploy.sh
