@@ -325,9 +325,14 @@ class MdnsDiscoveryService:
     
     def _notify_callbacks(self, display: DiscoveredDisplay, event: str):
         """Notify registered callbacks"""
+        import asyncio
         for callback in self.discovery_callbacks:
             try:
-                callback(display, event)
+                if asyncio.iscoroutinefunction(callback):
+                    # Schedule the coroutine in the event loop
+                    asyncio.create_task(callback(display, event))
+                else:
+                    callback(display, event)
             except Exception as e:
                 logger.error(f"Error in discovery callback: {e}")
     

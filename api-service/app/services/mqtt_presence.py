@@ -157,7 +157,7 @@ class MqttPresenceService:
     async def _handle_mqtt_message(self, message):
         """Handle incoming MQTT presence messages"""
         try:
-            topic_parts = message.topic.split('/')
+            topic_parts = message.topic.value.split('/')
             if len(topic_parts) < 3:
                 return
             

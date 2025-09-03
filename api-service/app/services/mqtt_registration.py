@@ -5,12 +5,15 @@ Handles device registration requests via MQTT
 import json
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 
 from app.core.logging import get_logger
 from app.db.models import DisplayClient
 from app.db.base import SessionLocal
 from app.config import settings
+
+if TYPE_CHECKING:
+    from app.services.mdns_discovery import DiscoveredDisplay
 
 try:
     import aiomqtt
@@ -35,31 +38,43 @@ class AutoRegistrationService:
         """Start the auto-registration service with MQTT client"""
         if not settings.mqtt_enabled or not aiomqtt:
             logger.info("Auto-registration service disabled (MQTT not available)")
-            return
+            return False
             
         try:
-            self.mqtt_client = aiomqtt.Client(
-                hostname=settings.mqtt_broker_host,
-                port=settings.mqtt_broker_port,
-                identifier="mimir-auto-registration"
-            )
-            await self.mqtt_client.connect()
             self.running = True
+            # Start the MQTT listening task
+            asyncio.create_task(self._run_mqtt_client())
             logger.info("Auto-registration MQTT service started")
-            
-            # Start listening for acknowledgments
-            asyncio.create_task(self._listen_for_acks())
+            return True
             
         except Exception as e:
             logger.error(f"Failed to start auto-registration MQTT service: {e}")
+            return False
+
+    async def _run_mqtt_client(self):
+        """Run the MQTT client in a loop"""
+        while self.running:
+            try:
+                async with aiomqtt.Client(
+                    hostname=settings.mqtt_broker_host,
+                    port=settings.mqtt_broker_port,
+                    identifier="mimir-auto-registration"
+                ) as client:
+                    self.mqtt_client = client
+                    await self._listen_for_acks()
+            except Exception as e:
+                logger.error(f"MQTT client error in auto-registration: {e}")
+                if self.running:
+                    await asyncio.sleep(5)  # Wait before reconnecting
 
     async def stop(self):
         """Stop the auto-registration service"""
         self.running = False
         if self.mqtt_client:
-            await self.mqtt_client.disconnect()
+            # The client will be automatically disconnected when the context manager exits
+            self.mqtt_client = None
 
-    async def handle_discovered_display(self, display_info: Dict[str, Any]):
+    async def handle_discovered_display(self, display: 'DiscoveredDisplay', event: str):
         """
         Handle a newly discovered display via mDNS
         
@@ -68,8 +83,12 @@ class AutoRegistrationService:
         2a. If registered: Send "ready" acknowledgment via MQTT
         2b. If not registered: Send registration request via MQTT
         """
-        hostname = display_info.get('hostname')
-        display_id = display_info.get('display_id')
+        # Only handle discovery events, not loss events
+        if event != "discovered":
+            return
+            
+        hostname = display.hostname
+        display_id = display.device_id
         
         if not hostname or not self.mqtt_client:
             return
@@ -88,7 +107,7 @@ class AutoRegistrationService:
                 await self._send_ready_acknowledgment(hostname, existing_display.id)
             else:
                 # Display not registered - request registration details
-                await self._request_registration_details(hostname, display_info)
+                await self._request_registration_details(hostname, display)
                 
         except Exception as e:
             logger.error(f"Database error checking display registration: {e}")
@@ -112,7 +131,7 @@ class AutoRegistrationService:
         except Exception as e:
             logger.error(f"Failed to send ready acknowledgment to {hostname}: {e}")
 
-    async def _request_registration_details(self, hostname: str, display_info: Dict[str, Any]):
+    async def _request_registration_details(self, hostname: str, display: 'DiscoveredDisplay'):
         """Request registration details from an unregistered display"""
         try:
             message = {
@@ -231,7 +250,7 @@ auto_registration_service = AutoRegistrationService()
 
 async def setup_auto_registration():
     """Setup the auto-registration service"""
-    await auto_registration_service.start()
+    return await auto_registration_service.start()
 
 async def cleanup_auto_registration():
     """Cleanup the auto-registration service"""

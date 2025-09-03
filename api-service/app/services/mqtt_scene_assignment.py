@@ -62,11 +62,8 @@ class MqttSceneAssignmentService:
     async def stop(self):
         """Stop the MQTT scene assignment service"""
         self.is_running = False
-        if self.client:
-            try:
-                await self.client.disconnect()
-            except Exception as e:
-                logger.error(f"Error disconnecting MQTT scene client: {e}")
+        # The client will be automatically disconnected when the context manager exits
+        self.client = None
         logger.info("MQTT scene assignment service stopped")
     
     async def _mqtt_scene_loop(self):
@@ -103,7 +100,7 @@ class MqttSceneAssignmentService:
     async def _handle_device_event(self, message):
         """Handle incoming MQTT device events"""
         try:
-            topic_parts = message.topic.split('/')
+            topic_parts = message.topic.value.split('/')
             if len(topic_parts) < 3:
                 return
             
