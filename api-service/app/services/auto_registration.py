@@ -87,24 +87,25 @@ class AutoRegistrationService:
         """Handle mDNS discovery events"""
         if event_type == "discovered":
             # Check if this display is registered
-            if not self._is_display_registered(display.display_id):
-                logger.info(f"New unregistered display discovered: {display.display_id}")
+            if not self._is_display_registered(display):
+                logger.info(f"New unregistered display discovered: {display.hostname} (display_id: {display.display_id})")
                 # Send MQTT registration request
                 asyncio.create_task(self._request_registration(display))
     
-    def _is_display_registered(self, display_id: str) -> bool:
+    def _is_display_registered(self, display: DiscoveredDisplay) -> bool:
         """Check if display is already registered in database"""
         try:
             db = SessionLocal()
             try:
+                # Check by hostname, not display_id (which may have prefixes)
                 existing = db.query(DisplayClient).filter(
-                    DisplayClient.hostname == display_id
+                    DisplayClient.hostname == display.hostname
                 ).first()
                 return existing is not None
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"Error checking registration for {display_id}: {e}")
+            logger.error(f"Error checking registration for {display.hostname}: {e}")
             return False
     
     async def _request_registration(self, display: DiscoveredDisplay):
@@ -121,22 +122,22 @@ class AutoRegistrationService:
                 "api_endpoint": f"http://{settings.api_host}:{settings.api_port}",
                 "mqtt_broker": f"{settings.mqtt_broker_host}:{settings.mqtt_broker_port}",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "assignment_id": f"reg-{display.display_id}-{int(time.time())}"
+                "assignment_id": f"reg-{display.hostname}-{int(time.time())}"
             }
             
-            # Send to display's command topic
-            topic = f"mimir/{display.display_id}/cmd"
+            # Send to display's command topic (use hostname, not display_id)
+            topic = f"mimir/{display.hostname}/cmd"
             await self.mqtt_client.publish(topic, json.dumps(request), qos=1)
             
-            logger.info(f"Sent registration request to {display.display_id}")
+            logger.info(f"Sent registration request to {display.hostname}")
             
             # Schedule test image after a delay
-            asyncio.create_task(self._send_test_image_delayed(display.display_id))
+            asyncio.create_task(self._send_test_image_delayed(display.hostname))
             
         except Exception as e:
             logger.error(f"Error sending registration request to {display.display_id}: {e}")
     
-    async def _send_test_image_delayed(self, display_id: str):
+    async def _send_test_image_delayed(self, hostname: str):
         """Send a test image after registration"""
         try:
             # Wait for registration to complete
@@ -152,16 +153,16 @@ class AutoRegistrationService:
                 "image_url": f"http://{settings.api_host}:{settings.api_port}/static/test-success.html",
                 "message": "Registration Successful!",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "assignment_id": f"img-{display_id}-{int(time.time())}"
+                "assignment_id": f"img-{hostname}-{int(time.time())}"
             }
             
-            topic = f"mimir/{display_id}/cmd"
+            topic = f"mimir/{hostname}/cmd"
             await self.mqtt_client.publish(topic, json.dumps(test_image), qos=1)
             
-            logger.info(f"Sent test image to {display_id}")
+            logger.info(f"Sent test image to {hostname}")
             
         except Exception as e:
-            logger.error(f"Error sending test image to {display_id}: {e}")
+            logger.error(f"Error sending test image to {hostname}: {e}")
 
 
 # Global service instance
