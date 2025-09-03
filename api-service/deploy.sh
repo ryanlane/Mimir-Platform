@@ -18,7 +18,7 @@ echo -e "\nConfig:\n• Host: $REMOTE_HOST\n• User: $REMOTE_USER\n• Path: $R
 read -p "Continue? [Y/n]: " confirm; [[ $confirm =~ ^[Nn]$ ]] && { echo "Cancelled."; exit 0; }
 
 # sanity: run from repo root
-[[ -f "main.py" && -d "app" ]] || fail "Run from the api repo root (needs main.py and app/)"
+[[ -f "app/main.py" && -d "app" ]] || fail "Run from the api repo root (needs app/main.py and app/)"
 
 log "🔐 Checking remote group membership and target path…"
 SSH_CTRL="/tmp/ssh_mux_%h_%p_%r"
@@ -54,7 +54,7 @@ log "📤 Syncing files to $REMOTE_HOST…"
 [ -f requirements.txt ] && "${RSYNC_BASE[@]}" requirements.txt "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
 [ -f pyproject.toml ]   && "${RSYNC_BASE[@]}" pyproject.toml   "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
 [ -d alembic ]          && "${RSYNC_BASE[@]}" alembic/         "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/alembic/"
-[ -f alembic.ini ]      && "${RSYNC_BASE[@]}" alembic.ini      "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
+[ -f alembic.ini ]      && "${RSYNC_BASE[@]" alembic.ini      "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/"
 [ -d deploy ]           && "${RSYNC_BASE[@]}" deploy/          "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/deploy/"
 
 # Deploy systemd service file if requested
