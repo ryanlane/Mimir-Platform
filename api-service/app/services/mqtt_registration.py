@@ -5,7 +5,7 @@ Handles device registration requests via MQTT
 import json
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from app.core.logging import get_logger
 from app.db.models import DisplayClient
@@ -26,156 +26,213 @@ db = get_db()
 
 logger = get_logger(__name__)
 
-class MqttRegistrationService:
+class AutoRegistrationService:
     def __init__(self):
-        self.client: Optional[aiomqtt.Client] = None
+        self.mqtt_client = None
         self.running = False
 
     async def start(self):
-        """Start the MQTT registration service"""
+        """Start the auto-registration service with MQTT client"""
         if not settings.mqtt_enabled or not aiomqtt:
-            logger.info("MQTT registration service disabled or aiomqtt not available")
+            logger.info("Auto-registration service disabled (MQTT not available)")
             return
             
         try:
-            self.client = aiomqtt.Client(
+            self.mqtt_client = aiomqtt.Client(
                 hostname=settings.mqtt_broker_host,
                 port=settings.mqtt_broker_port,
-                identifier="mimir-registration-service"
+                identifier="mimir-auto-registration"
             )
-            
+            await self.mqtt_client.connect()
             self.running = True
-            await self._connect_and_listen()
+            logger.info("Auto-registration MQTT service started")
+            
+            # Start listening for acknowledgments
+            asyncio.create_task(self._listen_for_acks())
             
         except Exception as e:
-            logger.error(f"Failed to start MQTT registration service: {e}")
+            logger.error(f"Failed to start auto-registration MQTT service: {e}")
 
     async def stop(self):
-        """Stop the MQTT registration service"""
+        """Stop the auto-registration service"""
         self.running = False
-        if self.client:
-            await self.client.disconnect()
+        if self.mqtt_client:
+            await self.mqtt_client.disconnect()
 
-    async def _connect_and_listen(self):
-        """Connect to MQTT broker and listen for registration requests"""
+    async def handle_discovered_display(self, display_info: Dict[str, Any]):
+        """
+        Handle a newly discovered display via mDNS
+        
+        Flow:
+        1. Check if display is already registered
+        2a. If registered: Send "ready" acknowledgment via MQTT
+        2b. If not registered: Send registration request via MQTT
+        """
+        hostname = display_info.get('hostname')
+        display_id = display_info.get('display_id')
+        
+        if not hostname or not self.mqtt_client:
+            return
+            
+        logger.info(f"Processing discovered display: {hostname} ({display_id})")
+        
+        # Check if display is already registered
+        db = SessionLocal()
         try:
-            await self.client.connect()
-            logger.info("MQTT registration service connected")
+            existing_display = db.query(DisplayClient).filter(
+                DisplayClient.hostname == hostname
+            ).first()
             
-            # Subscribe to registration requests
-            await self.client.subscribe("mimir/registry/register")
-            logger.info("Subscribed to mimir/registry/register")
+            if existing_display:
+                # Display is already registered - send ready acknowledgment
+                await self._send_ready_acknowledgment(hostname, existing_display.id)
+            else:
+                # Display not registered - request registration details
+                await self._request_registration_details(hostname, display_info)
+                
+        except Exception as e:
+            logger.error(f"Database error checking display registration: {e}")
+        finally:
+            db.close()
+
+    async def _send_ready_acknowledgment(self, hostname: str, display_id: str):
+        """Send ready acknowledgment to an already registered display"""
+        try:
+            message = {
+                "action": "ready",
+                "message": "Display is registered and ready for commands",
+                "display_id": str(display_id),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
             
-            async for message in self.client.messages:
+            topic = f"mimir/{hostname}/cmd"
+            await self.mqtt_client.publish(topic, json.dumps(message))
+            logger.info(f"Sent ready acknowledgment to {hostname}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send ready acknowledgment to {hostname}: {e}")
+
+    async def _request_registration_details(self, hostname: str, display_info: Dict[str, Any]):
+        """Request registration details from an unregistered display"""
+        try:
+            message = {
+                "action": "register",
+                "message": "Please provide registration details",
+                "reply_to": f"mimir/{hostname}/registration/reply",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            topic = f"mimir/{hostname}/cmd"
+            await self.mqtt_client.publish(topic, json.dumps(message))
+            logger.info(f"Sent registration request to {hostname}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send registration request to {hostname}: {e}")
+
+    async def _listen_for_acks(self):
+        """Listen for acknowledgment responses from displays"""
+        try:
+            await self.mqtt_client.subscribe("mimir/+/ack")
+            await self.mqtt_client.subscribe("mimir/+/registration/reply")
+            
+            async for message in self.mqtt_client.messages:
                 if not self.running:
                     break
                     
                 try:
-                    await self._handle_registration_request(message)
+                    await self._handle_display_response(message)
                 except Exception as e:
-                    logger.error(f"Error handling registration request: {e}")
+                    logger.error(f"Error handling display response: {e}")
                     
         except Exception as e:
-            logger.error(f"MQTT registration service error: {e}")
+            logger.error(f"Error listening for display acknowledgments: {e}")
 
-    async def _handle_registration_request(self, message):
-        """Handle a registration request from a display"""
+    async def _handle_display_response(self, message):
+        """Handle responses from displays"""
         try:
-            # Parse the registration request
-            request_data = json.loads(message.payload.decode())
-            device_id = request_data.get("device_id")
-            reply_to = request_data.get("reply_to")
-            capabilities = request_data.get("capabilities", {})
-            metadata = request_data.get("metadata", {})
+            topic_parts = message.topic.value.split('/')
+            if len(topic_parts) < 3:
+                return
+                
+            hostname = topic_parts[1]
+            response_type = topic_parts[2]
             
-            logger.info(f"Processing registration request for device: {device_id}")
+            data = json.loads(message.payload.decode())
             
-            # Create or update the display client in database
-            db = next(get_db())
+            if response_type == "ack":
+                logger.info(f"Received acknowledgment from {hostname}: {data.get('message', 'OK')}")
+                
+            elif response_type == "registration" and len(topic_parts) > 3 and topic_parts[3] == "reply":
+                await self._process_registration_reply(hostname, data)
+                
+        except Exception as e:
+            logger.error(f"Error processing display response: {e}")
+
+    async def _process_registration_reply(self, hostname: str, registration_data: Dict[str, Any]):
+        """Process registration details from a display and create database entry"""
+        try:
+            capabilities = registration_data.get("capabilities", {})
+            metadata = registration_data.get("metadata", {})
+            
+            # Create new display in database
+            db = SessionLocal()
             try:
-                # Check if display already exists
-                existing_display = db.query(DisplayClient).filter(
-                    DisplayClient.hostname == metadata.get("hostname", device_id)
-                ).first()
+                new_display = DisplayClient(
+                    name=metadata.get("name", f"Display {hostname}"),
+                    description=metadata.get("description", "Auto-registered display"),
+                    location=metadata.get("location", "Unknown"),
+                    hostname=hostname,
+                    is_online=True,
+                    last_seen=datetime.now(timezone.utc),
+                    client_version=metadata.get("client_version", "unknown"),
+                    resolution=capabilities.get("resolution", [800, 480]),
+                    orientation=capabilities.get("orientation", "landscape"),
+                    refresh_rate_hz=capabilities.get("refresh_rate_hz", 1),
+                    tags=metadata.get("tags", [])
+                )
                 
-                if existing_display:
-                    # Update existing display
-                    existing_display.name = metadata.get("name", "Unknown Display")
-                    existing_display.location = metadata.get("location", "Unknown")
-                    existing_display.is_online = True
-                    existing_display.last_seen = datetime.now(timezone.utc)
-                    existing_display.client_version = metadata.get("client_version", "unknown")
-                    existing_display.resolution = capabilities.get("resolution", [800, 480])
-                    existing_display.orientation = capabilities.get("orientation", "landscape")
-                    existing_display.refresh_rate_hz = capabilities.get("refresh_rate_hz", 1)
-                    existing_display.tags = metadata.get("tags", [])
-                    
-                    db.commit()
-                    assigned_id = existing_display.id
-                    logger.info(f"Updated existing display: {assigned_id}")
-                    
-                else:
-                    # Create new display
-                    new_display = DisplayClient(
-                        name=metadata.get("name", "Unknown Display"),
-                        description=metadata.get("description", "MQTT registered display"),
-                        location=metadata.get("location", "Unknown"),
-                        hostname=metadata.get("hostname", device_id),
-                        is_online=True,
-                        last_seen=datetime.now(timezone.utc),
-                        client_version=metadata.get("client_version", "unknown"),
-                        resolution=capabilities.get("resolution", [800, 480]),
-                        orientation=capabilities.get("orientation", "landscape"),
-                        refresh_rate_hz=capabilities.get("refresh_rate_hz", 1),
-                        tags=metadata.get("tags", [])
-                    )
-                    
-                    db.add(new_display)
-                    db.commit()
-                    db.refresh(new_display)
-                    assigned_id = new_display.id
-                    logger.info(f"Created new display: {assigned_id}")
+                db.add(new_display)
+                db.commit()
+                db.refresh(new_display)
                 
-                # Send success response
-                response = {
-                    "success": True,
-                    "assigned_id": str(assigned_id),
-                    "device_id": device_id,
-                    "message": "Registration successful",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
+                logger.info(f"Registered new display: {hostname} (ID: {new_display.id})")
+                
+                # Send confirmation back to display
+                await self._send_registration_confirmation(hostname, new_display.id)
                 
             except Exception as e:
                 db.rollback()
-                logger.error(f"Database error during registration: {e}")
-                
-                # Send error response
-                response = {
-                    "success": False,
-                    "error": f"Registration failed: {str(e)}",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
+                logger.error(f"Database error creating display: {e}")
             finally:
                 db.close()
-            
-            # Send response back to the device
-            if reply_to and self.client:
-                await self.client.publish(
-                    reply_to,
-                    json.dumps(response)
-                )
-                logger.info(f"Sent registration response to {reply_to}")
                 
         except Exception as e:
-            logger.error(f"Error processing registration request: {e}")
+            logger.error(f"Error processing registration reply from {hostname}: {e}")
+
+    async def _send_registration_confirmation(self, hostname: str, display_id: str):
+        """Send registration confirmation to newly registered display"""
+        try:
+            message = {
+                "action": "registration_complete",
+                "display_id": str(display_id),
+                "message": "Registration successful, ready for commands",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            topic = f"mimir/{hostname}/cmd"
+            await self.mqtt_client.publish(topic, json.dumps(message))
+            logger.info(f"Sent registration confirmation to {hostname}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send registration confirmation to {hostname}: {e}")
 
 # Global service instance
-mqtt_registration_service = MqttRegistrationService()
+auto_registration_service = AutoRegistrationService()
 
-async def setup_mqtt_registration():
-    """Setup the MQTT registration service"""
-    await mqtt_registration_service.start()
+async def setup_auto_registration():
+    """Setup the auto-registration service"""
+    await auto_registration_service.start()
 
-async def cleanup_mqtt_registration():
-    """Cleanup the MQTT registration service"""
-    await mqtt_registration_service.stop()
+async def cleanup_auto_registration():
+    """Cleanup the auto-registration service"""
+    await auto_registration_service.stop()
