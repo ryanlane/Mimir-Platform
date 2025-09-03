@@ -1,28 +1,23 @@
 """
 Display Client API Routes
-FastAPI router for display client management endpoints
+Streamlined FastAPI router for display client management
 """
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import datetime
 
 from app.db.base import SessionLocal
-from app.db.models import DisplayClient, DisplayStatus, Scene, ContentLease
+from app.db.models import DisplayClient, Scene
 from app.schemas.displays import (
     DisplayClientRegistration, 
     DisplayClientResponse, 
     DisplayClientUpdate,
     DisplayClientListResponse,
-    DisplayStatusResponse,
     DisplayCapabilities,
-    SceneAssignment,
-    ContentClaimRequest,
-    ContentClaimResponse,
-    AcknowledgmentRequest,
-    LegacyDisplayStatusResponse
+    SceneAssignment
 )
-from app.schemas.common import PaginationParams
+from app.schemas.common import PaginationParams, PaginationMeta
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt_scene_assignment import mqtt_scene_service
 
@@ -240,161 +235,11 @@ async def list_display_clients(
     
     total = total_db + total_discovered
     
-    from app.schemas.common import PaginationMeta
-    
     return DisplayClientListResponse(
         data=display_responses,
         meta=PaginationMeta(total=total, limit=limit, offset=offset),
         total=total
     )
-
-
-@router.get("/discover")
-async def discover_displays(
-    timeout: int = Query(5, ge=1, le=30),
-    db: Session = Depends(get_db)
-):
-    """Discover available displays on network via mDNS"""
-    # Check if continuous discovery is running
-    if mdns_discovery_service.is_running:
-        # Use the background service results
-        discovered_displays = []
-        for display in mdns_discovery_service.get_discovered_displays():
-            display_info = {
-                "service_name": display.service_name,
-                "hostname": display.hostname,
-                "display_name": display.display_name,
-                "display_id": display.display_id,
-                "location": display.location,
-                "resolution": display.resolution,
-                "client_version": display.client_version,
-                "webhook_port": display.webhook_port,
-                "addresses": display.addresses,
-                "properties": display.properties,
-                "discovered_at": display.discovered_at.isoformat(),
-                "is_online": display.is_online
-            }
-            
-            # Add webhook URL if available
-            if display.addresses and display.webhook_port:
-                display_info["webhook_url"] = f"http://{display.addresses[0]}:{display.webhook_port}"
-            
-            discovered_displays.append(display_info)
-        
-        return {
-            "discovered_displays": discovered_displays,
-            "discovery_timeout": 0,  # No timeout for background service
-            "total_found": len(discovered_displays),
-            "discovery_completed_at": datetime.datetime.now().isoformat(),
-            "source": "background_service",
-            "continuous_discovery": True
-        }
-    
-    # Fallback to manual discovery if background service not running
-    try:
-        from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
-        import time
-        import threading
-        import socket
-        
-        print(f"🔍 Starting manual mDNS discovery with timeout={timeout}")
-        
-        discovered_displays = []
-        
-        class DisplayListener(ServiceListener):
-            def add_service(self, zeroconf, service_type, name):
-                print(f"🔎 Found service: {name}")
-                if '_mimir-display._tcp.local.' in name:
-                    info = zeroconf.get_service_info(service_type, name)
-                    if info:
-                        print(f"✅ Got service info for: {name}")
-                        
-                        # Extract service properties
-                        properties = {}
-                        if info.properties:
-                            for key, value in info.properties.items():
-                                try:
-                                    properties[key.decode('utf-8')] = value.decode('utf-8')
-                                except:
-                                    pass
-                        
-                        # Convert IP addresses to readable format
-                        addresses = []
-                        for addr in info.addresses:
-                            try:
-                                addresses.append(socket.inet_ntoa(addr))
-                            except:
-                                addresses.append(str(addr))
-                        
-                        hostname = properties.get("hostname", "unknown")
-                        display_name = properties.get("display_name", f"Display ({hostname})")
-                        display_id = properties.get("display_id", f"unknown-{hostname}")
-                        
-                        display_info = {
-                            "service_name": name,
-                            "hostname": hostname,
-                            "display_name": display_name,
-                            "display_id": display_id,
-                            "location": properties.get("location", "Auto-discovered"),
-                            "resolution": properties.get("resolution"),
-                            "client_version": properties.get("client_version"),
-                            "webhook_port": properties.get("webhook_port"),
-                            "addresses": addresses,
-                            "port": info.port,
-                            "properties": properties,
-                            "discovered_at": datetime.datetime.now().isoformat()
-                        }
-                        
-                        # Add webhook URL if we have an address and port
-                        if addresses and properties.get("webhook_port"):
-                            display_info["webhook_url"] = f"http://{addresses[0]}:{properties.get('webhook_port')}"
-                        
-                        discovered_displays.append(display_info)
-                        print(f"✅ Added display: {display_name} ({hostname}) at {addresses}")
-            
-            def remove_service(self, zeroconf, service_type, name):
-                pass
-            
-            def update_service(self, zeroconf, service_type, name):
-                pass
-        
-        # Start discovery
-        zeroconf = Zeroconf()
-        listener = DisplayListener()
-        
-        # Browse for services
-        browser = ServiceBrowser(zeroconf, "_mimir-display._tcp.local.", listener)
-        
-        # Wait for discovery
-        print(f"⏳ Waiting {timeout} seconds for services...")
-        time.sleep(timeout)
-        
-        # Cleanup
-        browser.cancel()
-        zeroconf.close()
-        
-        print(f"✅ Manual discovery complete. Found {len(discovered_displays)} displays.")
-        
-        return {
-            "discovered_displays": discovered_displays,
-            "discovery_timeout": timeout,
-            "total_found": len(discovered_displays),
-            "discovery_completed_at": datetime.datetime.now().isoformat(),
-            "source": "manual_discovery",
-            "continuous_discovery": False
-        }
-        
-    except ImportError:
-        raise HTTPException(
-            status_code=501, 
-            detail="mDNS discovery not available (zeroconf library not installed)"
-        )
-    except Exception as e:
-        print(f"❌ Discovery failed: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Discovery failed: {str(e)}"
-        )
 
 
 @router.get("/discovery/status")
@@ -418,6 +263,157 @@ async def get_discovery_status():
             }
             for d in discovered
         ]
+    }
+
+
+@router.get("/discovery/live")
+async def get_live_discovered_displays():
+    """Get currently discovered displays from the live mDNS service"""
+    if not mdns_discovery_service.is_running:
+        raise HTTPException(
+            status_code=503,
+            detail="mDNS discovery service is not running."
+        )
+    
+    discovered = mdns_discovery_service.get_discovered_displays()
+    
+    return {
+        "total_discovered": len(discovered),
+        "online_count": sum(1 for d in discovered if d.is_online),
+        "discovered_displays": [
+            {
+                "service_name": d.service_name,
+                "display_id": d.display_id,
+                "display_name": d.display_name,
+                "hostname": d.hostname,
+                "location": d.location,
+                "addresses": d.addresses,
+                "webhook_port": d.webhook_port,
+                "resolution": d.resolution,
+                "client_version": d.client_version,
+                "is_online": d.is_online,
+                "discovered_at": d.discovered_at.isoformat(),
+                "last_seen": d.last_seen.isoformat(),
+                "properties": d.properties,
+                "webhook_url": f"http://{d.addresses[0]}:{d.webhook_port}" if d.addresses and d.webhook_port else None
+            }
+            for d in discovered
+        ]
+    }
+
+
+@router.get("/{display_id}", response_model=DisplayClientResponse)
+async def get_display_client(display_id: str, db: Session = Depends(get_db)):
+    """Get display client by ID"""
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    return DisplayClientResponse.model_validate(client)
+
+
+@router.put("/{display_id}", response_model=DisplayClientResponse)
+async def update_display_client(
+    display_id: str,
+    update_data: DisplayClientUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update display client"""
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    for key, value in update_data.model_dump(exclude_unset=True).items():
+        setattr(client, key, value)
+    
+    db.commit()
+    db.refresh(client)
+    
+    return DisplayClientResponse.model_validate(client)
+
+
+@router.delete("/{display_id}")
+async def delete_display_client(display_id: str, db: Session = Depends(get_db)):
+    """Delete display client"""
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    db.delete(client)
+    db.commit()
+    
+    return {"message": "Display client deleted successfully"}
+
+
+@router.put("/{display_id}/scene/{scene_id}")
+async def assign_scene_to_display(
+    display_id: str,
+    scene_id: int,
+    db: Session = Depends(get_db)
+):
+    """Assign a scene to a display (supports both HTTP and MQTT)"""
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    # Update database
+    client.assigned_scene_id = scene_id
+    client.scene_assigned_at = datetime.datetime.now()
+    db.commit()
+    
+    # Try MQTT assignment for MQTT-enabled displays
+    mqtt_success = False
+    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
+        try:
+            mqtt_success = await mqtt_scene_service.assign_scene_to_device(
+                client.hostname, scene_id
+            )
+        except Exception as e:
+            print(f"MQTT assignment failed, falling back to HTTP: {e}")
+    
+    return {
+        "message": f"Scene {scene_id} assigned to display {display_id}",
+        "scene_name": scene.name,
+        "assigned_at": client.scene_assigned_at.isoformat(),
+        "mqtt_assigned": mqtt_success,
+        "communication_method": getattr(client, 'communication_method', 'http')
+    }
+
+
+@router.delete("/{display_id}/scene")
+async def unassign_scene_from_display(
+    display_id: str,
+    db: Session = Depends(get_db)
+):
+    """Unassign scene from a display (supports both HTTP and MQTT)"""
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+    
+    current_scene_id = client.assigned_scene_id
+    client.assigned_scene_id = None
+    client.scene_assigned_at = None
+    db.commit()
+    
+    # Try MQTT unassignment for MQTT-enabled displays
+    mqtt_success = False
+    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
+        try:
+            mqtt_success = await mqtt_scene_service.unassign_scene_from_device(
+                client.hostname
+            )
+        except Exception as e:
+            print(f"MQTT unassignment failed: {e}")
+    
+    return {
+        "message": f"Scene unassigned from display {display_id}",
+        "previous_scene_id": current_scene_id,
+        "mqtt_unassigned": mqtt_success,
+        "communication_method": getattr(client, 'communication_method', 'http')
     }
 
 
@@ -450,312 +446,62 @@ async def stop_discovery_service():
     return {"status": "stopped", "message": "mDNS discovery service stopped"}
 
 
-@router.get("/discovery/live")
-async def get_live_discovered_displays():
-    """Get currently discovered displays from the live mDNS service"""
-    if not mdns_discovery_service.is_running:
-        raise HTTPException(
-            status_code=503,
-            detail="mDNS discovery service is not running. Use /api/displays/discovery/start to start it."
-        )
+@router.get("/unassigned")
+async def get_unassigned_displays(
+    include_discovered: bool = Query(True, description="Include discovered displays"),
+    db: Session = Depends(get_db)
+):
+    """Get displays that don't have scene assignments"""
+    unassigned_displays = []
     
-    discovered = mdns_discovery_service.get_discovered_displays()
+    # Get unassigned database displays
+    db_displays = db.query(DisplayClient).filter(
+        DisplayClient.assigned_scene_id.is_(None)
+    ).all()
+    
+    for client in db_displays:
+        unassigned_displays.append({
+            "display_id": client.id,
+            "display_name": client.name,
+            "location": client.location,
+            "hostname": client.hostname,
+            "display_type": "registered",
+            "is_online": client.is_online,
+            "last_seen": client.last_seen.isoformat() if client.last_seen else None,
+            "webhook_port": client.webhook_port,
+            "resolution": f"{client.width}x{client.height}" if client.width and client.height else None,
+            "client_version": client.client_version
+        })
+    
+    # Add unassigned discovered displays if requested
+    if include_discovered and mdns_discovery_service.is_running:
+        discovered_displays = mdns_discovery_service.get_discovered_displays()
+        
+        # Get assigned display IDs from database to filter out
+        assigned_db_hostnames = {
+            client.hostname for client in db.query(DisplayClient).filter(
+                DisplayClient.assigned_scene_id.isnot(None)
+            ).all() if client.hostname
+        }
+        
+        for discovered in discovered_displays:
+            # Skip if this discovered display is registered and assigned
+            if discovered.hostname not in assigned_db_hostnames:
+                unassigned_displays.append({
+                    "display_id": discovered.display_id,
+                    "display_name": discovered.display_name,
+                    "location": discovered.location,
+                    "hostname": discovered.hostname,
+                    "display_type": "discovered",
+                    "is_online": discovered.is_online,
+                    "last_seen": discovered.last_seen.isoformat(),
+                    "discovered_at": discovered.discovered_at.isoformat(),
+                    "webhook_port": discovered.webhook_port,
+                    "resolution": discovered.resolution,
+                    "client_version": discovered.client_version
+                })
     
     return {
-        "total_discovered": len(discovered),
-        "online_count": sum(1 for d in discovered if d.is_online),
-        "discovered_displays": [
-            {
-                "service_name": d.service_name,
-                "display_id": d.display_id,
-                "display_name": d.display_name,
-                "hostname": d.hostname,
-                "location": d.location,
-                "addresses": d.addresses,
-                "webhook_port": d.webhook_port,
-                "resolution": d.resolution,
-                "client_version": d.client_version,
-                "is_online": d.is_online,
-                "discovered_at": d.discovered_at.isoformat(),
-                "last_seen": d.last_seen.isoformat(),
-                "properties": d.properties,
-                "webhook_url": f"http://{d.addresses[0]}:{d.webhook_port}" if d.addresses and d.webhook_port else None
-            }
-            for d in discovered
-        ]
-    }
-
-
-@router.get("/{display_id}", response_model=DisplayClientResponse)
-async def get_display_client(
-    display_id: str,
-    db: Session = Depends(get_db)
-):
-    """Get display client by ID"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    return DisplayClientResponse.model_validate(client)
-
-
-@router.put("/{display_id}", response_model=DisplayClientResponse)
-async def update_display_client(
-    display_id: str,
-    update_data: DisplayClientUpdate,
-    db: Session = Depends(get_db)
-):
-    """Update display client"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    for key, value in update_data.model_dump(exclude_unset=True).items():
-        setattr(client, key, value)
-    
-    db.commit()
-    db.refresh(client)
-    
-    return DisplayClientResponse.model_validate(client)
-
-
-@router.delete("/{display_id}")
-async def delete_display_client(
-    display_id: str,
-    db: Session = Depends(get_db)
-):
-    """Delete display client"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    db.delete(client)
-    db.commit()
-    
-    return {"message": "Display client deleted successfully"}
-
-
-@router.post("/{display_id}/assign_scene")
-async def assign_scene_to_display(
-    display_id: str,
-    assignment: SceneAssignment,
-    db: Session = Depends(get_db)
-):
-    """Assign scene to display client"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    scene = db.query(Scene).filter(Scene.id == assignment.scene_id).first()
-    if not scene:
-        raise HTTPException(status_code=404, detail="Scene not found")
-    
-    client.assigned_scene_id = assignment.scene_id
-    db.commit()
-    
-    return {"message": f"Scene {assignment.scene_id} assigned to display {display_id}"}
-
-
-@router.delete("/{display_id}/assign_scene")
-async def unassign_scene_from_display(
-    display_id: str,
-    db: Session = Depends(get_db)
-):
-    """Unassign scene from display client"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    client.assigned_scene_id = None
-    db.commit()
-    
-    return {"message": f"Scene unassigned from display {display_id}"}
-
-
-@router.get("/{display_id}/status", response_model=Optional[DisplayStatusResponse])
-async def get_display_status(
-    display_id: str,
-    db: Session = Depends(get_db)
-):
-    """Get display status"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    status = db.query(DisplayStatus).filter(DisplayStatus.display_client_id == display_id).first()
-    if not status:
-        return None
-    
-    return DisplayStatusResponse.model_validate(status)
-
-
-@router.post("/{display_id}/claim_content", response_model=ContentClaimResponse)
-async def claim_content(
-    display_id: str,
-    claim_request: ContentClaimRequest,
-    db: Session = Depends(get_db)
-):
-    """Claim content for display"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    # Create content lease
-    lease = ContentLease(
-        scene_id=claim_request.scene_id,
-        display_id=display_id,
-        content_id=claim_request.content_id,
-        assignment_id=claim_request.assignment_id,
-        status="active",
-        assigned_at=datetime.datetime.now(),
-        expires_at=datetime.datetime.now() + datetime.timedelta(hours=1),  # 1 hour lease
-        distribution_mode="claim"
-    )
-    
-    db.add(lease)
-    db.commit()
-    db.refresh(lease)
-    
-    return ContentClaimResponse(
-        lease_id=lease.lease_id,
-        content_id=lease.content_id,
-        expires_at=lease.expires_at,
-        assignment_id=lease.assignment_id
-    )
-
-
-@router.post("/{display_id}/acknowledge")
-async def acknowledge_content(
-    display_id: str,
-    lease_data: dict,
-    db: Session = Depends(get_db)
-):
-    """Acknowledge content receipt"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    lease_id = lease_data.get("lease_id")
-    if lease_id:
-        lease = db.query(ContentLease).filter(ContentLease.lease_id == lease_id).first()
-        if lease:
-            lease.acknowledged_at = datetime.datetime.now()
-            lease.status = "acknowledged"
-            db.commit()
-    
-    return {"message": "Content acknowledged"}
-
-
-@router.post("/{display_id}/refresh")
-async def refresh_display(
-    display_id: str,
-    db: Session = Depends(get_db)
-):
-    """Refresh display content"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    # This would trigger a refresh via webhook or WebSocket
-    # For now, just return success
-    return {"message": f"Refresh triggered for display {display_id}"}
-
-
-@router.post("/{display_id}/update")
-async def update_display_content(
-    display_id: str,
-    update_data: dict,
-    db: Session = Depends(get_db)
-):
-    """Update display content"""
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    # Update content hash if provided
-    if "content_hash" in update_data:
-        client.current_content_hash = update_data["content_hash"]
-        client.last_seen = datetime.datetime.now()
-        db.commit()
-    
-    return {"message": f"Display {display_id} content updated"}
-
-
-@router.put("/{display_id}/scene/{scene_id}")
-async def assign_scene_to_display(
-    display_id: str,
-    scene_id: int,
-    db: Session = Depends(get_db)
-):
-    """Assign a scene to a display (supports both HTTP and MQTT)"""
-    # Get display client
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    # Get scene
-    scene = db.query(Scene).filter(Scene.id == scene_id).first()
-    if not scene:
-        raise HTTPException(status_code=404, detail="Scene not found")
-    
-    # Update database
-    client.assigned_scene_id = scene_id
-    client.scene_assigned_at = datetime.datetime.now()
-    db.commit()
-    
-    # Try MQTT assignment for MQTT-enabled displays
-    mqtt_success = False
-    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
-        try:
-            mqtt_success = await mqtt_scene_service.assign_scene_to_device(
-                client.hostname, scene_id
-            )
-        except Exception as e:
-            # Log error but don't fail the HTTP request
-            print(f"MQTT assignment failed, falling back to HTTP: {e}")
-    
-    return {
-        "message": f"Scene {scene_id} assigned to display {display_id}",
-        "scene_name": scene.name,
-        "assigned_at": client.scene_assigned_at.isoformat(),
-        "mqtt_assigned": mqtt_success,
-        "communication_method": getattr(client, 'communication_method', 'http')
-    }
-
-
-@router.delete("/{display_id}/scene")
-async def unassign_scene_from_display(
-    display_id: str,
-    db: Session = Depends(get_db)
-):
-    """Unassign scene from a display (supports both HTTP and MQTT)"""
-    # Get display client
-    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    # Store current assignment for response
-    current_scene_id = client.assigned_scene_id
-    
-    # Update database
-    client.assigned_scene_id = None
-    client.scene_assigned_at = None
-    db.commit()
-    
-    # Try MQTT unassignment for MQTT-enabled displays
-    mqtt_success = False
-    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
-        try:
-            mqtt_success = await mqtt_scene_service.unassign_scene_from_device(
-                client.hostname
-            )
-        except Exception as e:
-            # Log error but don't fail the HTTP request
-            print(f"MQTT unassignment failed: {e}")
-    
-    return {
-        "message": f"Scene unassigned from display {display_id}",
-        "previous_scene_id": current_scene_id,
-        "mqtt_unassigned": mqtt_success,
-        "communication_method": getattr(client, 'communication_method', 'http')
+        "total_unassigned": len(unassigned_displays),
+        "unassigned_displays": unassigned_displays
     }

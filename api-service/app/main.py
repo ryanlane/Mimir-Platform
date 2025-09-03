@@ -30,7 +30,6 @@ from app.api.routes.channels import router as channels_router
 from app.api.routes.scenes import router as scenes_router
 from app.api.routes.displays import router as displays_router
 from app.api.routes.display_scene import router as display_scene_router
-from app.api.routes.discovered_displays import router as discovered_displays_router
 from app.api.routes.websockets import router as websockets_router
 from app.api.routes.admin import health_router, admin_router
 
@@ -215,7 +214,6 @@ def create_app() -> FastAPI:
     app.include_router(scenes_router, prefix=settings.api_prefix, tags=["scenes"])
     app.include_router(displays_router, prefix=settings.api_prefix, tags=["displays"])
     app.include_router(display_scene_router, prefix=settings.api_prefix, tags=["display-scene"])
-    app.include_router(discovered_displays_router, prefix=settings.api_prefix, tags=["discovered-displays"])
     app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])
     
     # Include WebSocket routes (no prefix for WebSockets)
@@ -265,3 +263,5 @@ if __name__ == "__main__":
         reload=settings.debug,
         log_level=settings.log_level.lower()
     )
+    log_level=settings.log_level.lower()
+
