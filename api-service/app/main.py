@@ -40,8 +40,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan context manager for startup and shutdown"""
     logger = get_logger("app.main")
     
-    # Startup
-    logger.info("🚀 Mimir API v2.1.0 starting up...")
+    # Startup with green text
+    if settings.debug:
+        # ANSI escape code for green text
+        green_text = "\033[92m🚀 Mimir API v2.1.0 starting up...\033[0m"
+        print(green_text)  # Print directly to console with color
+    
+    logger.info("🚀 Mimir API v2.1.0 starting up...")  # Still log normally
     
     # Initialize core services
     setup_metrics()
