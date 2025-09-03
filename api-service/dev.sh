@@ -26,7 +26,9 @@ case "$1" in
         echo -e "${YELLOW}API docs: http://localhost:$PORT/docs${NC}"
         echo -e "${YELLOW}Health check: http://localhost:$PORT/api/v1/health${NC}"
         echo
-        uvicorn $APP_MODULE --host $HOST --port $PORT --reload --log-level info
+        export DEBUG=true
+        export LOG_LEVEL=debug
+        uvicorn $APP_MODULE --host $HOST --port $PORT --reload --log-level debug --access-log
         ;;
     "prod")
         log "🏭 Starting Mimir API in production mode..."

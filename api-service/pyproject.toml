@@ -15,6 +15,7 @@ dependencies = [
     "python-multipart>=0.0.6",
     "websockets>=12.0",
     "alembic>=1.13.0",
+    "colorama>=0.4.6",  # Cross-platform colored terminal output
 ]
 
 [project.optional-dependencies]

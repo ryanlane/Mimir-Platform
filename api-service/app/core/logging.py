@@ -1,6 +1,6 @@
 """
 Logging configuration for Mimir API
-Provides structured logging with JSON output and request tracking
+Provides structured logging with optional colored output for development.
 """
 from __future__ import annotations
 
@@ -51,6 +51,31 @@ class JSONFormatter(logging.Formatter):
                 data[k] = v
 
         return json.dumps(data, default=str)
+
+
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter that adds colors to log levels."""
+
+    COLORS = {
+        "DEBUG": "\033[96m",  # Cyan
+        "INFO": "\033[92m",   # Green
+        "WARNING": "\033[93m",  # Yellow
+        "ERROR": "\033[91m",  # Red
+        "CRITICAL": "\033[95m\033[1m",  # Magenta and Bold
+    }
+
+    def format(self, record: logging.LogRecord) -> str:
+        # Get the original formatted message
+        message = super().format(record)
+
+        # Add color if available and we're in debug mode
+        if settings.debug:
+            color = self.COLORS.get(record.levelname, "")
+            if color:
+                # Color the entire message
+                message = f"{color}{message}\033[0m"  # Reset color at the end
+
+        return message
 
 
 # --- Public API ------------------------------------------------------------
@@ -113,6 +138,24 @@ def setup_logging() -> None:
     }
 
     logging.config.dictConfig(config)
+
+    # Create console handler with colored formatter for development
+    console_handler = logging.StreamHandler(sys.stdout)
+
+    if settings.debug:
+        # Use colored formatter in debug mode
+        console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        console_formatter = ColoredFormatter(console_format)
+    else:
+        # Use standard formatter in production
+        console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        console_formatter = logging.Formatter(console_format)
+
+    console_handler.setFormatter(console_formatter)
+    console_handler.setLevel(logging.INFO)
+
+    # Add the console handler to the root logger
+    logging.getLogger().addHandler(console_handler)
 
 
 def get_logger(name: str) -> logging.Logger:
