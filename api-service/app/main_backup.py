@@ -1,6 +1,33 @@
 """
 Mimir API Application Factory
-Creates and configures the FastAPI application with all necessary components and middleware.
+Creates and configures the FastAPI application w    # Setup MQTT presence detection for instant online/offline
+    if settings.mqtt_enabled:
+        mqtt_success = await setup_mqtt_integration()
+        auto_reg_success = await setup_auto_registration()
+        scene_success = await setup_mqtt_scene_assignment()
+        
+        if mqtt_success:
+            logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+            logger.info(f"   Instant online/offline detection via Last Will & Testament")
+        else:
+            logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+        
+        if auto_reg_success:
+            logger.info(f"� Auto-Registration: enabled - mDNS discovery → MQTT registration")
+            logger.info(f"   Automatic display registration and test image workflow")
+            
+            # Connect auto-registration to mDNS discovery
+            mdns_discovery_service.add_discovery_callback(auto_registration_service.handle_discovered_display)
+        else:
+            logger.warning(f"⚠️ Auto-Registration: failed to start")
+        
+        if scene_success:
+            logger.info(f"🎬 MQTT Scene Assignment: enabled - listening on mimir/+/evt")
+            logger.info(f"   Pure MQTT scene assignment workflow available")
+        else:
+            logger.warning(f"⚠️ MQTT Scene Assignment: failed to start")
+    else:
+        logger.info(f"📡 MQTT Services: disabled by configuration")ecture
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -85,8 +112,7 @@ async def lifespan(app: FastAPI):
     # Setup MQTT presence detection for instant online/offline
     if settings.mqtt_enabled:
         mqtt_success = await setup_mqtt_integration()
-        auto_reg_success = await setup_auto_registration()
-        scene_success = await setup_mqtt_scene_assignment()
+        registration_success = await setup_auto_registration()
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
@@ -94,20 +120,11 @@ async def lifespan(app: FastAPI):
         else:
             logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
         
-        if auto_reg_success:
-            logger.info(f"🔄 Auto-Registration: enabled - mDNS discovery → MQTT registration")
-            logger.info(f"   Automatic display registration and test image workflow")
-            
-            # Connect auto-registration to mDNS discovery
-            mdns_discovery_service.add_discovery_callback(auto_registration_service.handle_discovered_display)
+        if registration_success:
+            logger.info(f"� MQTT Registration: enabled - listening on mimir/registry/register")
+            logger.info(f"   Pure MQTT device registration workflow available")
         else:
-            logger.warning(f"⚠️ Auto-Registration: failed to start")
-        
-        if scene_success:
-            logger.info(f"🎬 MQTT Scene Assignment: enabled - listening on mimir/+/evt")
-            logger.info(f"   Pure MQTT scene assignment workflow available")
-        else:
-            logger.warning(f"⚠️ MQTT Scene Assignment: failed to start")
+            logger.warning(f"⚠️ MQTT Registration: failed to start")
     else:
         logger.info(f"📡 MQTT Services: disabled by configuration")
     
