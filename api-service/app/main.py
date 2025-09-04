@@ -22,7 +22,6 @@ from app.services.distribution import distribution_service
 from app.services.caching import cache_service
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt_presence import mqtt_presence_service, setup_mqtt_integration
-from app.services.mqtt_registration import mqtt_scene_service, setup_mqtt_scene_assignment
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -88,19 +87,12 @@ async def lifespan(app: FastAPI):
     # Setup MQTT presence detection for instant online/offline
     if settings.mqtt_enabled:
         mqtt_success = await setup_mqtt_integration()
-        scene_success = await setup_mqtt_scene_assignment()
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
             logger.info(f"   Instant online/offline detection via Last Will & Testament")
         else:
             logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
-        
-        if scene_success:
-            logger.info(f"🎬 MQTT Scene Assignment: enabled - listening on mimir/+/evt")
-            logger.info(f"   Pure MQTT scene assignment workflow available")
-        else:
-            logger.warning(f"⚠️ MQTT Scene Assignment: failed to start")
     else:
         logger.info(f"📡 MQTT Services: disabled by configuration")
     
@@ -115,7 +107,6 @@ async def lifespan(app: FastAPI):
     
     # Stop MQTT services
     if settings.mqtt_enabled:
-        await mqtt_scene_service.stop()
         logger.info("📝 MQTT services stopped")
     
     # Stop mDNS discovery service
@@ -255,6 +246,15 @@ if __name__ == "__main__":
 
 # Development server entry point
 if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host=settings.api_host,
+        port=settings.api_port,
+        reload=settings.debug,
+        log_level=settings.log_level.lower()
+    )
+    log_level=settings.log_level.lower()
     import uvicorn
     uvicorn.run(
         "app.main:app",

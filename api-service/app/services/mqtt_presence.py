@@ -160,21 +160,30 @@ class MqttPresenceService:
             topic_parts = message.topic.value.split('/')
             if len(topic_parts) < 3:
                 return
-            
+
             device_id = topic_parts[1]
             message_type = topic_parts[2]
-            
+
             # Skip our own API messages
             if device_id.startswith('api-'):
                 return
-            
-            payload = json.loads(message.payload.decode())
-            
+
+            payload_bytes = message.payload
+            if not payload_bytes:
+                logger.warning(f"Received empty MQTT payload on topic {message.topic.value}")
+                return
+
+            try:
+                payload = json.loads(payload_bytes.decode())
+            except Exception as e:
+                logger.error(f"Error decoding MQTT message payload on topic {message.topic.value}: {e} | Raw payload: {payload_bytes!r}")
+                return
+
             if message_type == "status":
                 await self._handle_status_message(device_id, payload)
             elif message_type == "heartbeat":
                 await self._handle_heartbeat_message(device_id, payload)
-                
+
         except Exception as e:
             logger.error(f"Error handling MQTT message: {e}")
     
