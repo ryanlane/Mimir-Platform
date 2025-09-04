@@ -244,14 +244,3 @@ class AutoRegistrationService:
             
         except Exception as e:
             logger.error(f"Failed to send registration confirmation to {hostname}: {e}")
-
-# Global service instance
-auto_registration_service = AutoRegistrationService()
-
-async def setup_auto_registration():
-    """Setup the auto-registration service"""
-    return await auto_registration_service.start()
-
-async def cleanup_auto_registration():
-    """Cleanup the auto-registration service"""
-    await auto_registration_service.stop()

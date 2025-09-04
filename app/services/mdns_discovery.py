@@ -22,7 +22,8 @@ from app.services.distribution import distribution_service
 from app.services.caching import cache_service
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt_presence import mqtt_presence_service, setup_mqtt_integration
-from app.services.mqtt_registration import mqtt_scene_service, setup_mqtt_scene_assignment
+from app.services.mqtt_registration import auto_registration_service, setup_auto_registration, cleanup_auto_registration
+from app.services.mqtt_scene_assignment import mqtt_scene_service, setup_mqtt_scene_assignment
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -88,6 +89,7 @@ async def lifespan(app: FastAPI):
     # Setup MQTT presence detection for instant online/offline
     if settings.mqtt_enabled:
         mqtt_success = await setup_mqtt_integration()
+        auto_reg_success = await setup_auto_registration()
         scene_success = await setup_mqtt_scene_assignment()
         
         if mqtt_success:
@@ -95,6 +97,15 @@ async def lifespan(app: FastAPI):
             logger.info(f"   Instant online/offline detection via Last Will & Testament")
         else:
             logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
+        
+        if auto_reg_success:
+            logger.info(f"🔄 Auto-Registration: enabled - mDNS discovery → MQTT registration")
+            logger.info(f"   Automatic display registration and test image workflow")
+            
+            # Connect auto-registration to mDNS discovery
+            mdns_discovery_service.add_discovery_callback(auto_registration_service.handle_discovered_display)
+        else:
+            logger.warning(f"⚠️ Auto-Registration: failed to start")
         
         if scene_success:
             logger.info(f"🎬 MQTT Scene Assignment: enabled - listening on mimir/+/evt")
@@ -116,6 +127,7 @@ async def lifespan(app: FastAPI):
     # Stop MQTT services
     if settings.mqtt_enabled:
         await mqtt_scene_service.stop()
+        await cleanup_auto_registration()
         logger.info("📝 MQTT services stopped")
     
     # Stop mDNS discovery service
@@ -252,16 +264,3 @@ if __name__ == "__main__":
         log_level=settings.log_level.lower()
     )
     log_level=settings.log_level.lower()
-
-# Development server entry point
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host=settings.api_host,
-        port=settings.api_port,
-        reload=settings.debug,
-        log_level=settings.log_level.lower()
-    )
-    log_level=settings.log_level.lower()
-
