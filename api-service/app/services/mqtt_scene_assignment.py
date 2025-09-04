@@ -111,11 +111,12 @@ class MqttSceneAssignmentService:
             
             logger.debug(f"Device {device_id} event: {event_type}")
             
-            if event_type == "assignment_ack":
+            evt_type = payload.get("type")
+            if evt_type == "ack":
                 await self._handle_assignment_ack(device_id, payload)
-            elif event_type == "content_rendered":
+            elif evt_type == "rendered":
                 await self._handle_content_rendered(device_id, payload)
-            elif event_type == "error":
+            elif evt_type == "error":
                 await self._handle_device_error(device_id, payload)
                 
         except Exception as e:
@@ -171,21 +172,21 @@ class MqttSceneAssignmentService:
                 api_base_url = f"http://{settings.api_host}:{settings.api_port}"
                 content_url = f"{api_base_url}/api/scenes/{scene_id}/content"
                 
-                command_payload = {
-                    "command": "assign_scene",
+                payload = {
+                    "type": "assign",
+                    "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
                     "scene_id": scene_id,
                     "scene_name": scene.name,
-                    "content_url": content_url,
+                    "content": {"url": content_url},
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}"
                 }
                 
-                await self.client.publish(
-                    command_topic, 
-                    json.dumps(command_payload), 
+                # simplest: ask the device to refresh (your client currently acks refresh)
+                await self.client.publish(f"mimir/{device_id}/cmd",
+                    json.dumps({"type":"refresh","timestamp":datetime.now(timezone.utc).isoformat()}),
                     qos=1
                 )
-                
+                                
                 logger.info(f"Assigned scene {scene_id} to device {device_id} via MQTT")
                 return True
                 

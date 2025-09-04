@@ -2,6 +2,7 @@
 MQTT Registration Service
 Handles device registration requests via MQTT
 """
+from email import message
 import json
 import asyncio
 from datetime import datetime, timezone
@@ -151,7 +152,7 @@ class AutoRegistrationService:
     async def _listen_for_acks(self):
         """Listen for acknowledgment responses from displays"""
         try:
-            await self.mqtt_client.subscribe("mimir/+/ack")
+            await self.mqtt_client.subscribe("mimir/+/evt")
             await self.mqtt_client.subscribe("mimir/+/registration/reply")
             
             async for message in self.mqtt_client.messages:
@@ -168,24 +169,17 @@ class AutoRegistrationService:
 
     async def _handle_display_response(self, message):
         """Handle responses from displays"""
-        try:
-            topic_parts = message.topic.value.split('/')
-            if len(topic_parts) < 3:
-                return
-                
-            hostname = topic_parts[1]
-            response_type = topic_parts[2]
-            
-            data = json.loads(message.payload.decode())
-            
-            if response_type == "ack":
-                logger.info(f"Received acknowledgment from {hostname}: {data.get('message', 'OK')}")
-                
-            elif response_type == "registration" and len(topic_parts) > 3 and topic_parts[3] == "reply":
-                await self._process_registration_reply(hostname, data)
-                
-        except Exception as e:
-            logger.error(f"Error processing display response: {e}")
+        topic_parts = message.topic.value.split('/')
+        device_id = topic_parts[1]
+        channel = topic_parts[2]
+        data = json.loads(message.payload.decode())
+
+        if channel == "evt":
+            if data.get("type") == "ack":
+                logger.info(f"ACK from {device_id}: {data}")
+
+        elif channel == "registration" and len(topic_parts) > 3 and topic_parts[3] == "reply":
+            await self._process_registration_reply(device_id, data)
 
     async def _process_registration_reply(self, hostname: str, registration_data: Dict[str, Any]):
         """Process registration details from a display and create database entry"""
