@@ -244,24 +244,3 @@ if __name__ == "__main__":
     )
     log_level=settings.log_level.lower()
 
-# Development server entry point
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host=settings.api_host,
-        port=settings.api_port,
-        reload=settings.debug,
-        log_level=settings.log_level.lower()
-    )
-    log_level=settings.log_level.lower()
-    import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host=settings.api_host,
-        port=settings.api_port,
-        reload=settings.debug,
-        log_level=settings.log_level.lower()
-    )
-    log_level=settings.log_level.lower()
-
