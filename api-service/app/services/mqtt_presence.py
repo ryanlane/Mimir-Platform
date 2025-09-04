@@ -164,6 +164,11 @@ class MqttPresenceService:
             device_id = topic_parts[1]
             message_type = topic_parts[2]
 
+            # Skip malformed topics with empty device_id
+            if not device_id:
+                logger.warning(f"Skipping MQTT message with empty device_id on topic {message.topic.value}")
+                return
+
             # Skip our own API messages
             if device_id.startswith('api-'):
                 return
