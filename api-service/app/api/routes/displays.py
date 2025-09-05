@@ -4,8 +4,10 @@ Streamlined FastAPI router for display client management
 """
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from sqlalchemy import or_
 from typing import List, Optional
-import datetime
+from datetime import datetime, timezone
 
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient, Scene
@@ -24,6 +26,8 @@ from app.services.mqtt_scene_assignment import mqtt_scene_service
 
 router = APIRouter(prefix="/displays", tags=["displays"])
 
+class AssignSceneBody(BaseModel):
+    scene_id: str
 
 def get_db():
     """Database dependency"""
@@ -467,6 +471,48 @@ async def unassign_scene_from_display(
         "communication_method": getattr(client, 'communication_method', 'http')
     }
 
+
+@router.post("/{display_id}/scene")
+async def post_assign_scene(display_id: str, body: AssignSceneBody):
+    """Assign a scene to a display (MQTT push) using JSON body."""
+    db = SessionLocal()
+    try:
+        # Look up scene
+        scene = db.query(Scene).filter(Scene.id == body.scene_id).first()
+        if not scene:
+            raise HTTPException(status_code=404, detail=f"Scene {body.scene_id} not found")
+
+        # Look up display by id OR hostname (supports discovered vs. registered)
+        display = db.query(DisplayClient).filter(
+            or_(DisplayClient.id == display_id, DisplayClient.hostname == display_id)
+        ).first()
+        if not display:
+            raise HTTPException(status_code=404, detail=f"Display {display_id} not found")
+
+        # Persist assignment immediately so UI reflects it
+        display.assigned_scene_id = body.scene_id
+        display.scene_assigned_at = datetime.now(timezone.utc)
+        db.commit()
+
+        # Publish MQTT assign command
+        publisher = MQTTSceneAssignmentPublisher.get()  # accessor you expose in your service; see note below
+        if not publisher or not publisher.is_connected():
+            raise HTTPException(status_code=503, detail="MQTT publisher not connected")
+
+        # Use hostname if present (your device topics use the hostname today)
+        target_id = display.hostname or display.id
+        ok = await publisher.assign_scene_to_device(target_id, body.scene_id)
+        if not ok:
+            raise HTTPException(status_code=502, detail="Failed to publish MQTT assignment")
+
+        return {
+            "ok": True,
+            "display_id": display_id,
+            "scene_id": body.scene_id,
+            "published_topic": f"mimir/{target_id}/cmd"
+        }
+    finally:
+        db.close()
 
 @router.post("/discovery/start")
 async def start_discovery_service():
