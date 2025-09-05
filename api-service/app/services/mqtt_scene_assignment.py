@@ -14,7 +14,6 @@ try:
 except ImportError:
     AIOMQTT_AVAILABLE = False
 
-from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
@@ -65,6 +64,9 @@ class MqttSceneAssignmentService:
         # The client will be automatically disconnected when the context manager exits
         self.client = None
         logger.info("MQTT scene assignment service stopped")
+        
+    def is_connected(self) -> bool:
+        return self._pub.is_connected()
     
     async def _mqtt_scene_loop(self):
         """Main MQTT scene assignment client loop with automatic reconnection"""
@@ -251,6 +253,175 @@ class MqttSceneAssignmentService:
             logger.error(f"Error unassigning scene via MQTT: {e}")
             return False
 
+class MQTTSceneAssignmentPublisher:
+    """
+    Async MQTT publisher (singleton) for sending commands to displays.
+
+    - Maintains a single background connection (aiomqtt)
+    - Automatically reconnects
+    - Uses an asyncio.Queue for backpressure / non-blocking publishing
+    """
+
+    _instance: Optional["MQTTSceneAssignmentPublisher"] = None
+
+    def __init__(self, broker_host: str, broker_port: int = 1883, client_id: Optional[str] = None):
+        if not AIOMQTT_AVAILABLE:
+            raise RuntimeError("aiomqtt not available - install with `pip install aiomqtt`")
+
+        self.broker_host = broker_host
+        self.broker_port = broker_port
+        self.client_id = client_id or f"mimir-pub-{uuid.uuid4().hex[:8]}"
+        self._queue: "asyncio.Queue[Tuple[str, bytes, int, bool]]" = asyncio.Queue()
+        self._task: Optional[asyncio.Task] = None
+        self._connected_evt = asyncio.Event()
+        self._stopping = False
+        self._client: Optional[Client] = None
+
+    # ---------- Singleton helpers ----------
+    @classmethod
+    def initialize(cls, broker_host: str, broker_port: int = 1883, client_id: Optional[str] = None) -> "MQTTSceneAssignmentPublisher":
+        """Create the singleton instance (idempotent)."""
+        if cls._instance is None:
+            cls._instance = cls(broker_host, broker_port, client_id)
+        return cls._instance
+
+    @classmethod
+    def get(cls) -> "MQTTSceneAssignmentPublisher":
+        """Return the singleton instance (must have been initialized)."""
+        if cls._instance is None:
+            raise RuntimeError("MQTTSceneAssignmentPublisher has not been initialized.")
+        return cls._instance
+
+    # ---------- Lifecycle ----------
+    async def start(self) -> None:
+        """Start the background publish loop (idempotent)."""
+        if self._task and not self._task.done():
+            return
+        self._stopping = False
+        self._task = asyncio.create_task(self._run(), name="mqtt_publisher_loop")
+        logger.info(f"MQTT publisher started for {self.broker_host}:{self.broker_port}")
+
+    async def stop(self) -> None:
+        """Stop the background loop and close the connection."""
+        self._stopping = True
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        self._connected_evt.clear()
+        logger.info("MQTT publisher stopped")
+
+    # ---------- Public API ----------
+    async def publish_command(self, target_id: str, payload: dict, qos: int = 1, retain: bool = False) -> bool:
+        """
+        Queue a command to publish to mimir/<target_id>/cmd.
+        Safe to call anytime; will buffer until connected.
+        """
+        await self.start()  # lazy start if needed
+        topic = f"mimir/{target_id}/cmd"
+        try:
+            # Encode once, so the worker just publishes bytes
+            data = json.dumps(payload).encode("utf-8")
+            await self._queue.put((topic, data, qos, retain))
+            logger.debug(f"Enqueued MQTT command -> {topic}: {payload}")
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to enqueue MQTT command for {topic}: {exc}")
+            return False
+
+    # Convenience helper: send an "assign" command (matches your client expectations)
+    async def assign_scene(
+        self,
+        device_id: str,
+        scene_id: str,
+        scene_name: str,
+        content_url: str,
+        *,
+        etag: str = "v1",
+        ttl_seconds: int = 3600,
+        sequence: int = 1,
+    ) -> bool:
+        payload = {
+            "type": "assign",
+            "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
+            "sequence": sequence,
+            "scene_id": scene_id,
+            "scene_name": scene_name,
+            "content": {
+                "delivery": {
+                    "type": "url",
+                    "url": content_url,
+                    "content_type": "image/png",
+                    "etag": etag,
+                    "ttl_seconds": ttl_seconds,
+                },
+                "metadata": {"caption": scene_name},
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        return await self.publish_command(device_id, payload, qos=1, retain=False)
+
+    # Convenience helper: clear stored scene on device
+    async def clear_scene(self, device_id: str) -> bool:
+        payload = {
+            "type": "clear_scene",
+            "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        return await self.publish_command(device_id, payload, qos=1, retain=False)
+
+    # ---------- Worker / connection loop ----------
+    async def _run(self) -> None:
+        """Maintain a connection and flush the publish queue."""
+        while not self._stopping:
+            try:
+                async with Client(
+                    hostname=self.broker_host,
+                    port=self.broker_port,
+                    identifier=self.client_id,
+                ) as client:
+                    self._client = client
+                    self._connected_evt.set()
+                    logger.info(f"MQTT publisher connected ({self.client_id})")
+
+                    # Drain the queue; block when empty
+                    while not self._stopping:
+                        topic, data, qos, retain = await self._queue.get()
+                        try:
+                            await client.publish(topic, data, qos=qos, retain=retain)
+                            logger.debug(f"Published MQTT -> {topic}")
+                        except Exception as pub_exc:
+                            logger.error(f"Publish failed for {topic}: {pub_exc}")
+                            # If publish fails, requeue once to avoid message loss
+                            try:
+                                self._queue.put_nowait((topic, data, qos, retain))
+                            except asyncio.QueueFull:
+                                logger.warning("MQTT queue full; dropping message after publish error.")
+                            # Break to reconnect
+                            break
+                        finally:
+                            self._queue.task_done()
+
+            except asyncio.CancelledError:
+                break
+            except MqttError as e:
+                logger.error(f"MQTT publisher connection error: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected MQTT publisher error: {e}")
+            finally:
+                self._connected_evt.clear()
+                self._client = None
+
+            if not self._stopping:
+                logger.info("MQTT publisher reconnecting in 3s…")
+                await asyncio.sleep(3)
+
+    # ---------- Diagnostics ----------
+    def is_connected(self) -> bool:
+        return self._connected_evt.is_set()
 
 # Global service instance
 mqtt_scene_service = MqttSceneAssignmentService()

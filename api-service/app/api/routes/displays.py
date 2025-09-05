@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_
 from typing import List, Optional
 from datetime import datetime, timezone
+import uuid
 
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient, Scene
@@ -149,7 +150,7 @@ async def register_display_client(
             discovery_method="manual",
             auto_discovered=False,
             is_online=True,
-            last_seen=datetime.datetime.now()
+            last_seen=datetime.now(timezone.utc)
         )
         
         db.add(display_client)
@@ -406,7 +407,7 @@ async def assign_scene_to_display(
     scene_id: int,
     db: Session = Depends(get_db)
 ):
-    """Assign a scene to a display (supports both HTTP and MQTT)"""
+    """Assign a scene to a display (MQTT set_scene command)"""
     client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Display client not found")
@@ -417,24 +418,26 @@ async def assign_scene_to_display(
     
     # Update database
     client.assigned_scene_id = scene_id
-    client.scene_assigned_at = datetime.datetime.now()
+    client.scene_assigned_at = datetime.now(timezone.utc)
     db.commit()
-    
-    # Try MQTT assignment for MQTT-enabled displays
+
+    # MQTT assignment
+    assignment_id = f"set-{uuid.uuid4().hex[:8]}"
     mqtt_success = False
-    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
-        try:
-            mqtt_success = await mqtt_scene_service.assign_scene_to_device(
-                client.hostname, scene_id
-            )
-        except Exception as e:
-            print(f"MQTT assignment failed, falling back to HTTP: {e}")
-    
+    if mqtt_scene_service.is_connected():
+        target_id = client.hostname or client.id
+        mqtt_success = await mqtt_scene_service.assign_scene_to_device(
+            device_id=target_id,
+            scene_id=str(scene_id),
+            assignment_id=assignment_id
+        )
+
     return {
         "message": f"Scene {scene_id} assigned to display {display_id}",
         "scene_name": scene.name,
         "assigned_at": client.scene_assigned_at.isoformat(),
         "mqtt_assigned": mqtt_success,
+        "assignment_id": assignment_id,
         "communication_method": getattr(client, 'communication_method', 'http')
     }
 
@@ -444,7 +447,7 @@ async def unassign_scene_from_display(
     display_id: str,
     db: Session = Depends(get_db)
 ):
-    """Unassign scene from a display (supports both HTTP and MQTT)"""
+    """Unassign scene from a display (MQTT clear_scene command)"""
     client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Display client not found")
@@ -453,21 +456,22 @@ async def unassign_scene_from_display(
     client.assigned_scene_id = None
     client.scene_assigned_at = None
     db.commit()
-    
-    # Try MQTT unassignment for MQTT-enabled displays
+
+    # MQTT unassignment
+    assignment_id = f"clr-{uuid.uuid4().hex[:8]}"
     mqtt_success = False
-    if hasattr(client, 'communication_method') and client.communication_method == 'mqtt':
-        try:
-            mqtt_success = await mqtt_scene_service.unassign_scene_from_device(
-                client.hostname
-            )
-        except Exception as e:
-            print(f"MQTT unassignment failed: {e}")
-    
+    if mqtt_scene_service.is_connected():
+        target_id = client.hostname or client.id
+        mqtt_success = await mqtt_scene_service.clear_scene_on_device(
+            device_id=target_id,
+            assignment_id=assignment_id
+        )
+
     return {
         "message": f"Scene unassigned from display {display_id}",
         "previous_scene_id": current_scene_id,
         "mqtt_unassigned": mqtt_success,
+        "assignment_id": assignment_id,
         "communication_method": getattr(client, 'communication_method', 'http')
     }
 
@@ -495,13 +499,17 @@ async def post_assign_scene(display_id: str, body: AssignSceneBody):
         db.commit()
 
         # Publish MQTT assign command
-        publisher = MQTTSceneAssignmentPublisher.get()  # accessor you expose in your service; see note below
-        if not publisher or not publisher.is_connected():
+        
+        if not mqtt_scene_service.is_connected():
             raise HTTPException(status_code=503, detail="MQTT publisher not connected")
 
         # Use hostname if present (your device topics use the hostname today)
         target_id = display.hostname or display.id
-        ok = await publisher.assign_scene_to_device(target_id, body.scene_id)
+        ok = await mqtt_scene_service.assign_scene_to_device(
+            device_id=target_id,
+            scene_id=str(body.scene_id)
+        )
+
         if not ok:
             raise HTTPException(status_code=502, detail="Failed to publish MQTT assignment")
 
