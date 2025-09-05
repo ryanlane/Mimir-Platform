@@ -21,7 +21,8 @@ from app.services.websocket import websocket_service
 from app.services.distribution import distribution_service
 from app.services.caching import cache_service
 from app.services.mdns_discovery import mdns_discovery_service
-from app.services.mqtt_presence import mqtt_presence_service, setup_mqtt_integration
+from app.services.mqtt.presence import mqtt_presence_service, setup_mqtt_integration
+from app.services.mqtt.publisher import MQTTSceneAssignmentPublisher, setup_mqtt_scene_assignment
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -87,6 +88,12 @@ async def lifespan(app: FastAPI):
     # Setup MQTT presence detection for instant online/offline
     if settings.mqtt_enabled:
         mqtt_success = await setup_mqtt_integration()
+        # Also bring up the scene listener + publisher
+        await setup_mqtt_scene_assignment()
+        MQTTSceneAssignmentPublisher.initialize(
+            broker_host=settings.mqtt_broker_host,
+            broker_port=settings.mqtt_broker_port,
+        )
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")

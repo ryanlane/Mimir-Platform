@@ -2,11 +2,10 @@
 MQTT Registration Service
 Handles device registration requests via MQTT
 """
-from email import message
 import json
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING
 
 from app.core.logging import get_logger
 from app.db.models import DisplayClient

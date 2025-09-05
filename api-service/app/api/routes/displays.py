@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from sqlalchemy import or_
-from typing import List, Optional
 from datetime import datetime, timezone
 import uuid
 
@@ -17,12 +16,10 @@ from app.schemas.displays import (
     DisplayClientResponse, 
     DisplayClientUpdate,
     DisplayClientListResponse,
-    DisplayCapabilities,
-    SceneAssignment
 )
-from app.schemas.common import PaginationParams, PaginationMeta
+from app.schemas.common import PaginationMeta
 from app.services.mdns_discovery import mdns_discovery_service
-from app.services.mqtt_scene_assignment import mqtt_scene_service
+from app.services.mqtt.publisher import mqtt_scene_service
 
 
 router = APIRouter(prefix="/displays", tags=["displays"])

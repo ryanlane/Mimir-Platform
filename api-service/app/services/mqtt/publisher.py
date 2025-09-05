@@ -1,7 +1,3 @@
-"""
-MQTT Scene Assignment Service
-Handles scene assignments via MQTT for pure MQTT communication workflow
-"""
 import asyncio
 import json
 import uuid
@@ -20,7 +16,6 @@ from app.db.base import SessionLocal
 from app.db.models import DisplayClient, Scene
 
 logger = get_logger(__name__)
-
 
 class MqttSceneAssignmentService:
     """MQTT-based scene assignment service"""

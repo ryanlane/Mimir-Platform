@@ -11,7 +11,7 @@ from app.dependencies import get_channel_service, get_scene_service, get_display
 from app.config import settings
 from app.core.scheduler import scheduler_service
 from app.core.metrics import get_metrics_content
-from app.services.mqtt_presence import mqtt_presence_service
+from app.services.mqtt.presence import mqtt_presence_service
 
 logger = logging.getLogger(__name__)
 

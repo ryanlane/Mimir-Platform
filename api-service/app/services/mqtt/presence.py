@@ -6,10 +6,8 @@ Replaces polling-based timeout detection with event-driven presence
 import asyncio
 import json
 import socket
-import time
 from typing import Dict, Optional, Callable, Set
 from datetime import datetime, timezone
-from contextlib import asynccontextmanager
 
 try:
     from aiomqtt import Client, MqttError
