@@ -2,19 +2,19 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from ..models.display import Display  # adjust import as needed
 from ..models.scene import Scene  # adjust import as needed
-from ..services.display_service import get_display_by_id, get_scene_assignment_for_display  # adjust as needed
+from ..services.display_service import get_display_by_id  # adjust import as needed
 
 router = APIRouter()
 
-@router.get("/displays/{display_id}", response_model=Display)
+@router.get("/displays/{display_id}")
 def get_display(display_id: str):
-    """Get details for a specific display.
+    """Get details for a specific display by ID.
 
     Args:
         display_id (str): The display's unique identifier.
 
     Returns:
-        Display: Display details.
+        dict: Display details.
 
     Raises:
         HTTPException: If display not found.
@@ -22,7 +22,7 @@ def get_display(display_id: str):
     display = get_display_by_id(display_id)
     if not display:
         raise HTTPException(status_code=404, detail="Display not found")
-    return display
+    return JSONResponse(content=display)
 
 @router.get("/displays/{display_id}/scene")
 def get_display_scene_assignment(display_id: str):

@@ -5,9 +5,13 @@ from app.database import db  # Adjust the import based on your project structure
 
 def get_display_by_id(display_id: str):
     """Fetch a display by its ID."""
-    # Replace with your actual data access logic
-    # Example: return db.query(Display).filter(Display.id == display_id).first()
-    pass  # implement
+    # Example: If you store displays in a list or DB, search for the ID
+    # Replace this with your actual data access logic
+    from ..data import displays  # adjust import as needed
+    for display in displays:
+        if display.get("id") == display_id:
+            return display
+    return None
 
 def get_scene_assignment_for_display(display_id: str):
     """Fetch the scene assignment for a display."""
