@@ -112,7 +112,7 @@ const Displays = () => {
           console.warn('Discovery status not available:', err);
           return null;
         }),
-        api.getDiscoveredDisplayStats().catch(err => {
+        api.getDiscoveryStatus().catch(err => {
           console.warn('Discovered display stats not available:', err);
           return null;
         })
@@ -125,7 +125,7 @@ const Displays = () => {
       // Get discovered display assignments
       let discoveredAssignments = {};
       try {
-        const assignmentsResponse = await api.getDiscoveredDisplayAssignments();
+        const assignmentsResponse = await api.getAssignmentStatus();
         discoveredAssignments = assignmentsResponse.data?.assignments || {};
         console.log('🔍 Debug - Discovered assignments:', discoveredAssignments);
       } catch (err) {

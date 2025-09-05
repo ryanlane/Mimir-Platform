@@ -35,7 +35,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
       if (sceneId) {
         // Use appropriate assignment endpoint based on display type
         if (display.displayType === 'discovered') {
-          await api.assignSceneToDiscoveredDisplay(display.id, sceneId);
+          await api.assignSceneToDisplay(display.id, sceneId);
           console.log(`✅ Scene assigned to discovered display: ${sceneId} -> ${display.name}`);
         } else {
           await api.assignSceneToDisplay(display.id, sceneId);
@@ -44,7 +44,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
       } else {
         // Unassign scene
         if (display.displayType === 'discovered') {
-          await api.unassignSceneFromDiscoveredDisplay(display.id);
+          await api.unassignSceneFromDisplay(display.id);
           console.log(`✅ Scene unassigned from discovered display: ${display.name}`);
         } else {
           await api.unassignSceneFromDisplay(display.id);
