@@ -1,3 +1,7 @@
+---
+mode: edit
+---
+
 # Mimir System Overview
 
 This document describes the end-to-end flow of how **Channels**, **Scenes**, **Displays**, and the **API Service** interact in the Mimir ecosystem.
