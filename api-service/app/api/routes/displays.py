@@ -304,12 +304,63 @@ async def get_live_discovered_displays():
 
 @router.get("/{display_id}", response_model=DisplayClientResponse)
 async def get_display_client(display_id: str, db: Session = Depends(get_db)):
-    """Get display client by ID"""
+    """
+    Get display client by ID. Supports both registered (database) and discovered (mDNS) displays.
+
+    Args:
+        display_id (str): The display's unique identifier.
+        db (Session): Database session.
+
+    Returns:
+        DisplayClientResponse: Display client details.
+
+    Raises:
+        HTTPException: If display not found.
+    """
+    # Try database first
     client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Display client not found")
-    
-    return DisplayClientResponse.model_validate(client)
+    if client:
+        return DisplayClientResponse.model_validate(client)
+
+    # Try discovered displays (mDNS)
+    if mdns_discovery_service.is_running:
+        discovered_displays = mdns_discovery_service.get_discovered_displays()
+        for discovered in discovered_displays:
+            if discovered.display_id == display_id:
+                # Parse resolution
+                width, height = 800, 480  # defaults
+                if discovered.resolution:
+                    try:
+                        width, height = map(int, discovered.resolution.split("x"))
+                    except ValueError:
+                        pass
+
+                discovered_dict = {
+                    "id": discovered.display_id,
+                    "name": discovered.display_name,
+                    "location": discovered.location,
+                    "hostname": discovered.hostname,
+                    "webhook_port": discovered.webhook_port,
+                    "client_version": discovered.client_version or "unknown",
+                    "display_type": "discovered",
+                    "discovery_method": "mdns",
+                    "auto_discovered": True,
+                    "width": width,
+                    "height": height,
+                    "orientation": discovered.properties.get("orientation", "landscape"),
+                    "redis_distribution": discovered.properties.get("redis_distribution") == "true",
+                    "content_claiming": discovered.properties.get("content_claiming") == "true",
+                    "is_online": discovered.is_online,
+                    "last_seen": discovered.last_seen,
+                    "assigned_scene_id": None,
+                    "current_content_hash": None,
+                    "created_at": discovered.discovered_at,
+                    "updated_at": discovered.last_seen,
+                    "tags": []
+                }
+                return DisplayClientResponse.model_validate(discovered_dict)
+
+    raise HTTPException(status_code=404, detail="Display client not found")
 
 
 @router.put("/{display_id}", response_model=DisplayClientResponse)
