@@ -292,26 +292,32 @@ export const api = {
   // v2.3: Display Management API endpoints
   registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),
   getDisplays: (params = {}) => apiClient.get('/displays', { params }),
-  assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${displayId}/assign_scene`, { scene_id: sceneId }),
-  unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/assign_scene`),
+  assignSceneToDisplay: (displayId, sceneId) => apiClient.put(`/displays/${displayId}/scene/${sceneId}`),
+  unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/scene`),
+  getUnassignedDisplays: (includeDiscovered = true) => apiClient.get('/displays/unassigned', { params: { include_discovered: includeDiscovered } }),
+
+
 
   // Discovered Display Assignment endpoints (v2.3.1)
-  assignSceneToDiscoveredDisplay: (displayId, sceneId) => apiClient.post(`/discovered-displays/assignments/${displayId}`, { scene_id: sceneId }),
-  unassignSceneFromDiscoveredDisplay: (displayId) => apiClient.delete(`/discovered-displays/assignments/${displayId}`),
-  getDiscoveredDisplayAssignments: () => apiClient.get('/discovered-displays/assignments'),
-  getUnassignedDiscoveredDisplays: () => apiClient.get('/discovered-displays/unassigned'),
-  getDiscoveredDisplaysForScene: (sceneId) => apiClient.get(`/discovered-displays/scene/${sceneId}`),
-  getDiscoveredDisplayStats: () => apiClient.get('/discovered-displays/stats'),
-  getDiscoveredDisplayAssignment: (displayId) => apiClient.get(`/discovered-displays/assignment/${displayId}`),
-  bulkAssignDiscoveredDisplays: (displayIds, sceneId) => apiClient.post('/discovered-displays/assignments/bulk', { display_ids: displayIds, scene_id: sceneId }),
+  // assignSceneToDiscoveredDisplay: (displayId, sceneId) => apiClient.post(`/displays/assignments/${displayId}`, { scene_id: sceneId }),
+  // unassignSceneFromDiscoveredDisplay: (displayId) => apiClient.delete(`/discovered-displays/assignments/${displayId}`),
+  // getDiscoveredDisplayAssignments: (displayId) => apiClient.get(`/displays/${displayId}/scene`),
+  // getUnassignedDiscoveredDisplays: () => apiClient.get('/discovered-displays/unassigned'),
+  // getDiscoveredDisplaysForScene: (sceneId) => apiClient.get(`/discovered-displays/scene/${sceneId}`),
+  // getDiscoveredDisplayStats: () => apiClient.get('/discovered-displays/stats'),
+  // getDiscoveredDisplayAssignment: (displayId) => apiClient.get(`/discovered-displays/assignment/${displayId}`),
+  // bulkAssignDiscoveredDisplays: (displayIds, sceneId) => apiClient.post('/discovered-displays/assignments/bulk', { display_ids: displayIds, scene_id: sceneId }),
 
   // Enhanced Display Scene Management (handles both registered and discovered)
-  getDisplaysForScene: (sceneId) => apiClient.get(`/display-scene/scene/${sceneId}/displays`),
+  getDisplaysForScene: (sceneId) => apiClient.get(`/display-scene/scenes/${sceneId}/displays`),
   getSceneDisplayStats: (sceneId) => apiClient.get(`/display-scene/scene/${sceneId}/stats`),
+  getScenesWithDisplayStats: () => apiClient.get('/display-scene/scenes/with-displays'),
+  getAssignmentStatus: (sceneId) =>  apiClient.get('/display-scene/assignments/status', { params: { scene_id: sceneId } }),
   
   // Discovery API endpoints
   getDiscoveryStatus: () => apiClient.get('/displays/discovery/status'),
-  discoverDisplays: () => apiClient.post('/displays/discovery/trigger'),
+  startDiscovery: () => apiClient.post('/displays/discovery/start'),
+  stopDiscovery:  () => apiClient.post('/displays/discovery/stop'),
   getLiveDiscoveredDisplays: () => apiClient.get('/displays/discovery/live'),
   getDiscoveredDisplays: () => apiClient.get('/displays/discover'),
   getDisplayImage: (displayId, headers = {}) => apiClient.get(`/displays/${displayId}/current-image`, { headers }),
