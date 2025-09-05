@@ -21,7 +21,7 @@ def get_display(display_id: str):
     """
     display = get_display_by_id(display_id)
     if not display:
-        raise HTTPException(status_code=404, detail="Display not found")
+        raise HTTPException(status_code=404, detail="Display client not found")
     return JSONResponse(content=display)
 
 @router.get("/displays/{display_id}/scene")
