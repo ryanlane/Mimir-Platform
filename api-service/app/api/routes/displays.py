@@ -191,6 +191,14 @@ async def list_display_clients(
                         except ValueError:
                             pass
                     
+                    # Create assigned scene object if scene data is available
+                    assigned_scene = None
+                    if discovered.assigned_scene_id:
+                        assigned_scene = {
+                            "id": discovered.assigned_scene_id,
+                            "subchannel_id": discovered.assigned_subchannel_id
+                        }
+
                     # Create a dict that matches DisplayClientResponse structure
                     discovered_dict = {
                         "id": discovered.display_id,
@@ -209,7 +217,7 @@ async def list_display_clients(
                         "content_claiming": discovered.properties.get("content_claiming") == "true",
                         "is_online": discovered.is_online,
                         "last_seen": discovered.last_seen,
-                        "assigned_scene_id": None,
+                        "assigned_scene_id": assigned_scene,
                         "current_content_hash": None,
                         "created_at": discovered.discovered_at,
                         "updated_at": discovered.last_seen,
@@ -337,6 +345,14 @@ async def get_display_client(display_id: str, db: Session = Depends(get_db)):
                     except ValueError:
                         pass
 
+                # Create assigned scene object if scene data is available
+                assigned_scene = None
+                if discovered.assigned_scene_id:
+                    assigned_scene = {
+                        "id": discovered.assigned_scene_id,
+                        "subchannel_id": discovered.assigned_subchannel_id
+                    }
+
                 discovered_dict = {
                     "id": discovered.display_id,
                     "name": discovered.display_name,
@@ -354,7 +370,7 @@ async def get_display_client(display_id: str, db: Session = Depends(get_db)):
                     "content_claiming": discovered.properties.get("content_claiming") == "true",
                     "is_online": discovered.is_online,
                     "last_seen": discovered.last_seen,
-                    "assigned_scene_id": None,
+                    "assigned_scene_id": assigned_scene,
                     "current_content_hash": None,
                     "created_at": discovered.discovered_at,
                     "updated_at": discovered.last_seen,

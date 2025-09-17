@@ -143,8 +143,9 @@ class MqttPresenceService:
                     # Subscribe to all device presence topics
                     await client.subscribe("mimir/+/status", qos=1)
                     await client.subscribe("mimir/+/heartbeat", qos=0)
+                    await client.subscribe("mimir/+/evt", qos=1)  # Subscribe to events for immediate scene assignment updates
                     
-                    logger.info(f"MQTT client connected - monitoring presence on mimir/+/status")
+                    logger.info(f"MQTT client connected - monitoring presence on mimir/+/status, heartbeat, and events")
                     
                     # Record successful connection
                     if METRICS_AVAILABLE:
@@ -201,6 +202,8 @@ class MqttPresenceService:
                 await self._handle_status_message(device_id, payload)
             elif message_type == "heartbeat":
                 await self._handle_heartbeat_message(device_id, payload)
+            elif message_type == "evt":
+                await self._handle_event_message(device_id, payload)
 
         except Exception as e:
             logger.error(f"Error handling MQTT message: {e}")
@@ -277,7 +280,7 @@ class MqttPresenceService:
 
                         # Bridge to discovery (source of truth for online/last_seen)
                         from app.services.mdns_discovery import mdns_discovery_service
-                        mdns_discovery_service.update_display_heartbeat(device_id, heartbeat_ts)
+                        mdns_discovery_service.update_display_heartbeat(device_id, heartbeat_ts, payload)
 
                         # If you really want the DB to reflect online quickly, you can optionally persist:
                         # (But per your design goal, I'd avoid persisting device details here.)
@@ -305,6 +308,45 @@ class MqttPresenceService:
             self.online_devices.add(device_id)
             logger.info(f"Device marked online via heartbeat: {device_id}")
             self._notify_presence_callbacks(device_id, "heartbeat_online", {"timestamp": timestamp})
+    
+    async def _handle_event_message(self, device_id: str, payload: Dict):
+        """Handle device event messages for immediate scene assignment updates"""
+        event_type = payload.get("type")
+        
+        # Handle acknowledgment events that contain scene assignment data
+        if event_type == "ack" and payload.get("ok"):
+            scene_id = payload.get("scene_id")
+            subchannel_id = payload.get("subchannel_id")
+            
+            # If this acknowledgment contains scene assignment data, update immediately
+            if scene_id is not None:
+                timestamp = datetime.now(timezone.utc)
+                
+                # Create or update device metadata
+                if device_id not in self.device_metadata:
+                    self.device_metadata[device_id] = {
+                        "last_seen": timestamp.isoformat(),
+                        "last_status": "online",
+                        "first_seen": timestamp.isoformat()
+                    }
+                
+                # Store the event data
+                self.device_metadata[device_id]["last_event"] = payload
+                self.device_metadata[device_id]["last_event_timestamp"] = timestamp.isoformat()
+                
+                # Create scene assignment data to pass to mDNS discovery
+                scene_data = {
+                    "scene_id": scene_id,
+                    "subchannel_id": subchannel_id,
+                    "timestamp": timestamp.isoformat(),
+                    "source": "event_ack"
+                }
+                
+                # Bridge to discovery service for immediate scene assignment update
+                from app.services.mdns_discovery import mdns_discovery_service
+                mdns_discovery_service.update_display_heartbeat(device_id, timestamp, scene_data)
+                
+                logger.info(f"Updated scene assignment from event for {device_id}: scene_id={scene_id}, subchannel_id={subchannel_id}")
     
     async def publish_device_status(self, device_id: str, status: str, metadata: Dict = None):
         """Publish status for a device (useful for testing or manual control)"""

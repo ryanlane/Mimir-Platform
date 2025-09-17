@@ -46,6 +46,8 @@ class DiscoveredDisplay:
     discovered_at: datetime
     last_seen: datetime
     is_online: bool = True
+    assigned_scene_id: Optional[str] = None
+    assigned_subchannel_id: Optional[str] = None
 
 
 class DisplayDiscoveryListener(ServiceListener):
@@ -344,14 +346,18 @@ class MdnsDiscoveryService:
             except Exception as e:
                 logger.error(f"Error in discovery callback: {e}")
     
-    def update_display_heartbeat(self, display_id: str, heartbeat_timestamp: datetime):
+    def update_display_heartbeat(self, display_id: str, heartbeat_timestamp: datetime, heartbeat_data: Optional[Dict] = None):
         """
         Update display's last_seen and online status from MQTT heartbeat.
 
         Args:
             display_id: The device_id from MQTT heartbeat.
             heartbeat_timestamp: The timestamp from the heartbeat payload.
+            heartbeat_data: Optional heartbeat payload data containing scene assignments.
         """
+        scene_id = heartbeat_data.get("scene_id") if heartbeat_data else None
+        subchannel_id = heartbeat_data.get("subchannel_id") if heartbeat_data else None
+        
         with self._lock:
             service_name = self.display_id_to_service_name.get(display_id)
             if not service_name:
@@ -372,6 +378,8 @@ class MdnsDiscoveryService:
                     discovered_at=heartbeat_timestamp,
                     last_seen=heartbeat_timestamp,
                     is_online=True,
+                    assigned_scene_id=scene_id,
+                    assigned_subchannel_id=subchannel_id,
                 )
                 self.discovered_displays[service_name] = display
                 logger.info(f"Discovered new display via MQTT heartbeat: {display.display_name} ({display.hostname})")
@@ -382,6 +390,9 @@ class MdnsDiscoveryService:
                 display = self.discovered_displays.get(service_name)
                 if display:
                     display.last_seen = heartbeat_timestamp
+                    # Update scene assignment data
+                    display.assigned_scene_id = scene_id
+                    display.assigned_subchannel_id = subchannel_id
                     if not display.is_online:
                         display.is_online = True
                         logger.info(f"Display back online via MQTT heartbeat: {display.display_name} ({display.hostname})")

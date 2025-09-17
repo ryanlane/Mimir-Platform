@@ -20,6 +20,15 @@ class DisplayCapabilities(BaseModel):
         populate_by_name = True
 
 
+class AssignedScene(BaseModel):
+    """Assigned scene information with optional subchannel"""
+    id: str = Field(description="Scene ID")
+    subchannel_id: Optional[str] = Field(None, alias="subchannelId", description="Optional subchannel ID")
+    
+    class Config:
+        populate_by_name = True
+
+
 class DisplayClientBase(BaseModel):
     """Base display client schema"""
     name: str
@@ -67,7 +76,7 @@ class DisplayClientResponse(DisplayClientBase, TimestampMixin):
     content_claiming: Optional[bool] = Field(None, alias="contentClaiming")
     is_online: Optional[bool] = Field(None, alias="isOnline")
     last_seen: Optional[datetime] = Field(None, alias="lastSeen")
-    assigned_scene_id: Optional[str] = Field(None, alias="assignedSceneId")
+    assigned_scene_id: Optional[AssignedScene] = Field(None, alias="assignedSceneId")
     current_content_hash: Optional[str] = Field(None, alias="currentContentHash")
     websocket_connection_id: Optional[str] = Field(None, alias="websocketConnectionId")
     
