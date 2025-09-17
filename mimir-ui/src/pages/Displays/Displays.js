@@ -6,7 +6,6 @@ import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import featureDetection from '../../services/featureDetection';
 import DisplayCard from './DisplayCard';
-import DisplayRegistration from './DisplayRegistration';
 import SceneAssignment from './SceneAssignment';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Displays.css';
