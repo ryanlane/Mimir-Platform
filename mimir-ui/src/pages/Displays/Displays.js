@@ -37,7 +37,6 @@ const Displays = () => {
   });
   
   // UI state
-  const [showRegistration, setShowRegistration] = useState(false);
   const [showSceneAssignment, setShowSceneAssignment] = useState(false);
   const [selectedDisplay, setSelectedDisplay] = useState(null);
   
@@ -235,22 +234,6 @@ const Displays = () => {
     await loadDisplays();
   }, [loadDisplays]);
 
-  // Trigger discovery
-  const triggerDiscovery = useCallback(async () => {
-    try {
-      console.log('🔍 Triggering display discovery...');
-      await api.discoverDisplays();
-      // Refresh displays after discovery
-      await refreshDisplays();
-    } catch (error) {
-      console.error('Error triggering discovery:', error);
-      setError('Discovery failed: ' + error.message);
-    }
-  }, [refreshDisplays]);
-
-  useEffect(() => {
-    loadDisplays();
-  }, [loadDisplays]);
 
   // WebSocket event handlers for real-time updates
   useEffect(() => {
@@ -393,28 +376,13 @@ const Displays = () => {
         <div className="page-actions">
           <button 
             className="btn btn-secondary" 
-            onClick={triggerDiscovery}
-            disabled={loading}
-            title="Discover displays on network"
-          >
-            <Search size={18} />
-            Discover
-          </button>
-          <button 
-            className="btn btn-secondary" 
             onClick={refreshDisplays}
             disabled={loading}
           >
             <RotateCcw size={18} />
             Refresh
           </button>
-          <button 
-            className="btn btn-primary" 
-            onClick={() => setShowRegistration(true)}
-          >
-            <Plus size={18} />
-            Register Display
-          </button>
+
         </div>
       </div>
 
@@ -589,10 +557,6 @@ const Displays = () => {
               : "No displays match your current filters."
             }
           </p>
-          <button className="btn btn-primary" onClick={() => setShowRegistration(true)}>
-            <Plus size={18} />
-            Register First Display
-          </button>
         </div>
       ) : (
         <div className="displays-grid">
@@ -619,7 +583,7 @@ const Displays = () => {
                     resolution: display.resolution || [display.width, display.height],
                     orientation: display.orientation || 'landscape'
                   });
-                  setShowRegistration(true);
+                
                 } else if (display.displayType === 'registered') {
                   // Edit registered display
                   console.log('Edit registered display:', display);
@@ -639,12 +603,7 @@ const Displays = () => {
       )}
 
       {/* Modals */}
-      {showRegistration && (
-        <DisplayRegistration
-          onClose={() => setShowRegistration(false)}
-          onSuccess={handleDisplayRegistered}
-        />
-      )}
+      
 
       {showSceneAssignment && selectedDisplay && (
         <SceneAssignment
