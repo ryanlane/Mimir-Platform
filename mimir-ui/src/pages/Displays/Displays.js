@@ -267,11 +267,6 @@ const Displays = () => {
     return () => window.removeEventListener('websocket-message', handleDisplayEvent);
   }, [refreshDisplays]);
 
-  // Handle display actions
-  const handleDisplayRegistered = (newDisplay) => {
-    setShowRegistration(false);
-    refreshDisplays();
-  };
 
   const handleSceneAssigned = (displayId, sceneId) => {
     setShowSceneAssignment(false);
