@@ -1,5 +1,5 @@
 ---
-mode: edit
+mode: ask
 ---
 
 # Mimir System Overview
@@ -162,11 +162,38 @@ class ChannelPlugin(Protocol):
 ## MQTT Topics
 
 * `mimir/displays/<displayId>/probe`
-* `mimir/api/registrations`
+* `mimir/<device_id>/cmd`
 * `mimir/displays/<displayId>/set-image`
 * `mimir/displays/<displayId>/set-image-bytes`
 * `mimir/api/acks`
 * `mimir/displays/<displayId>/ping` / `pong`
+
+example scene assignment command message:
+
+```json
+mimir/<device_id>/cmd
+
+{
+  "type": "set_scene",
+  "assignment_id": "test-cli-1234",
+  "timestamp": "2025-09-05T20:00:00Z"
+}
+
+
+```
+
+clear scene assignment command message:
+
+```json
+mimir/<device_id>/cmd
+
+{
+  "type": "clear_scene",
+  "assignment_id": "test-cli-1234",
+  "timestamp": "2025-09-05T20:00:00Z"
+}
+
+```
 
 ---
 

@@ -24,6 +24,8 @@ class MqttSceneAssignmentService:
         self.broker_host = getattr(settings, 'mqtt_broker_host', 'localhost')
         self.broker_port = getattr(settings, 'mqtt_broker_port', 1883)
         self.client_id = f"mimir-scenes-{uuid.uuid4().hex[:8]}"
+
+        self._pub = MQTTSceneAssignmentPublisher(client_id=self.client_id)
         
         # Client state
         self.client: Optional[Client] = None
@@ -63,32 +65,41 @@ class MqttSceneAssignmentService:
     def is_connected(self) -> bool:
         return self._pub.is_connected()
     
-    async def _mqtt_scene_loop(self):
-        """Main MQTT scene assignment client loop with automatic reconnection"""
+    async def _mqtt_scene_loop(self) -> None:
+        """Main MQTT scene assignment client loop with automatic reconnection.
+
+        Maintains a persistent connection to the MQTT broker and processes device events.
+        Logs connection attempts and errors with context for diagnostics.
+        """
         while self.is_running:
             try:
+                logger.info(
+                    f"Connecting to MQTT broker at {self.broker_host}:{self.broker_port} (client_id={self.client_id})"
+                )
                 async with Client(
                     hostname=self.broker_host,
                     port=self.broker_port,
                     identifier=self.client_id,
                 ) as client:
                     self.client = client
-                    
+                    logger.info("MQTT scene assignment service connected - listening for device events")
+                    self._pub._connected_evt.set()  # Mark as connected
+
                     # Subscribe to scene assignment acknowledgments and events
                     await client.subscribe("mimir/+/evt", qos=1)
-                    
-                    logger.info("MQTT scene assignment service connected - listening for device events")
-                    
+
                     # Message processing loop
                     async for message in client.messages:
                         await self._handle_device_event(message)
-                        
+
             except MqttError as e:
                 logger.error(f"MQTT scene assignment connection error: {e}")
-                    
             except Exception as e:
                 logger.error(f"Unexpected error in MQTT scene assignment loop: {e}")
-                
+            finally:
+                self.client = None
+                self._pub._connected_evt.clear()  # Mark as disconnected
+
             # Wait before reconnecting
             if self.is_running:
                 logger.info("Reconnecting MQTT scene assignment service in 5 seconds...")
@@ -133,74 +144,99 @@ class MqttSceneAssignmentService:
         """Handle device error reports"""
         error_msg = payload.get('message', 'Unknown error')
         logger.warning(f"Device {device_id} reported error: {error_msg}")
-    
-    async def assign_scene_to_device(self, device_id: str, scene_id: str) -> bool:
-        """Assign a scene to a device via MQTT."""
+
+    async def publish_command(self, target_id: str, payload: dict, qos: int = 1, retain: bool = False) -> bool:
+        """
+        Queue a command to publish to mimir/<target_id>/cmd.
+        Safe to call anytime; will buffer until connected.
+        """
+        await self.start()  # lazy start if needed
+        topic = f"mimir/{target_id}/cmd"
         try:
-            if not self.client:
-                logger.error("Cannot assign scene - MQTT client not connected")
-                return False
-
-            db = SessionLocal()
-            try:
-                scene = db.query(Scene).filter(Scene.id == scene_id).first()
-                if not scene:
-                    logger.error(f"Scene {scene_id} not found")
-                    return False
-
-                # Resolve device row; prefer an active MQTT id if you store it.
-                display = db.query(DisplayClient).filter(
-                    (DisplayClient.hostname == device_id) | (DisplayClient.mqtt_id == device_id)
-                ).first()
-                if not display:
-                    logger.error(f"Device {device_id} not found")
-                    return False
-
-                # Decide which id to publish to (active MQTT id if available)
-                topic_id = getattr(display, "mqtt_id", None) or display.hostname or device_id
-                command_topic = f"mimir/{topic_id}/cmd"
-
-                # Persist assignment metadata
-                display.assigned_scene_id = scene_id
-                display.scene_assigned_at = datetime.now(timezone.utc)
-                db.commit()
-
-                # Build content URL using your API settings
-                api_base_url = f"http://{settings.api_host}:{settings.api_port}"
-                content_url = f"{api_base_url}/api/scenes/{scene_id}/content"
-
-                payload = {
-                    "type": "assign",
-                    "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
-                    "sequence": 1,
-                    "scene_id": scene_id,
-                    "scene_name": scene.name,
-                    # You can omit 'display' if you don't need to override client defaults:
-                    # "display": {"resolution": {"width": 800, "height": 480}},
-                    "content": {
-                        "delivery": {
-                            "type": "url",
-                            "url": content_url,
-                            "content_type": "image/png",
-                            "etag": "v1",
-                            "ttl_seconds": 3600
-                        },
-                        "metadata": {"caption": scene.name}
-                    },
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                }
-
-                # Publish the command (QoS 1; retain False)
-                await self.client.publish(command_topic, json.dumps(payload), qos=1)
-                logger.info(f"Assigned scene {scene_id} to device {topic_id} via MQTT ({command_topic})")
-                return True
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"Error assigning scene via MQTT: {e}", exc_info=True)
+            # Encode once, so the worker just publishes bytes
+            data = json.dumps(payload).encode("utf-8")
+            await self._queue.put((topic, data, qos, retain))
+            logger.debug(f"Enqueued MQTT command -> {topic}: {payload}")
+            return True
+        except Exception as exc:
+            logger.error(f"Failed to enqueue MQTT command for {topic}: {exc}")
             return False
+
+    async def assign_scene_to_device(self, device_id: str, scene_id: str) -> bool:
+        payload = {
+            "type": "set_scene",
+            "assignment_id": scene_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        return await self.publish_command(device_id, payload, qos=1, retain=False)
+    
+    # async def assign_scene_to_device(self, device_id: str, scene_id: str) -> bool:
+    #     """Assign a scene to a device via MQTT."""
+    #     try:
+    #         if not self.client:
+    #             logger.error("Cannot assign scene - MQTT client not connected")
+    #             return False
+
+    #         db = SessionLocal()
+    #         try:
+    #             scene = db.query(Scene).filter(Scene.id == scene_id).first()
+    #             if not scene:
+    #                 logger.error(f"Scene {scene_id} not found")
+    #                 return False
+
+    #             # Resolve device row; prefer an active MQTT id if you store it.
+    #             display = db.query(DisplayClient).filter(
+    #                 (DisplayClient.hostname == device_id) | (DisplayClient.mqtt_id == device_id)
+    #             ).first()
+    #             if not display:
+    #                 logger.error(f"Device {device_id} not found")
+    #                 return False
+
+    #             # Decide which id to publish to (active MQTT id if available)
+    #             topic_id = getattr(display, "mqtt_id", None) or display.hostname or device_id
+    #             command_topic = f"mimir/{topic_id}/cmd"
+
+    #             # Persist assignment metadata
+    #             display.assigned_scene_id = scene_id
+    #             display.scene_assigned_at = datetime.now(timezone.utc)
+    #             db.commit()
+
+    #             # Build content URL using your API settings
+    #             api_base_url = f"http://{settings.api_host}:{settings.api_port}"
+    #             content_url = f"{api_base_url}/api/scenes/{scene_id}/content"
+
+    #             payload = {
+    #                 "type": "set_scene",
+    #                 "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
+    #                 "sequence": 1,
+    #                 "scene_id": scene_id,
+    #                 "scene_name": scene.name,
+    #                 # You can omit 'display' if you don't need to override client defaults:
+    #                 # "display": {"resolution": {"width": 800, "height": 480}},
+    #                 "content": {
+    #                     "delivery": {
+    #                         "type": "url",
+    #                         "url": content_url,
+    #                         "content_type": "image/png",
+    #                         "etag": "v1",
+    #                         "ttl_seconds": 3600
+    #                     },
+    #                     "metadata": {"caption": scene.name}
+    #                 },
+    #                 "timestamp": datetime.now(timezone.utc).isoformat()
+    #             }
+
+    #             # Publish the command (QoS 1; retain False)
+    #             await self.client.publish(command_topic, json.dumps(payload), qos=1)
+    #             logger.info(f"Assigned scene {scene_id} to device {topic_id} via MQTT ({command_topic})")
+    #             return True
+
+    #         finally:
+    #             db.close()
+
+    #     except Exception as e:
+    #         logger.error(f"Error assigning scene via MQTT: {e}", exc_info=True)
+    #         return False
 
     
     async def unassign_scene_from_device(self, device_id: str) -> bool:
@@ -259,12 +295,12 @@ class MQTTSceneAssignmentPublisher:
 
     _instance: Optional["MQTTSceneAssignmentPublisher"] = None
 
-    def __init__(self, broker_host: str, broker_port: int = 1883, client_id: Optional[str] = None):
+    def __init__(self, client_id: Optional[str] = None):
         if not AIOMQTT_AVAILABLE:
             raise RuntimeError("aiomqtt not available - install with `pip install aiomqtt`")
 
-        self.broker_host = broker_host
-        self.broker_port = broker_port
+        self.broker_host = getattr(settings, 'mqtt_broker_host', 'localhost')
+        self.broker_port = getattr(settings, 'mqtt_broker_port', 1883)
         self.client_id = client_id or f"mimir-pub-{uuid.uuid4().hex[:8]}"
         self._queue: "asyncio.Queue[Tuple[str, bytes, int, bool]]" = asyncio.Queue()
         self._task: Optional[asyncio.Task] = None
@@ -274,10 +310,10 @@ class MQTTSceneAssignmentPublisher:
 
     # ---------- Singleton helpers ----------
     @classmethod
-    def initialize(cls, broker_host: str, broker_port: int = 1883, client_id: Optional[str] = None) -> "MQTTSceneAssignmentPublisher":
+    def initialize(cls, client_id: Optional[str] = None) -> "MQTTSceneAssignmentPublisher":
         """Create the singleton instance (idempotent)."""
         if cls._instance is None:
-            cls._instance = cls(broker_host, broker_port, client_id)
+            cls._instance = cls(client_id)
         return cls._instance
 
     @classmethod
@@ -420,6 +456,7 @@ class MQTTSceneAssignmentPublisher:
 
 # Global service instance
 mqtt_scene_service = MqttSceneAssignmentService()
+mqtt_scene_assignment = MQTTSceneAssignmentPublisher()
 
 
 async def setup_mqtt_scene_assignment():

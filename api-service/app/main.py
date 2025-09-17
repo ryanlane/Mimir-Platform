@@ -90,10 +90,7 @@ async def lifespan(app: FastAPI):
         mqtt_success = await setup_mqtt_integration()
         # Also bring up the scene listener + publisher
         await setup_mqtt_scene_assignment()
-        MQTTSceneAssignmentPublisher.initialize(
-            broker_host=settings.mqtt_broker_host,
-            broker_port=settings.mqtt_broker_port,
-        )
+        MQTTSceneAssignmentPublisher.initialize(client_id="mimir-scenes")
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
@@ -177,6 +174,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
     
+    # Add root endpoint for health check or landing page
+    @app.get("/")
+    async def root():
+        """Root endpoint for service status."""
+        return {"message": "Mimir API is running"}
+
     # Add metrics middleware for automatic HTTP request instrumentation
     app.middleware("http")(metrics_middleware)
     
