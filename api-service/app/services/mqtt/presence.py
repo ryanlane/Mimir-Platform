@@ -8,6 +8,7 @@ import json
 import socket
 from typing import Dict, Optional, Callable, Set
 from datetime import datetime, timezone
+from app.services.mqtt import topics
 
 try:
     from aiomqtt import Client, MqttError
@@ -70,32 +71,46 @@ class MqttPresenceService:
         if not AIOMQTT_AVAILABLE:
             logger.error("asyncio-mqtt not available - MQTT presence disabled")
             return False
-        
+
         if self.is_running:
             logger.warning("MQTT presence service already running")
             return True
-        
+
         try:
-            # Start the MQTT client task
+            self.client = Client(self.broker_host, self.broker_port, client_id=self.client_id)
+            await self.client.connect()
             self.is_running = True
-            asyncio.create_task(self._mqtt_client_loop())
+
+            # keep task refs so we can stop() cleanly
+            self._loop_task = asyncio.create_task(self._mqtt_client_loop())
+            self._hb_task = asyncio.create_task(self._subscribe_heartbeats(self.client))
             logger.info("MQTT presence service started")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to start MQTT presence service: {e}")
             self.is_running = False
             return False
+
     
     async def stop(self):
-        """Stop the MQTT presence monitoring service"""
+        if not self.is_running:
+            return
         self.is_running = False
+        for t in (getattr(self, "_hb_task", None), getattr(self, "_loop_task", None)):
+            if t and not t.done():
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
         if self.client:
             try:
                 await self.client.disconnect()
-            except Exception as e:
-                logger.error(f"Error disconnecting MQTT client: {e}")
+            except Exception:
+                pass
         logger.info("MQTT presence service stopped")
+
     
     async def _mqtt_client_loop(self):
         """Main MQTT client loop with automatic reconnection"""
@@ -236,7 +251,46 @@ class MqttPresenceService:
                 # Record metrics
                 if METRICS_AVAILABLE:
                     metrics.discovery_display_lost(device_id)
-    
+
+
+    async def _subscribe_heartbeats(self, client):
+        """
+        Listens only to heartbeat topics and bridges them to the discovery service.
+        Uses a filtered_messages queue so it won't compete with other consumers.
+        """
+        topic = "mimir/+/heartbeat"
+        try:
+            # filtered queue for just heartbeats
+            async with client.filtered_messages(topic) as messages:
+                await client.subscribe(topic)
+                async for message in messages:
+                    try:
+                        payload = json.loads(message.payload.decode("utf-8"))
+                        # prefer explicit device_id; fallback to topic ("mimir/<id>/heartbeat")
+                        device_id = payload.get("device_id") or message.topic.split("/")[1]
+                        ts = payload.get("timestamp")
+                        if ts:
+                            # fromisoformat handles "YYYY-mm-ddTHH:MM:SS.ssssss+00:00"
+                            heartbeat_ts = datetime.fromisoformat(ts)
+                        else:
+                            heartbeat_ts = datetime.now(timezone.utc)
+
+                        # Bridge to discovery (source of truth for online/last_seen)
+                        from app.services.mdns_discovery import mdns_discovery_service
+                        mdns_discovery_service.update_display_heartbeat(device_id, heartbeat_ts)
+
+                        # If you really want the DB to reflect online quickly, you can optionally persist:
+                        # (But per your design goal, I'd avoid persisting device details here.)
+                        # with SessionLocal() as db:
+                        #     db.query(DisplayClient)...  # set is_online/last_seen and commit
+
+                    except Exception as ex:
+                        logger.warning(f"bad heartbeat on {message.topic}: {ex}")
+        except Exception as ex:
+            logger.error(f"heartbeat subscriber exited: {ex}")
+
+
+
     async def _handle_heartbeat_message(self, device_id: str, payload: Dict):
         """Handle device heartbeat messages"""
         timestamp = datetime.now(timezone.utc).isoformat()

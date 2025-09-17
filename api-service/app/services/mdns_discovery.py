@@ -355,18 +355,40 @@ class MdnsDiscoveryService:
         with self._lock:
             service_name = self.display_id_to_service_name.get(display_id)
             if not service_name:
-                # Display not discovered via mDNS yet
-                return
-            display = self.discovered_displays.get(service_name)
-            if display:
-                display.last_seen = heartbeat_timestamp
-                if not display.is_online:
-                    display.is_online = True
-                    logger.info(f"Display back online via MQTT heartbeat: {display.display_name} ({display.hostname})")
-                    if METRICS_AVAILABLE:
-                        metrics.discovery_display_found(display.display_id)
-                    self._notify_callbacks(display, "discovered")
-                self.mqtt_last_heartbeat[display_id] = heartbeat_timestamp
+                # Display not discovered via mDNS yet, create a placeholder
+                service_name = f"mqtt-{display_id}"
+                self.display_id_to_service_name[display_id] = service_name
+                display = DiscoveredDisplay(
+                    service_name=service_name,
+                    display_id=display_id,
+                    display_name=f"Display ({display_id})",
+                    hostname=display_id,
+                    location="MQTT heartbeat",
+                    addresses=[],
+                    webhook_port=None,
+                    resolution=None,
+                    client_version=None,
+                    properties={},
+                    discovered_at=heartbeat_timestamp,
+                    last_seen=heartbeat_timestamp,
+                    is_online=True,
+                )
+                self.discovered_displays[service_name] = display
+                logger.info(f"Discovered new display via MQTT heartbeat: {display.display_name} ({display.hostname})")
+                if METRICS_AVAILABLE:
+                    metrics.discovery_display_found(display.display_id)
+                self._notify_callbacks(display, "discovered")
+            else:
+                display = self.discovered_displays.get(service_name)
+                if display:
+                    display.last_seen = heartbeat_timestamp
+                    if not display.is_online:
+                        display.is_online = True
+                        logger.info(f"Display back online via MQTT heartbeat: {display.display_name} ({display.hostname})")
+                        if METRICS_AVAILABLE:
+                            metrics.discovery_display_found(display.display_id)
+                        self._notify_callbacks(display, "discovered")
+            self.mqtt_last_heartbeat[display_id] = heartbeat_timestamp
 
     async def _monitoring_loop(self):
         """Background monitoring loop for display health"""
