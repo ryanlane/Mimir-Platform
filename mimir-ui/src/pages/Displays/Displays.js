@@ -446,7 +446,7 @@ const Displays = () => {
       )}
 
       {/* Discovered Display Assignment Stats */}
-      {discoveredDisplayStats && (
+      {false && discoveredDisplayStats && (
         <div className="assignment-stats">
           <div className="assignment-info">
             <div className="stats-header">

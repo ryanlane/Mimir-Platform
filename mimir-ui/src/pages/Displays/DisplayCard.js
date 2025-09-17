@@ -75,35 +75,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
           </div>
 
           <div className="display-actions">
-            {display.displayType === 'registered' ? (
-              <>
-                <button 
-                  className="btn btn-sm btn-tertiary" 
-                  onClick={() => onEdit(display)}
-                  title="Edit Display"
-                >
-                  <Settings size={16} />
-                </button>
-                <button 
-                  className="btn btn-sm btn-tertiary" 
-                  onClick={() => onDelete(display.id)}
-                  title="Delete Display"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </>
-            ) : (
-              <>
-                <button 
-                  className="btn btn-sm btn-tertiary" 
-                  onClick={() => onEdit(display, 'register')}
-                  title="Optionally register this display for management"
-                >
-                  <Settings size={16} />
-                  Manage
-                </button>
-              </>
-            )}
+            
           </div>
         </div>
 
