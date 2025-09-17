@@ -165,6 +165,11 @@ class MdnsDiscoveryService:
         # Settings  
         self.update_interval = settings.mdns_update_interval  # seconds
         self.offline_timeout = settings.mdns_offline_timeout  # seconds
+
+        # Mapping from display_id to service_name for quick lookup
+        self.display_id_to_service_name: Dict[str, str] = {}
+        # Last MQTT heartbeat timestamps
+        self.mqtt_last_heartbeat: Dict[str, datetime] = {}
     
     @property
     def is_available(self) -> bool:
@@ -280,7 +285,10 @@ class MdnsDiscoveryService:
         """Handle newly discovered display"""
         with self._lock:
             existing = self.discovered_displays.get(display.service_name)
-            
+
+            # Map display_id to service_name for quick lookup
+            self.display_id_to_service_name[display.display_id] = display.service_name
+
             if existing:
                 # Update existing display
                 existing.last_seen = display.last_seen
@@ -336,31 +344,56 @@ class MdnsDiscoveryService:
             except Exception as e:
                 logger.error(f"Error in discovery callback: {e}")
     
+    def update_display_heartbeat(self, display_id: str, heartbeat_timestamp: datetime):
+        """
+        Update display's last_seen and online status from MQTT heartbeat.
+
+        Args:
+            display_id: The device_id from MQTT heartbeat.
+            heartbeat_timestamp: The timestamp from the heartbeat payload.
+        """
+        with self._lock:
+            service_name = self.display_id_to_service_name.get(display_id)
+            if not service_name:
+                # Display not discovered via mDNS yet
+                return
+            display = self.discovered_displays.get(service_name)
+            if display:
+                display.last_seen = heartbeat_timestamp
+                if not display.is_online:
+                    display.is_online = True
+                    logger.info(f"Display back online via MQTT heartbeat: {display.display_name} ({display.hostname})")
+                    if METRICS_AVAILABLE:
+                        metrics.discovery_display_found(display.display_id)
+                    self._notify_callbacks(display, "discovered")
+                self.mqtt_last_heartbeat[display_id] = heartbeat_timestamp
+
     async def _monitoring_loop(self):
         """Background monitoring loop for display health"""
         while self.is_running:
             try:
                 await asyncio.sleep(self.update_interval)
-                
+
                 if not self.is_running:
                     break
-                
-                # Check for displays that haven't been seen recently
+
                 now = datetime.now(timezone.utc)
                 with self._lock:
                     for display in list(self.discovered_displays.values()):
-                        if display.is_online:
-                            time_since_seen = (now - display.last_seen).total_seconds()
-                            if time_since_seen > self.offline_timeout:
-                                display.is_online = False
-                                logger.info(f"Display marked offline due to timeout: {display.display_name}")
-                                
-                                # Record metrics for display timeout
-                                if METRICS_AVAILABLE:
-                                    metrics.discovery_display_lost(display.display_id)
-                                
-                                self._notify_callbacks(display, "lost")
-                
+                        # Use the most recent of mDNS or MQTT heartbeat
+                        last_seen = display.last_seen
+                        heartbeat_seen = self.mqtt_last_heartbeat.get(display.display_id)
+                        if heartbeat_seen and heartbeat_seen > last_seen:
+                            last_seen = heartbeat_seen
+
+                        time_since_seen = (now - last_seen).total_seconds()
+                        if display.is_online and time_since_seen > self.offline_timeout:
+                            display.is_online = False
+                            logger.info(f"Display marked offline due to timeout: {display.display_name}")
+                            if METRICS_AVAILABLE:
+                                metrics.discovery_display_lost(display.display_id)
+                            self._notify_callbacks(display, "lost")
+
                 # Record general discovery metrics
                 if METRICS_AVAILABLE:
                     total_displays = len(self.discovered_displays)
