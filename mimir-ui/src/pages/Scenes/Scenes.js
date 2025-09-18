@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Monitor, Edit, Trash2, RefreshCw, Settings } from 'lucide-react';
+import { Plus, Monitor, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
@@ -19,9 +19,34 @@ const Scenes = () => {
   const [imageLoading, setImageLoading] = useState(false);
   const [showDistributionManager, setShowDistributionManager] = useState(false);
   const [selectedSceneForDistribution, setSelectedSceneForDistribution] = useState(null);
+  const [sceneSchedules, setSceneSchedules] = useState({}); // Cache for scene schedules
 
   // Initialize WebSocket connection with automatic state sync on mount
   const { isConnected, currentState, requestStateSync } = useEnsureFreshState();
+
+  const loadSceneSchedules = useCallback(async (scenesList) => {
+    try {
+      const schedulePromises = scenesList.map(async (scene) => {
+        try {
+          const response = await api.getSceneSchedules(scene.id);
+          return { sceneId: scene.id, schedules: response.data.jobs || [] };
+        } catch (error) {
+          console.log(`Could not load schedules for scene ${scene.id}:`, error.message);
+          return { sceneId: scene.id, schedules: [] };
+        }
+      });
+      
+      const scheduleResults = await Promise.all(schedulePromises);
+      const schedulesMap = scheduleResults.reduce((acc, result) => {
+        acc[result.sceneId] = result.schedules;
+        return acc;
+      }, {});
+      
+      setSceneSchedules(schedulesMap);
+    } catch (error) {
+      console.error('Error loading scene schedules:', error);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -72,6 +97,9 @@ const Scenes = () => {
       
       setChannelManifests(manifestsMap);
       
+      // Load schedules for all scenes
+      await loadSceneSchedules(scenesList);
+      
       // Only set display status if we don't have WebSocket state
       if (!currentState?.displayStatus) {
         setDisplayStatus(displayResponse?.data || null);
@@ -84,7 +112,7 @@ const Scenes = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentState]);
+  }, [currentState, loadSceneSchedules]);
 
   // Listen to scene events via WebSocket
   useSceneEvents({
@@ -212,6 +240,24 @@ const Scenes = () => {
   const handleCloseDistributionManager = () => {
     setShowDistributionManager(false);
     setSelectedSceneForDistribution(null);
+  };
+
+  const getSceneScheduleStatus = (sceneId) => {
+    const schedules = sceneSchedules[sceneId] || [];
+    const activeSchedules = schedules.filter(s => s.enabled);
+    
+    if (activeSchedules.length === 0) {
+      return { hasSchedule: false, status: 'No schedule', count: 0 };
+    }
+    
+    const schedule = activeSchedules[0]; // Get first active schedule
+    return {
+      hasSchedule: true,
+      status: `Every ${schedule.freq_value} ${schedule.freq_unit}${schedule.freq_value > 1 ? 's' : ''}`,
+      count: activeSchedules.length,
+      enabled: schedule.enabled,
+      nextRun: schedule.next_run_at
+    };
   };
 
   const handleDisplayScene = async (sceneId) => {
@@ -377,6 +423,29 @@ const Scenes = () => {
                       <option value="SEQUENTIAL">Sequential</option>
                       <option value="RANDOM_UNIQUE">Random Unique</option>
                     </select>
+                  </div>
+                  
+                  <div className="scene-schedule">
+                    <span className="schedule-label">Schedule:</span>
+                    {(() => {
+                      const scheduleStatus = getSceneScheduleStatus(scene.id);
+                      return (
+                        <div className="schedule-info">
+                          <span className={`schedule-status ${scheduleStatus.hasSchedule ? 'active' : 'inactive'}`}>
+                            {scheduleStatus.hasSchedule ? (
+                              <>
+                                {scheduleStatus.status}
+                                {scheduleStatus.count > 1 && (
+                                  <span className="schedule-count"> (+{scheduleStatus.count - 1} more)</span>
+                                )}
+                              </>
+                            ) : (
+                              'No schedule'
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 

@@ -18,6 +18,15 @@ const SceneForm = ({ scene, channels, onClose }) => {
   });
   const [loading, setLoading] = useState(false);
   
+  // Schedule management state
+  const [scheduleData, setScheduleData] = useState({
+    freq_unit: 'hour',
+    freq_value: 1,
+    enabled: true
+  });
+  const [currentSchedule, setCurrentSchedule] = useState(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  
   // Plugin manifest support for subchannels/galleries
   const [subChannelSupport, setSubChannelSupport] = useState({});
   const [subChannelRequirements, setSubChannelRequirements] = useState({});
@@ -255,6 +264,120 @@ const SceneForm = ({ scene, channels, onClose }) => {
     return true;
   };
 
+  // Schedule management functions
+  const loadSceneSchedule = useCallback(async (sceneId) => {
+    if (!sceneId) return;
+    
+    try {
+      setScheduleLoading(true);
+      const response = await api.getSceneSchedules(sceneId);
+      const schedules = response.data.jobs || [];
+      
+      if (schedules.length > 0) {
+        const schedule = schedules[0]; // Get the first schedule
+        setCurrentSchedule(schedule);
+        setScheduleData({
+          freq_unit: schedule.freq_unit,
+          freq_value: schedule.freq_value,
+          enabled: schedule.enabled
+        });
+      } else {
+        setCurrentSchedule(null);
+        setScheduleData({
+          freq_unit: 'hour',
+          freq_value: 1,
+          enabled: true
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load scene schedule:', error);
+      setCurrentSchedule(null);
+    } finally {
+      setScheduleLoading(false);
+    }
+  }, []);
+
+  const createSchedule = async () => {
+    if (!scene?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
+    
+    try {
+      setScheduleLoading(true);
+      const jobData = {
+        name: `Auto-refresh ${formData.name || scene.name}`,
+        description: `Automatically refresh scene every ${scheduleData.freq_value} ${scheduleData.freq_unit}(s)`,
+        enabled: scheduleData.enabled,
+        freq_unit: scheduleData.freq_unit,
+        freq_value: parseInt(scheduleData.freq_value),
+        action_type: 'refresh_scene',
+        scene_ids: [scene.id],
+        refresh_method: 'content_refresh'
+      };
+      
+      const response = await api.createSchedulerJob(jobData);
+      setCurrentSchedule(response.data);
+      console.log('Schedule created successfully');
+    } catch (error) {
+      console.error('Failed to create schedule:', error);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const updateSchedule = async () => {
+    if (!currentSchedule?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
+    
+    try {
+      setScheduleLoading(true);
+      const updates = {
+        freq_unit: scheduleData.freq_unit,
+        freq_value: parseInt(scheduleData.freq_value),
+        enabled: scheduleData.enabled
+      };
+      
+      const response = await api.updateSchedulerJob(currentSchedule.id, updates);
+      setCurrentSchedule(response.data);
+      console.log('Schedule updated successfully');
+    } catch (error) {
+      console.error('Failed to update schedule:', error);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const deleteSchedule = async () => {
+    if (!currentSchedule?.id) return;
+    
+    try {
+      setScheduleLoading(true);
+      await api.deleteSchedulerJob(currentSchedule.id);
+      setCurrentSchedule(null);
+      setScheduleData({
+        freq_unit: 'hour',
+        freq_value: 1,
+        enabled: true
+      });
+      console.log('Schedule deleted successfully');
+    } catch (error) {
+      console.error('Failed to delete schedule:', error);
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const handleScheduleChange = (field, value) => {
+    setScheduleData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Load schedule when scene changes
+  useEffect(() => {
+    if (scene?.id) {
+      loadSceneSchedule(scene.id);
+    }
+  }, [scene?.id, loadSceneSchedule]);
+
   /* Schedule functions temporarily disabled
   const handleScheduleChange = (field, value) => {
     setFormData(prev => ({
@@ -405,6 +528,113 @@ const SceneForm = ({ scene, channels, onClose }) => {
                   <span className="mode-description">Displays get randomized content without duplication</span>
                 </div>
               </label>
+            </div>
+          </div>
+
+          {/* Scene Auto-Refresh Schedule */}
+          <div className="form-group">
+            <label className="form-label">Auto-Refresh Schedule</label>
+            <div className="schedule-controls">
+              {currentSchedule ? (
+                <div className="current-schedule">
+                  <div className="schedule-info">
+                    <span className="schedule-text">
+                      Current: Every {currentSchedule.freq_value} {currentSchedule.freq_unit}(s)
+                    </span>
+                    <span className={`schedule-status ${currentSchedule.enabled ? 'enabled' : 'disabled'}`}>
+                      {currentSchedule.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                  <div className="schedule-form">
+                    <div className="schedule-inputs">
+                      <span className="schedule-prefix">Every</span>
+                      <input
+                        type="number"
+                        min="1"
+                        className="form-input schedule-value"
+                        value={scheduleData.freq_value}
+                        onChange={(e) => handleScheduleChange('freq_value', e.target.value)}
+                        required
+                      />
+                      <select
+                        className="form-select schedule-unit"
+                        value={scheduleData.freq_unit}
+                        onChange={(e) => handleScheduleChange('freq_unit', e.target.value)}
+                      >
+                        <option value="minute">Minute(s)</option>
+                        <option value="hour">Hour(s)</option>
+                        <option value="day">Day(s)</option>
+                        <option value="week">Week(s)</option>
+                      </select>
+                    </div>
+                    <div className="schedule-actions">
+                      <label className="schedule-enabled">
+                        <input
+                          type="checkbox"
+                          checked={scheduleData.enabled}
+                          onChange={(e) => handleScheduleChange('enabled', e.target.checked)}
+                        />
+                        <span>Enabled</span>
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={updateSchedule}
+                        disabled={scheduleLoading || !scheduleData.freq_value || scheduleData.freq_value < 1}
+                      >
+                        {scheduleLoading ? 'Updating...' : 'Update'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-error"
+                        onClick={deleteSchedule}
+                        disabled={scheduleLoading}
+                      >
+                        {scheduleLoading ? 'Removing...' : 'Remove'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="no-schedule">
+                  <p className="schedule-description">
+                    Set up automatic content refresh for this scene. The system will periodically update the scene's content.
+                  </p>
+                  <div className="schedule-form">
+                    <div className="schedule-inputs">
+                      <span className="schedule-prefix">Every</span>
+                      <input
+                        type="number"
+                        min="1"
+                        className="form-input schedule-value"
+                        value={scheduleData.freq_value}
+                        onChange={(e) => handleScheduleChange('freq_value', e.target.value)}
+                        required
+                      />
+                      <select
+                        className="form-select schedule-unit"
+                        value={scheduleData.freq_unit}
+                        onChange={(e) => handleScheduleChange('freq_unit', e.target.value)}
+                      >
+                        <option value="minute">Minute(s)</option>
+                        <option value="hour">Hour(s)</option>
+                        <option value="day">Day(s)</option>
+                        <option value="week">Week(s)</option>
+                      </select>
+                    </div>
+                    <div className="schedule-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={createSchedule}
+                        disabled={scheduleLoading || !scene?.id || !scheduleData.freq_value || scheduleData.freq_value < 1}
+                      >
+                        {scheduleLoading ? 'Creating...' : 'Add Schedule'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
