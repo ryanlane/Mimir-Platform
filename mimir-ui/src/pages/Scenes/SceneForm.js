@@ -121,7 +121,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
       setFormData({
         name: scene.name || '',
         channels: singleChannel,
-        distribution_mode: scene.distribution_mode || 'MIRROR',
+        distribution_mode: scene.distributionMode || scene.distribution_mode || 'MIRROR',
         overlay: scene.overlay || {
           overlays: [],
           position: ['top', 'right'],
