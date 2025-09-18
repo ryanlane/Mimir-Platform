@@ -80,13 +80,9 @@ class MqttPresenceService:
             return True
 
         try:
-            self.client = Client(self.broker_host, self.broker_port, client_id=self.client_id)
-            await self.client.connect()
+            # Just start the loop - client connection happens in the loop
             self.is_running = True
-
-            # keep task refs so we can stop() cleanly
             self._loop_task = asyncio.create_task(self._mqtt_client_loop())
-            # Removed _subscribe_heartbeats task since main loop handles heartbeats
             logger.info("MQTT presence service started")
             return True
 
