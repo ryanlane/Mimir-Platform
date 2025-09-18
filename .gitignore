@@ -190,3 +190,4 @@ __init__.py
 /api-service/mimir.db
 /api-service/deploy.sh
 /api-service/api-deploy.sh
+api-service/scheduler_migration.py
