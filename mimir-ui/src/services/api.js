@@ -372,6 +372,36 @@ export const api = {
   acknowledgeCompletion: (displayId, assignmentId) => 
     apiClient.post(`/displays/${displayId}/acknowledge_completion`, { assignment_id: assignmentId }),
 
+  // Scheduler API endpoints
+  getSchedulerJobs: (params = {}) => apiClient.get('/scheduler/jobs', { params }),
+  getSchedulerJob: (jobId) => apiClient.get(`/scheduler/jobs/${jobId}`),
+  createSchedulerJob: (jobData) => apiClient.post('/scheduler/jobs', jobData),
+  updateSchedulerJob: (jobId, updates) => apiClient.put(`/scheduler/jobs/${jobId}`, updates),
+  deleteSchedulerJob: (jobId) => apiClient.delete(`/scheduler/jobs/${jobId}`),
+  triggerSchedulerJob: (jobId, reason = 'Manual trigger') => 
+    apiClient.post(`/scheduler/jobs/${jobId}/trigger`, { reason }),
+  enableSchedulerJob: (jobId) => apiClient.post(`/scheduler/jobs/${jobId}/enable`),
+  disableSchedulerJob: (jobId) => apiClient.post(`/scheduler/jobs/${jobId}/disable`),
+  getSchedulerStats: () => apiClient.get('/scheduler/stats'),
+  getSchedulerExecutions: (params = {}) => apiClient.get('/scheduler/executions', { params }),
+  
+  // Scene-specific scheduler helpers
+  getSceneSchedules: (sceneId) => apiClient.get('/scheduler/jobs', { 
+    params: { scene_id: sceneId } 
+  }),
+  createSceneSchedule: (sceneId, scheduleData) => {
+    const jobData = {
+      ...scheduleData,
+      action_type: 'refresh_scene',
+      scene_ids: [sceneId]
+    };
+    return apiClient.post('/scheduler/jobs', jobData);
+  },
+  updateSceneSchedule: (jobId, scheduleData) => {
+    return apiClient.put(`/scheduler/jobs/${jobId}`, scheduleData);
+  },
+  deleteSceneSchedule: (jobId) => apiClient.delete(`/scheduler/jobs/${jobId}`),
+
   // Cache Management Utilities
   cache: {
     clear: () => {

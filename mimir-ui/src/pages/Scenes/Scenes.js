@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Monitor, Edit, Trash2, RefreshCw, Settings } from 'lucide-react';
+import { Plus, Monitor, Edit, Trash2, RefreshCw, Settings, Clock } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
 import DistributionManager from '../../components/DistributionManager/DistributionManager';
+import ScheduleManager from '../../components/ScheduleManager/ScheduleManager';
 import './Scenes.css';
 
 const Scenes = () => {
@@ -19,9 +20,36 @@ const Scenes = () => {
   const [imageLoading, setImageLoading] = useState(false);
   const [showDistributionManager, setShowDistributionManager] = useState(false);
   const [selectedSceneForDistribution, setSelectedSceneForDistribution] = useState(null);
+  const [showScheduleManager, setShowScheduleManager] = useState(false);
+  const [selectedSceneForSchedule, setSelectedSceneForSchedule] = useState(null);
+  const [sceneSchedules, setSceneSchedules] = useState({}); // Cache for scene schedules
 
   // Initialize WebSocket connection with automatic state sync on mount
   const { isConnected, currentState, requestStateSync } = useEnsureFreshState();
+
+  const loadAllSceneSchedules = useCallback(async (scenesList) => {
+    try {
+      const schedulePromises = scenesList.map(async (scene) => {
+        try {
+          const response = await api.getSceneSchedules(scene.id);
+          return { sceneId: scene.id, schedules: response.data.jobs || [] };
+        } catch (error) {
+          console.log(`Could not load schedules for scene ${scene.id}:`, error.message);
+          return { sceneId: scene.id, schedules: [] };
+        }
+      });
+      
+      const scheduleResults = await Promise.all(schedulePromises);
+      const schedulesMap = scheduleResults.reduce((acc, result) => {
+        acc[result.sceneId] = result.schedules;
+        return acc;
+      }, {});
+      
+      setSceneSchedules(schedulesMap);
+    } catch (error) {
+      console.error('Error loading scene schedules:', error);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -48,9 +76,13 @@ const Scenes = () => {
 
       console.log('Current scene from API:', displayResponse?.data?.currentScene);
 
-      setScenes(scenesResponse.data.scenes || []);
+      const scenesList = scenesResponse.data.scenes || [];
+      setScenes(scenesList);
       const channelList = channelsResponse.data.channels || [];
       setChannels(channelList);
+      
+      // Load schedules for all scenes
+      await loadAllSceneSchedules(scenesList);
       
       // Load channel manifests for better subchannel display
       const manifestPromises = channelList.map(async (channel) => {
@@ -83,7 +115,7 @@ const Scenes = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentState]);
+  }, [currentState, loadAllSceneSchedules]);
 
   // Listen to scene events via WebSocket
   useSceneEvents({
@@ -131,6 +163,13 @@ const Scenes = () => {
     onDisplayed: (data) => {
       console.log('📺 Scene displayed via WebSocket:', data);
       // Could show a notification here
+    },
+    onScheduleUpdated: (data) => {
+      console.log('⏰ Scene schedule updated via WebSocket:', data);
+      // Reload schedules for the affected scene
+      if (data.sceneId && scenes.length > 0) {
+        loadAllSceneSchedules(scenes);
+      }
     }
   });
 
@@ -211,6 +250,47 @@ const Scenes = () => {
   const handleCloseDistributionManager = () => {
     setShowDistributionManager(false);
     setSelectedSceneForDistribution(null);
+  };
+
+  const handleManageSchedule = (scene) => {
+    setSelectedSceneForSchedule(scene);
+    setShowScheduleManager(true);
+  };
+
+  const handleCloseScheduleManager = async () => {
+    setShowScheduleManager(false);
+    setSelectedSceneForSchedule(null);
+    // Reload schedules after closing the manager
+    await loadAllSceneSchedules(scenes);
+  };
+
+  const getSceneScheduleStatus = (sceneId) => {
+    const schedules = sceneSchedules[sceneId] || [];
+    const activeSchedules = schedules.filter(s => s.enabled);
+    
+    if (activeSchedules.length === 0) {
+      return { hasSchedules: false, status: 'None', count: 0 };
+    }
+    
+    const nextRuns = activeSchedules
+      .filter(s => s.next_run_at)
+      .map(s => new Date(s.next_run_at))
+      .sort((a, b) => a - b);
+    
+    const nextRun = nextRuns[0];
+    const nextRunText = nextRun ? nextRun.toLocaleString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: 'numeric', 
+      minute: '2-digit' 
+    }) : 'Not scheduled';
+    
+    return {
+      hasSchedules: true,
+      status: nextRunText,
+      count: activeSchedules.length,
+      totalCount: schedules.length
+    };
   };
 
   const handleDisplayScene = async (sceneId) => {
@@ -376,6 +456,27 @@ const Scenes = () => {
                       </div>
                     </div>
                   )}
+                  
+                  <div className="scene-schedule">
+                    <span className="schedule-label">Schedule:</span>
+                    {(() => {
+                      const scheduleStatus = getSceneScheduleStatus(scene.id);
+                      return (
+                        <div className="schedule-info">
+                          <span className={`schedule-status ${scheduleStatus.hasSchedules ? 'active' : 'inactive'}`}>
+                            {scheduleStatus.hasSchedules ? (
+                              <>
+                                <Clock size={12} />
+                                {scheduleStatus.count > 1 ? `${scheduleStatus.count} active` : 'Next: ' + scheduleStatus.status}
+                              </>
+                            ) : (
+                              'Not scheduled'
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
 
                 <div className="scene-card-footer">
@@ -394,6 +495,14 @@ const Scenes = () => {
                   >
                     <Settings size={16} />
                     Distribution
+                  </button>
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => handleManageSchedule(scene)}
+                    title="Manage Schedule"
+                  >
+                    <Clock size={16} />
+                    Schedule
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
@@ -487,6 +596,18 @@ const Scenes = () => {
               sceneId={selectedSceneForDistribution.id}
               sceneName={selectedSceneForDistribution.name}
               onClose={handleCloseDistributionManager}
+            />
+          </div>
+        </div>
+      )}
+
+      {showScheduleManager && selectedSceneForSchedule && (
+        <div className="modal-overlay" onClick={handleCloseScheduleManager}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <ScheduleManager
+              sceneId={selectedSceneForSchedule.id}
+              sceneName={selectedSceneForSchedule.name}
+              onClose={handleCloseScheduleManager}
             />
           </div>
         </div>
