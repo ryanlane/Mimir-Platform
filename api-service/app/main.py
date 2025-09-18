@@ -31,6 +31,7 @@ from app.api.routes.displays import router as displays_router
 from app.api.routes.display_scene import router as display_scene_router
 from app.api.routes.websockets import router as websockets_router
 from app.api.routes.admin import health_router, admin_router
+from app.api.routes.scheduler import router as scheduler_router
 
 
 @asynccontextmanager
@@ -203,6 +204,7 @@ def create_app() -> FastAPI:
     app.include_router(scenes_router, prefix=settings.api_prefix, tags=["scenes"])
     app.include_router(displays_router, prefix=settings.api_prefix, tags=["displays"])
     app.include_router(display_scene_router, prefix=settings.api_prefix, tags=["display-scene"])
+    app.include_router(scheduler_router, prefix=settings.api_prefix, tags=["scheduler"])
     app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])
     
     # Include WebSocket routes (no prefix for WebSockets)

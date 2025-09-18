@@ -7,9 +7,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..db.database import get_db
-from ..db.models import SchedulerJob, SchedulerExecution
-from ..schemas.scheduler import (
+from app.db.base import SessionLocal
+from app.db.models import SchedulerJob, SchedulerExecution
+from app.schemas.scheduler import (
     SchedulerJobCreate, SchedulerJobUpdate, SchedulerJobResponse,
     SchedulerJobListResponse, SchedulerJobStatusResponse,
     ManualTriggerRequest, ManualTriggerResponse,
@@ -17,10 +17,19 @@ from ..schemas.scheduler import (
     SchedulerStatsResponse, BulkJobOperationRequest, BulkJobOperationResponse,
     ExecutionStatus, TriggerReason
 )
-from ..services.scheduler_service import SchedulerService
-from ..services.scheduler_math import now_utc, is_job_due, is_job_locked
+from app.services.scheduler_service import SchedulerService
+from app.services.scheduler_math import now_utc, is_job_due, is_job_locked
 
-router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
+router = APIRouter(prefix="/scheduler", tags=["scheduler"])
+
+
+def get_db():
+    """Database dependency"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 @router.post("/jobs", response_model=SchedulerJobResponse)
@@ -323,7 +332,7 @@ async def get_scene_scheduler_jobs(
 ):
     """Get all scheduler jobs assigned to a specific scene"""
     # Verify scene exists
-    from ..db.models import Scene
+    from ...db.models import Scene
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
