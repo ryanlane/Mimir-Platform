@@ -5,6 +5,7 @@ FastAPI router for scene-related endpoints
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
+from datetime import datetime
 from app.dependencies import get_scene_service
 from app.core.services.scene_service import SceneService
 from app.db.base import SessionLocal
@@ -167,3 +168,61 @@ async def get_scene_displays(
         }
     finally:
         db.close()
+
+
+@router.post("/{scene_id}/refresh_content")
+async def refresh_scene_content(
+    scene_id: str,
+    scene_service: SceneService = Depends(get_scene_service)
+):
+    """
+    Trigger a manual content refresh for a scene.
+    This will request new images from all channels in the scene and distribute to assigned displays.
+    """
+    # Check if scene exists
+    scene = scene_service.get_scene_by_id(scene_id)
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+    
+    try:
+        # Import here to avoid circular imports
+        from app.services.scheduler_worker import SchedulerWorker
+        from app.services.scheduler_service import SchedulerService
+        from app.db.base import SessionLocal
+        
+        # Create a temporary worker instance for manual execution
+        worker = SchedulerWorker()
+        
+        # Create a database session for the scheduler service
+        db = SessionLocal()
+        try:
+            scheduler_service = SchedulerService(db)
+            
+            # Create a mock assignment for the scene refresh
+            from app.db.models import SchedulerJobSceneAssignment
+            mock_assignment = SchedulerJobSceneAssignment(
+                id=f"manual-{scene_id}",
+                job_id="manual-refresh",
+                scene_id=scene_id,
+                refresh_method="content_refresh",
+                priority=1
+            )
+            
+            # Execute the scene refresh
+            result = await worker._refresh_single_scene(mock_assignment)
+            
+            return {
+                "message": f"Content refresh triggered for scene {scene_id}",
+                "scene_name": scene.name,
+                "refresh_result": result,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to refresh scene content: {str(e)}"
+        )
