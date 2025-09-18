@@ -241,12 +241,12 @@ const Channels = () => {
                       <span>Version:</span>
                       <span>{channel.version || 'Unknown'}</span>
                     </div>
-                    <div className="detail-item">
+                    {/* <div className="detail-item">
                       <span>Settings Type:</span>
                       <span className="settings-type">
                         {channel.settingsType || 'simple'}
                       </span>
-                    </div>
+                    </div> */}
                     {supportsV21() && manifestData && (
                       <>
                         {manifestData.hasUI && (
