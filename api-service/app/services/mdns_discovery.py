@@ -360,6 +360,18 @@ class MdnsDiscoveryService:
         
         with self._lock:
             service_name = self.display_id_to_service_name.get(display_id)
+            
+            # If not found by display_id, try hostname-based lookup
+            if not service_name:
+                # Look for a display with matching hostname
+                for existing_service_name, display in self.discovered_displays.items():
+                    if display.hostname == display_id:
+                        service_name = existing_service_name
+                        # Update the mapping for future lookups
+                        self.display_id_to_service_name[display_id] = service_name
+                        logger.info(f"Mapped MQTT device_id '{display_id}' to existing display '{display.display_name}' via hostname match")
+                        break
+            
             if not service_name:
                 # Display not discovered via mDNS yet, create a placeholder
                 service_name = f"mqtt-{display_id}"

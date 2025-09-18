@@ -6,9 +6,12 @@ Replaces polling-based timeout detection with event-driven presence
 import asyncio
 import json
 import socket
-from typing import Dict, Optional, Callable, Set
+from typing import Dict, Optional, Callable, Set, TYPE_CHECKING
 from datetime import datetime, timezone
 from app.services.mqtt import topics
+
+if TYPE_CHECKING:
+    from app.services.mdns_discovery import MdnsDiscoveryService
 
 try:
     from aiomqtt import Client, MqttError
@@ -83,7 +86,7 @@ class MqttPresenceService:
 
             # keep task refs so we can stop() cleanly
             self._loop_task = asyncio.create_task(self._mqtt_client_loop())
-            self._hb_task = asyncio.create_task(self._subscribe_heartbeats(self.client))
+            # Removed _subscribe_heartbeats task since main loop handles heartbeats
             logger.info("MQTT presence service started")
             return True
 
@@ -97,13 +100,14 @@ class MqttPresenceService:
         if not self.is_running:
             return
         self.is_running = False
-        for t in (getattr(self, "_hb_task", None), getattr(self, "_loop_task", None)):
-            if t and not t.done():
-                t.cancel()
-                try:
-                    await t
-                except asyncio.CancelledError:
-                    pass
+        # Cancel the main loop task
+        loop_task = getattr(self, "_loop_task", None)
+        if loop_task and not loop_task.done():
+            loop_task.cancel()
+            try:
+                await loop_task
+            except asyncio.CancelledError:
+                pass
         if self.client:
             try:
                 await self.client.disconnect()
@@ -256,58 +260,34 @@ class MqttPresenceService:
                     metrics.discovery_display_lost(device_id)
 
 
-    async def _subscribe_heartbeats(self, client):
-        """
-        Listens only to heartbeat topics and bridges them to the discovery service.
-        Uses a filtered_messages queue so it won't compete with other consumers.
-        """
-        topic = "mimir/+/heartbeat"
-        try:
-            # filtered queue for just heartbeats
-            async with client.filtered_messages(topic) as messages:
-                await client.subscribe(topic)
-                async for message in messages:
-                    try:
-                        payload = json.loads(message.payload.decode("utf-8"))
-                        # prefer explicit device_id; fallback to topic ("mimir/<id>/heartbeat")
-                        device_id = payload.get("device_id") or message.topic.split("/")[1]
-                        ts = payload.get("timestamp")
-                        if ts:
-                            # fromisoformat handles "YYYY-mm-ddTHH:MM:SS.ssssss+00:00"
-                            heartbeat_ts = datetime.fromisoformat(ts)
-                        else:
-                            heartbeat_ts = datetime.now(timezone.utc)
-
-                        # Bridge to discovery (source of truth for online/last_seen)
-                        from app.services.mdns_discovery import mdns_discovery_service
-                        mdns_discovery_service.update_display_heartbeat(device_id, heartbeat_ts, payload)
-
-                        # If you really want the DB to reflect online quickly, you can optionally persist:
-                        # (But per your design goal, I'd avoid persisting device details here.)
-                        # with SessionLocal() as db:
-                        #     db.query(DisplayClient)...  # set is_online/last_seen and commit
-
-                    except Exception as ex:
-                        logger.warning(f"bad heartbeat on {message.topic}: {ex}")
-        except Exception as ex:
-            logger.error(f"heartbeat subscriber exited: {ex}")
-
-
-
     async def _handle_heartbeat_message(self, device_id: str, payload: Dict):
         """Handle device heartbeat messages"""
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp_str = payload.get("timestamp")
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+            except ValueError:
+                timestamp = datetime.now(timezone.utc)
+        else:
+            timestamp = datetime.now(timezone.utc)
         
         if device_id in self.device_metadata:
-            self.device_metadata[device_id]["last_heartbeat"] = timestamp
+            self.device_metadata[device_id]["last_heartbeat"] = timestamp.isoformat()
             self.device_metadata[device_id]["heartbeat_data"] = payload
+        
+        # Bridge to discovery service for heartbeat updates
+        try:
+            from app.services.mdns_discovery import mdns_discovery_service
+            mdns_discovery_service.update_display_heartbeat(device_id, timestamp, payload)
+        except Exception as e:
+            logger.error(f"Failed to bridge heartbeat to discovery service: {e}")
         
         # Heartbeats indicate the device is active
         if device_id not in self.online_devices:
             # Device sent heartbeat but wasn't marked online - mark it online
             self.online_devices.add(device_id)
             logger.info(f"Device marked online via heartbeat: {device_id}")
-            self._notify_presence_callbacks(device_id, "heartbeat_online", {"timestamp": timestamp})
+            self._notify_presence_callbacks(device_id, "heartbeat_online", {"timestamp": timestamp.isoformat()})
     
     async def _handle_event_message(self, device_id: str, payload: Dict):
         """Handle device event messages for immediate scene assignment updates"""
