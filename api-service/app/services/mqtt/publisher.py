@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 from datetime import datetime, timezone
 
 try:
@@ -30,6 +30,8 @@ class MqttSceneAssignmentService:
         # Client state
         self.client: Optional[Client] = None
         self.is_running = False
+        self._queue: asyncio.Queue = asyncio.Queue()
+        self._worker_task: Optional[asyncio.Task] = None
         
         logger.info(f"MQTT Scene Assignment Service initialized - Broker: {self.broker_host}:{self.broker_port}")
     
@@ -40,12 +42,17 @@ class MqttSceneAssignmentService:
             return False
         
         if self.is_running:
-            logger.warning("MQTT scene assignment service already running")
+            logger.debug("MQTT scene assignment service already running")
             return True
         
         try:
             # Start the MQTT client task
             self.is_running = True
+            
+            # Start the queue worker task
+            if self._worker_task is None:
+                self._worker_task = asyncio.create_task(self._queue_worker())
+            
             asyncio.create_task(self._mqtt_scene_loop())
             logger.info("MQTT scene assignment service started")
             return True
@@ -58,6 +65,16 @@ class MqttSceneAssignmentService:
     async def stop(self):
         """Stop the MQTT scene assignment service"""
         self.is_running = False
+        
+        # Cancel worker task
+        if self._worker_task:
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+            self._worker_task = None
+        
         # The client will be automatically disconnected when the context manager exits
         self.client = None
         logger.info("MQTT scene assignment service stopped")
@@ -144,6 +161,27 @@ class MqttSceneAssignmentService:
         """Handle device error reports"""
         error_msg = payload.get('message', 'Unknown error')
         logger.warning(f"Device {device_id} reported error: {error_msg}")
+
+    async def _queue_worker(self):
+        """Worker task to process queued MQTT messages"""
+        while self.is_running:
+            try:
+                # Wait for messages in the queue
+                topic, data, qos, retain = await asyncio.wait_for(
+                    self._queue.get(), timeout=1.0
+                )
+                
+                # Publish the message if connected
+                if self.client and self.is_running:
+                    await self.client.publish(topic, data, qos=qos, retain=retain)
+                    logger.debug(f"Published MQTT message to {topic}")
+                    
+            except asyncio.TimeoutError:
+                # Timeout is expected - keeps the loop responsive
+                continue
+            except Exception as e:
+                logger.error(f"Error in MQTT queue worker: {e}")
+                await asyncio.sleep(1)  # Brief pause before retrying
 
     async def publish_command(self, target_id: str, payload: dict, qos: int = 1, retain: bool = False) -> bool:
         """
