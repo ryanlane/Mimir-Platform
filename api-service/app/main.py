@@ -23,6 +23,7 @@ from app.services.caching import cache_service
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt.presence import mqtt_presence_service, setup_mqtt_integration
 from app.services.mqtt.publisher import MQTTSceneAssignmentPublisher, setup_mqtt_scene_assignment
+from app.services.scheduler_worker import SchedulerWorker
 
 # Import routers
 from app.api.routes.channels import router as channels_router
@@ -55,8 +56,14 @@ async def lifespan(app: FastAPI):
     if scheduler_service.setup_scheduler():
         await scheduler_service.start() 
         logger.info("⏰ APScheduler started with background jobs")
+        
+        # Start scheduler worker for job execution
+        app.state.scheduler_worker = SchedulerWorker()
+        await app.state.scheduler_worker.start()
+        logger.info("⚙️ Scheduler worker started for job execution")
     else:
         logger.warning("⚠️ APScheduler failed to initialize - using fallback mode")
+        app.state.scheduler_worker = None
     
     # Initialize plugins
     await initialize_plugins(app)
@@ -109,6 +116,11 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Mimir API shutting down...")
+    
+    # Stop scheduler worker
+    if hasattr(app.state, 'scheduler_worker') and app.state.scheduler_worker:
+        await app.state.scheduler_worker.stop()
+        logger.info("⚙️ Scheduler worker stopped")
     
     # Stop MQTT services
     if settings.mqtt_enabled:
