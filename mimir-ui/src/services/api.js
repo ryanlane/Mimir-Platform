@@ -362,8 +362,17 @@ export const api = {
   refreshSceneContent: (sceneId) => apiClient.post(`/scenes/${sceneId}/refresh_content`),
   resetSceneDistribution: (sceneId) => apiClient.post(`/scenes/${sceneId}/reset_distribution`),
   getSceneContentInfo: (sceneId) => apiClient.get(`/scenes/${sceneId}/content_info`),
-  updateSceneDistributionMode: (sceneId, distributionMode) => 
-    apiClient.put(`/scenes/${sceneId}/distribution_mode`, { distribution_mode: distributionMode }),
+  updateSceneDistributionMode: async (sceneId, distributionMode) => {
+    // Get current scene data first
+    const sceneResponse = await apiClient.get(`/scenes/${sceneId}`);
+    const currentScene = sceneResponse.data;
+    
+    // Update the scene with new distribution mode
+    return apiClient.put(`/scenes/${sceneId}`, {
+      ...currentScene,
+      distribution_mode: distributionMode
+    });
+  },
   getRedisStatus: () => apiClient.get('/admin/redis/status'),
   cleanupRedis: () => apiClient.post('/admin/redis/cleanup'),
 
