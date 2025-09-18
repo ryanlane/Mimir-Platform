@@ -174,17 +174,39 @@ const Displays = () => {
           resolution: display.resolution || (display.width && display.height ? [display.width, display.height] : null)
         };
 
+        // Handle assigned scene ID - could be string or object format
+        let sceneId = null;
+        if (display.assignedSceneId) {
+          if (typeof display.assignedSceneId === 'object' && display.assignedSceneId.id) {
+            // New nested format: { id: "scene-id", subchannelId: "subchannel" }
+            sceneId = display.assignedSceneId.id;
+            normalized.assigned_subchannel_id = display.assignedSceneId.subchannelId;
+          } else if (typeof display.assignedSceneId === 'string') {
+            // Old string format
+            sceneId = display.assignedSceneId;
+          }
+        }
+        
+        // Also check legacy format
+        if (!sceneId && display.assigned_scene_id) {
+          sceneId = display.assigned_scene_id;
+        }
+
         // For discovered displays, check in-memory assignments
         if (display.displayType === 'discovered' && discoveredAssignments[display.id]) {
           const assignment = discoveredAssignments[display.id];
-          normalized.assigned_scene_id = assignment.scene_id;
-          normalized.assignedSceneId = assignment.scene_id; // Keep both formats for compatibility
+          sceneId = assignment.scene_id;
           normalized.assigned_at = assignment.assigned_at;
           console.log(`🔍 Debug - Found assignment for ${display.id}: ${assignment.scene_id}`);
         }
 
+        // Set normalized scene ID fields
+        if (sceneId) {
+          normalized.assigned_scene_id = sceneId;
+          normalized.assignedSceneId = sceneId; // Keep both formats for compatibility
+        }
+
         // Add scene name for any display with an assigned scene
-        const sceneId = normalized.assigned_scene_id || normalized.assignedSceneId;
         if (sceneId && sceneNames[sceneId]) {
           normalized.assigned_scene_name = sceneNames[sceneId];
           console.log(`🔍 Debug - Added scene name for ${display.id}: ${sceneNames[sceneId]}`);
