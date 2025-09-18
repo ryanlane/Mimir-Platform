@@ -249,6 +249,11 @@ const Displays = () => {
 
   // Manual refresh that bypasses cache
   const refreshDisplays = useCallback(async () => {
+    // Clear API cache for display-related endpoints
+    if (api.cache) {
+      api.cache.invalidate(['/displays', '/display-scene', '/scenes']);
+    }
+    
     displaysCache = null;
     displaysCacheTime = null;
     setLoading(true);
@@ -290,10 +295,25 @@ const Displays = () => {
   }, [refreshDisplays]);
 
 
-  const handleSceneAssigned = (displayId, sceneId) => {
+  const handleSceneAssigned = async (displayId, sceneId) => {
     setShowSceneAssignment(false);
     setSelectedDisplay(null);
-    refreshDisplays();
+    
+    // Immediately update the display in the local state to show assignment
+    setDisplays(prev => prev.map(display => {
+      if (display.id === displayId) {
+        return {
+          ...display,
+          assigned_scene_id: sceneId,
+          assignedSceneId: sceneId,
+          assigned_scene_name: sceneId ? 'Loading...' : null // Will be updated by refresh
+        };
+      }
+      return display;
+    }));
+    
+    // Then refresh to get the full updated data including scene name
+    await refreshDisplays();
   };
 
   const handleDeleteDisplay = async (displayId) => {
