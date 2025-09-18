@@ -191,11 +191,11 @@ const Scenes = () => {
   const handleDistributionModeChange = async (sceneId, newMode) => {
     try {
       await api.updateSceneDistributionMode(sceneId, newMode);
-      // Update local state immediately
+      // Update local state immediately - handle both field naming conventions
       setScenes(prevScenes => 
         prevScenes.map(scene => 
           scene.id === sceneId 
-            ? { ...scene, distribution_mode: newMode }
+            ? { ...scene, distribution_mode: newMode, distributionMode: newMode }
             : scene
         )
       );
@@ -317,7 +317,7 @@ const Scenes = () => {
                   <div className="scene-distribution-mode">
                     <span className="distribution-label">Distribution:</span>
                     <select
-                      value={scene.distribution_mode || 'MIRROR'}
+                      value={scene.distributionMode || scene.distribution_mode || 'MIRROR'}
                       onChange={(e) => handleDistributionModeChange(scene.id, e.target.value)}
                       className="distribution-mode-select"
                     >
