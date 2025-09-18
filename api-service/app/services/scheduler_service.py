@@ -78,6 +78,11 @@ class SchedulerService:
             self.db.add(assignment)
         
         self.db.commit()
+        
+        # Populate scene assignments on the returned job
+        assignments = await self.get_job_assignments(job.id)
+        job.scene_assignments = assignments
+        
         return job
     
     async def update_job(self, job_id: str, updates: SchedulerJobUpdate) -> SchedulerJob:
@@ -105,6 +110,11 @@ class SchedulerService:
         
         job.updated_at = now_utc()
         self.db.commit()
+        
+        # Populate scene assignments on the returned job
+        assignments = await self.get_job_assignments(job.id)
+        job.scene_assignments = assignments
+        
         return job
     
     async def delete_job(self, job_id: str) -> bool:

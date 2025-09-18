@@ -63,6 +63,12 @@ async def list_scheduler_jobs(
     total = query.count()
     jobs = query.offset(offset).limit(limit).all()
     
+    # Populate scene assignments for each job
+    service = SchedulerService(db)
+    for job in jobs:
+        assignments = await service.get_job_assignments(job.id)
+        job.scene_assignments = assignments
+    
     return SchedulerJobListResponse(
         jobs=jobs,
         total=total,
@@ -80,6 +86,11 @@ async def get_scheduler_job(
     job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scheduler job not found")
+    
+    # Populate scene assignments
+    service = SchedulerService(db)
+    assignments = await service.get_job_assignments(job.id)
+    job.scene_assignments = assignments
     
     return job
 
@@ -126,6 +137,11 @@ async def get_job_status(
         raise HTTPException(status_code=404, detail="Scheduler job not found")
     
     service = SchedulerService(db)
+    
+    # Populate scene assignments
+    assignments = await service.get_job_assignments(job.id)
+    job.scene_assignments = assignments
+    
     recent_executions = await service.get_execution_history(job_id, limit=10)
     
     return SchedulerJobStatusResponse(

@@ -259,6 +259,9 @@ class SchedulerJob(Base):
     created_at = Column(DateTime, default=datetime.datetime.now, index=True)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
     
+    # Dynamically populated relationship (not a SQLAlchemy relationship)
+    scene_assignments = []
+    
     # Indexes for efficient scheduler queries
     __table_args__ = (
         Index('ix_scheduler_jobs_due', 'enabled', 'next_run_at'),
