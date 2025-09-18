@@ -237,10 +237,12 @@ const Channels = () => {
 
                 <div className="channel-card-body">
                   <div className="channel-details">
+                    {channel.version && (
                     <div className="detail-item">
                       <span>Version:</span>
                       <span>{channel.version || 'Unknown'}</span>
                     </div>
+                    )}
                     {/* <div className="detail-item">
                       <span>Settings Type:</span>
                       <span className="settings-type">
