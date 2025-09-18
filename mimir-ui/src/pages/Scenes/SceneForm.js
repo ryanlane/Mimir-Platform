@@ -255,6 +255,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
     return true;
   };
 
+  /* Schedule functions temporarily disabled
   const handleScheduleChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -267,6 +268,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
   const removeSchedule = () => {
     setFormData(prev => ({ ...prev, schedule: null }));
   };
+  */
 
   return (
     <div className="scene-form-overlay">
@@ -424,6 +426,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
           </div>
           */}
 
+          {/* Schedule section temporarily hidden - will be replaced with frequency-based scheduler UI
           <div className="form-group">
             <label className="form-label">
               <input
@@ -494,6 +497,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
               </div>
             </div>
           )}
+          */}
 
           <div className="scene-form-footer">
             <button type="button" className="btn" onClick={onClose}>
