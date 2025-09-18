@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from sqlalchemy import or_
 from datetime import datetime, timezone
+from typing import Optional
 import uuid
 
 from app.db.base import SessionLocal
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/displays", tags=["displays"])
 
 class AssignSceneBody(BaseModel):
     scene_id: str
+    subchannel_id: Optional[str] = None
 
 def get_db():
     """Database dependency"""
@@ -527,9 +529,13 @@ async def assign_scene_to_display(display_id: str, body: AssignSceneBody):
 
     assignment_id = f"set-{uuid.uuid4().hex[:8]}"
     target_id = display.hostname or display.display_id
+    
+    # Update to include subchannel_id if the MQTT service supports it
     ok = await mqtt_scene_service.assign_scene_to_device(
         device_id=target_id,
-        scene_id=str(body.scene_id)
+        scene_id=str(body.scene_id),
+        subchannel_id=body.subchannel_id,  # Add this parameter
+        assignment_id=assignment_id
     )
 
     if not ok:
@@ -539,6 +545,7 @@ async def assign_scene_to_display(display_id: str, body: AssignSceneBody):
         "ok": True,
         "display_id": display_id,
         "scene_id": body.scene_id,
+        "subchannel_id": body.subchannel_id,  # Include in response
         "published_topic": f"mimir/{target_id}/cmd",
         "assignment_id": assignment_id
     }
