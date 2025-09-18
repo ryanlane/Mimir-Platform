@@ -292,12 +292,17 @@ export const api = {
   // v2.3: Display Management API endpoints
   registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),
   getDisplays: (params = {}) => apiClient.get('/displays', { params }),
-  assignSceneToDisplay: (displayId, sceneId) => apiClient.put(`/displays/${displayId}/scene/${sceneId}`),
-  unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${displayId}/scene`),
+  unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${encodeURIComponent(displayId)}/scene`),
   getUnassignedDisplays: (includeDiscovered = true) => apiClient.get('/displays/unassigned', { params: { include_discovered: includeDiscovered } }),
   getDisplayDetails: (displayId) => apiClient.get(`/displays/${displayId}`),
   getDiscoveredDisplayAssignments: (displayId) => apiClient.get(`/displays/${displayId}/scene`),
-  assignSceneToDisplay: (displayId, sceneId) => apiClient.post(`/displays/${encodeURIComponent(displayId)}/scene`, { scene_id: sceneId }),
+  assignSceneToDisplay: (displayId, sceneId, subchannelId = null) => {
+    const payload = { scene_id: sceneId };
+    if (subchannelId) {
+      payload.subchannel_id = subchannelId;
+    }
+    return apiClient.post(`/displays/${encodeURIComponent(displayId)}/scene`, payload);
+  },
 
   // Enhanced Display Scene Management (handles both registered and discovered)
   getDisplaysForScene: (sceneId) => apiClient.get(`/display-scene/scenes/${sceneId}/displays`),
