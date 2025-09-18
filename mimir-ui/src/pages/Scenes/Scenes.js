@@ -313,19 +313,7 @@ const Scenes = () => {
                   <h3>{scene.name}</h3>
                 </div>
 
-                <div className="scene-card-body">
-                  <div className="scene-distribution-mode">
-                    <span className="distribution-label">Distribution:</span>
-                    <select
-                      value={scene.distributionMode || scene.distribution_mode || 'MIRROR'}
-                      onChange={(e) => handleDistributionModeChange(scene.id, e.target.value)}
-                      className="distribution-mode-select"
-                    >
-                      <option value="MIRROR">Mirror</option>
-                      <option value="SEQUENTIAL">Sequential</option>
-                      <option value="RANDOM_UNIQUE">Random Unique</option>
-                    </select>
-                  </div>
+                <div className="scene-card-body">                  
                   
                   {scene.channels && scene.channels.length > 0 && (
                     <div className="scene-channels">
@@ -377,6 +365,19 @@ const Scenes = () => {
                       </div>
                     </div>
                   )}
+
+                  <div className="scene-distribution-mode">
+                    <span className="distribution-label">Distribution:</span>
+                    <select
+                      value={scene.distributionMode || scene.distribution_mode || 'MIRROR'}
+                      onChange={(e) => handleDistributionModeChange(scene.id, e.target.value)}
+                      className="distribution-mode-select"
+                    >
+                      <option value="MIRROR">Mirror</option>
+                      <option value="SEQUENTIAL">Sequential</option>
+                      <option value="RANDOM_UNIQUE">Random Unique</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="scene-card-footer">
@@ -388,14 +389,14 @@ const Scenes = () => {
                     <Monitor size={16} />
                     {imageLoading ? 'Loading...' : 'Display'}
                   </button>
-                  <button
+                  {/* <button
                     className="btn btn-sm btn-info"
                     onClick={() => handleManageDistribution(scene)}
                     title="Manage Distribution"
                   >
                     <Settings size={16} />
                     Distribution
-                  </button>
+                  </button> */}
                   <button
                     className="btn btn-sm btn-secondary"
                     onClick={() => handleEditScene(scene)}
