@@ -395,9 +395,7 @@ export const api = {
   getSchedulerExecutions: (params = {}) => apiClient.get('/scheduler/executions', { params }),
   
   // Scene-specific scheduler helpers
-  getSceneSchedules: (sceneId) => apiClient.get('/scheduler/jobs', { 
-    params: { scene_id: sceneId } 
-  }),
+  getSceneSchedules: (sceneId) => apiClient.get(`/scheduler/scenes/${sceneId}/jobs`),
   createSceneSchedule: (sceneId, scheduleData) => {
     const jobData = {
       ...scheduleData,

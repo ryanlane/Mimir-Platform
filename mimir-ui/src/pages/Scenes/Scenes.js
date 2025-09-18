@@ -29,7 +29,15 @@ const Scenes = () => {
       const schedulePromises = scenesList.map(async (scene) => {
         try {
           const response = await api.getSceneSchedules(scene.id);
-          return { sceneId: scene.id, schedules: response.data.jobs || [] };
+          const assignments = response.data || [];
+          
+          // If there are assignments, get the job details for the first one
+          if (assignments.length > 0) {
+            const jobResponse = await api.getSchedulerJob(assignments[0].job_id);
+            return { sceneId: scene.id, schedules: [jobResponse.data] };
+          } else {
+            return { sceneId: scene.id, schedules: [] };
+          }
         } catch (error) {
           console.log(`Could not load schedules for scene ${scene.id}:`, error.message);
           return { sceneId: scene.id, schedules: [] };

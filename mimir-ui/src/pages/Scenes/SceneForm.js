@@ -26,6 +26,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
   });
   const [currentSchedule, setCurrentSchedule] = useState(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleModified, setScheduleModified] = useState(false);
   
   // Plugin manifest support for subchannels/galleries
   const [subChannelSupport, setSubChannelSupport] = useState({});
@@ -271,16 +272,21 @@ const SceneForm = ({ scene, channels, onClose }) => {
     try {
       setScheduleLoading(true);
       const response = await api.getSceneSchedules(sceneId);
-      const schedules = response.data.jobs || [];
+      const assignments = response.data || [];
       
-      if (schedules.length > 0) {
-        const schedule = schedules[0]; // Get the first schedule
+      if (assignments.length > 0) {
+        // Get the first assignment and fetch the job details
+        const assignment = assignments[0];
+        const jobResponse = await api.getSchedulerJob(assignment.job_id);
+        const schedule = jobResponse.data;
+        
         setCurrentSchedule(schedule);
         setScheduleData({
           freq_unit: schedule.freq_unit,
           freq_value: schedule.freq_value,
           enabled: schedule.enabled
         });
+        setScheduleModified(false);
       } else {
         setCurrentSchedule(null);
         setScheduleData({
@@ -288,6 +294,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
           freq_value: 1,
           enabled: true
         });
+        setScheduleModified(false);
       }
     } catch (error) {
       console.error('Failed to load scene schedule:', error);
@@ -334,11 +341,30 @@ const SceneForm = ({ scene, channels, onClose }) => {
         enabled: scheduleData.enabled
       };
       
+      console.log('Updating schedule with:', updates);
       const response = await api.updateSchedulerJob(currentSchedule.id, updates);
-      setCurrentSchedule(response.data);
-      console.log('Schedule updated successfully');
+      const updatedSchedule = response.data;
+      setCurrentSchedule(updatedSchedule);
+      
+      // Update the local state to match the saved schedule
+      setScheduleData({
+        freq_unit: updatedSchedule.freq_unit,
+        freq_value: updatedSchedule.freq_value,
+        enabled: updatedSchedule.enabled
+      });
+      setScheduleModified(false);
+      
+      console.log('Schedule updated successfully:', updatedSchedule);
     } catch (error) {
       console.error('Failed to update schedule:', error);
+      // Revert the local state if the update failed
+      if (currentSchedule) {
+        setScheduleData({
+          freq_unit: currentSchedule.freq_unit,
+          freq_value: currentSchedule.freq_value,
+          enabled: currentSchedule.enabled
+        });
+      }
     } finally {
       setScheduleLoading(false);
     }
@@ -356,6 +382,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
         freq_value: 1,
         enabled: true
       });
+      setScheduleModified(false);
       console.log('Schedule deleted successfully');
     } catch (error) {
       console.error('Failed to delete schedule:', error);
@@ -365,10 +392,16 @@ const SceneForm = ({ scene, channels, onClose }) => {
   };
 
   const handleScheduleChange = (field, value) => {
-    setScheduleData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    console.log(`Schedule field '${field}' changed to:`, value);
+    setScheduleData(prev => {
+      const newData = {
+        ...prev,
+        [field]: field === 'freq_value' ? Math.max(1, parseInt(value) || 1) : value
+      };
+      console.log('New schedule data:', newData);
+      return newData;
+    });
+    setScheduleModified(true);
   };
 
   // Load schedule when scene changes
@@ -578,11 +611,11 @@ const SceneForm = ({ scene, channels, onClose }) => {
                       </label>
                       <button
                         type="button"
-                        className="btn btn-sm btn-secondary"
+                        className={`btn btn-sm ${scheduleModified ? 'btn-primary' : 'btn-secondary'}`}
                         onClick={updateSchedule}
                         disabled={scheduleLoading || !scheduleData.freq_value || scheduleData.freq_value < 1}
                       >
-                        {scheduleLoading ? 'Updating...' : 'Update'}
+                        {scheduleLoading ? 'Updating...' : scheduleModified ? 'Save Changes' : 'Update'}
                       </button>
                       <button
                         type="button"
