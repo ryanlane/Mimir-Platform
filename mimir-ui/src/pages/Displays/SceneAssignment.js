@@ -33,13 +33,28 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
 
     try {
       if (sceneId) {
+        // Find the selected scene to extract subchannel info
+        const selectedSceneObj = scenes.find(s => s.id === sceneId);
+        let subchannelId = null;
+        
+        // Extract subchannel_id from the scene's channels if available
+        if (selectedSceneObj && selectedSceneObj.channels && selectedSceneObj.channels.length > 0) {
+          // Look for subchannel_id in the channel assignments
+          const channelWithSubchannel = selectedSceneObj.channels.find(ch => 
+            ch.subchannel_id || (typeof ch === 'object' && ch.subchannel_id)
+          );
+          if (channelWithSubchannel) {
+            subchannelId = channelWithSubchannel.subchannel_id;
+          }
+        }
+
         // Use appropriate assignment endpoint based on display type
         if (display.displayType === 'discovered') {
-          await api.assignSceneToDisplay(display.id, sceneId);
-          console.log(`✅ Scene assigned to discovered display: ${sceneId} -> ${display.name}`);
+          await api.assignSceneToDisplay(display.id, sceneId, subchannelId);
+          console.log(`✅ Scene assigned to discovered display: ${sceneId} -> ${display.name}${subchannelId ? ` (subchannel: ${subchannelId})` : ''}`);
         } else {
-          await api.assignSceneToDisplay(display.id, sceneId);
-          console.log(`✅ Scene assigned to registered display: ${sceneId} -> ${display.name}`);
+          await api.assignSceneToDisplay(display.id, sceneId, subchannelId);
+          console.log(`✅ Scene assigned to registered display: ${sceneId} -> ${display.name}${subchannelId ? ` (subchannel: ${subchannelId})` : ''}`);
         }
       } else {
         // Unassign scene
