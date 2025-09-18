@@ -223,12 +223,12 @@ class DistributionService:
             return {"status": "redis_unavailable"}
         
         try:
-            metrics = await self.redis_manager.get_performance_metrics()
+            metrics = self.redis_manager.get_performance_metrics()
             return {
                 "status": "success",
                 "redis_available": True,
                 "metrics": metrics,
-                "timestamp": metrics.get("timestamp")
+                "timestamp": metrics.get("timestamp") if metrics else None
             }
         except Exception as e:
             logger.error(f"Failed to get distribution performance: {e}")

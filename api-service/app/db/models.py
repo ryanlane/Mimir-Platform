@@ -22,6 +22,15 @@ class DistributionMode(str, Enum):
     RANDOM_UNIQUE = "RANDOM_UNIQUE"      # Displays get randomized content without duplication
 
 
+class FrequencyUnit(str, Enum):
+    """Schedule frequency units"""
+    MINUTE = "minute"
+    HOUR = "hour"
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+
+
 class Channel(Base):
     """Channel configuration and metadata - simplified to match actual database schema"""
     __tablename__ = "channels"
@@ -206,6 +215,109 @@ class ContentLease(Base):
         Index('ix_content_leases_status_expires', 'status', 'expires_at'),
         Index('ix_content_leases_active', 'status', 'assigned_at'),
         UniqueConstraint('scene_id', 'display_id', 'content_id', name='uq_content_leases_assignment'),
+    )
+
+
+class SchedulerJob(Base):
+    """Independent scheduler jobs that can trigger scene refreshes"""
+    __tablename__ = "scheduler_jobs"
+    
+    # Primary identification
+    id = Column(String, primary_key=True, index=True)  # UUID
+    name = Column(String, nullable=False, index=True)
+    description = Column(String, nullable=True)
+    enabled = Column(Boolean, default=True, index=True)
+    
+    # Schedule configuration
+    freq_unit = Column(String, nullable=False, index=True)  # FrequencyUnit values
+    freq_value = Column(Integer, nullable=False)  # e.g., 5 minutes, 2 weeks
+    approx_interval_seconds = Column(Integer, nullable=True)  # For metrics/UX
+    
+    # Timing control
+    timezone_name = Column(String, nullable=True)  # For future "daily at 9am" features
+    next_run_at = Column(DateTime, nullable=False, index=True)
+    last_run_at = Column(DateTime, nullable=True, index=True)
+    
+    # Execution control and locking
+    locked_until = Column(DateTime, nullable=True, index=True)
+    run_timeout_seconds = Column(Integer, default=90)
+    
+    # Error handling and backoff
+    consecutive_failures = Column(Integer, default=0, index=True)
+    last_error = Column(String, nullable=True)
+    jitter_seconds = Column(Integer, default=15)
+    
+    # Action configuration - what to do when triggered
+    action_type = Column(String, default="refresh_scene", index=True)  # "refresh_scene", "webhook", etc.
+    action_config = Column(JSON, nullable=True)  # Flexible action configuration
+    
+    # Output tracking
+    last_success_at = Column(DateTime, nullable=True, index=True)
+    last_output = Column(JSON, nullable=True)  # Store last execution result
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+    
+    # Indexes for efficient scheduler queries
+    __table_args__ = (
+        Index('ix_scheduler_jobs_due', 'enabled', 'next_run_at'),
+        Index('ix_scheduler_jobs_locked', 'locked_until', 'next_run_at'),
+        Index('ix_scheduler_jobs_failures', 'consecutive_failures', 'enabled'),
+        Index('ix_scheduler_jobs_action', 'action_type', 'enabled'),
+    )
+
+
+class SchedulerJobSceneAssignment(Base):
+    """Association between scheduler jobs and scenes"""
+    __tablename__ = "scheduler_job_scene_assignments"
+    
+    id = Column(String, primary_key=True, index=True)  # UUID
+    job_id = Column(String, nullable=False, index=True)  # Will be ForeignKey('scheduler_jobs.id')
+    scene_id = Column(String, nullable=False, index=True)  # Will be ForeignKey('scenes.id')
+    
+    # Assignment configuration
+    refresh_method = Column(String, default="content_refresh", index=True)  # "content_refresh", "full_reload"
+    priority = Column(Integer, default=100, index=True)  # For ordering when multiple jobs target same scene
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
+    
+    # Indexes and constraints
+    __table_args__ = (
+        Index('ix_scheduler_scene_assignments_job_scene', 'job_id', 'scene_id'),
+        Index('ix_scheduler_scene_assignments_scene_priority', 'scene_id', 'priority'),
+        UniqueConstraint('job_id', 'scene_id', name='uq_scheduler_job_scene'),
+    )
+
+
+class SchedulerExecution(Base):
+    """Audit log for scheduler job executions"""
+    __tablename__ = "scheduler_executions"
+    
+    id = Column(String, primary_key=True, index=True)  # UUID
+    job_id = Column(String, nullable=False, index=True)  # Reference to SchedulerJob
+    
+    # Execution details
+    started_at = Column(DateTime, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True, index=True)
+    status = Column(String, nullable=False, index=True)  # "pending", "success", "failed", "timeout"
+    
+    # Results
+    output_data = Column(JSON, nullable=True)  # Execution results
+    error_message = Column(String, nullable=True)
+    execution_duration_ms = Column(Integer, nullable=True)
+    affected_scenes = Column(JSON, nullable=True)  # List of scene IDs that were updated
+    
+    # Context
+    worker_id = Column(String, nullable=True, index=True)  # For tracking which worker handled it
+    trigger_reason = Column(String, default="scheduled", index=True)  # "scheduled", "manual", "retry"
+    
+    # Indexes
+    __table_args__ = (
+        Index('ix_scheduler_executions_job_status', 'job_id', 'status'),
+        Index('ix_scheduler_executions_started', 'started_at'),
+        Index('ix_scheduler_executions_worker', 'worker_id', 'started_at'),
     )
 
 
