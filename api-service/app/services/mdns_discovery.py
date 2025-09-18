@@ -355,16 +355,21 @@ class MdnsDiscoveryService:
             heartbeat_timestamp: The timestamp from the heartbeat payload.
             heartbeat_data: Optional heartbeat payload data containing scene assignments.
         """
+        logger.info(f"Processing heartbeat for device_id: {display_id}, timestamp: {heartbeat_timestamp}")
+        
         scene_id = heartbeat_data.get("scene_id") if heartbeat_data else None
         subchannel_id = heartbeat_data.get("subchannel_id") if heartbeat_data else None
         
         with self._lock:
             service_name = self.display_id_to_service_name.get(display_id)
+            logger.info(f"Initial lookup for {display_id}: service_name = {service_name}")
             
             # If not found by display_id, try hostname-based lookup
             if not service_name:
+                logger.info(f"No direct mapping found for {display_id}, trying hostname-based lookup")
                 # Look for a display with matching hostname
                 for existing_service_name, display in self.discovered_displays.items():
+                    logger.debug(f"Checking display {existing_service_name}: hostname={display.hostname}")
                     if display.hostname == display_id:
                         service_name = existing_service_name
                         # Update the mapping for future lookups
@@ -373,6 +378,7 @@ class MdnsDiscoveryService:
                         break
             
             if not service_name:
+                logger.warning(f"No existing display found for device_id {display_id}, creating placeholder")
                 # Display not discovered via mDNS yet, create a placeholder
                 service_name = f"mqtt-{display_id}"
                 self.display_id_to_service_name[display_id] = service_name
@@ -401,6 +407,7 @@ class MdnsDiscoveryService:
             else:
                 display = self.discovered_displays.get(service_name)
                 if display:
+                    logger.info(f"Updating existing display {display.display_name}: last_seen={display.last_seen} -> {heartbeat_timestamp}, is_online={display.is_online}")
                     display.last_seen = heartbeat_timestamp
                     # Update scene assignment data
                     display.assigned_scene_id = scene_id
@@ -411,7 +418,12 @@ class MdnsDiscoveryService:
                         if METRICS_AVAILABLE:
                             metrics.discovery_display_found(display.display_id)
                         self._notify_callbacks(display, "discovered")
+                    else:
+                        logger.debug(f"Display {display.display_name} heartbeat processed, still online")
+                else:
+                    logger.error(f"Service name {service_name} found but no display object!")
             self.mqtt_last_heartbeat[display_id] = heartbeat_timestamp
+            logger.info(f"Updated mqtt_last_heartbeat[{display_id}] = {heartbeat_timestamp}")
 
     async def _monitoring_loop(self):
         """Background monitoring loop for display health"""
@@ -428,13 +440,20 @@ class MdnsDiscoveryService:
                         # Use the most recent of mDNS or MQTT heartbeat
                         last_seen = display.last_seen
                         heartbeat_seen = self.mqtt_last_heartbeat.get(display.display_id)
+                        
+                        # Also check for heartbeat using hostname (for devices sending MQTT with hostname as device_id)
+                        if not heartbeat_seen and display.hostname:
+                            heartbeat_seen = self.mqtt_last_heartbeat.get(display.hostname)
+                        
                         if heartbeat_seen and heartbeat_seen > last_seen:
                             last_seen = heartbeat_seen
 
                         time_since_seen = (now - last_seen).total_seconds()
+                        logger.debug(f"Display {display.display_name}: last_seen={last_seen}, time_since_seen={time_since_seen:.1f}s, offline_timeout={self.offline_timeout}s")
+                        
                         if display.is_online and time_since_seen > self.offline_timeout:
                             display.is_online = False
-                            logger.info(f"Display marked offline due to timeout: {display.display_name}")
+                            logger.info(f"Display marked offline due to timeout: {display.display_name} (last seen {time_since_seen:.1f}s ago)")
                             if METRICS_AVAILABLE:
                                 metrics.discovery_display_lost(display.display_id)
                             self._notify_callbacks(display, "lost")

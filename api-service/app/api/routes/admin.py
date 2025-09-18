@@ -437,3 +437,32 @@ async def publish_device_status(device_id: str, status: str, metadata: Optional[
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error publishing device status: {str(e)}"
         )
+
+@admin_router.get("/debug/discovery")
+async def debug_discovery_service():
+    """Debug endpoint to see discovery service state"""
+    from app.services.mdns_discovery import mdns_discovery_service
+    
+    discovered = mdns_discovery_service.get_discovered_displays()
+    
+    debug_data = {
+        "discovered_displays": [],
+        "display_id_mappings": mdns_discovery_service.display_id_to_service_name.copy(),
+        "mqtt_last_heartbeat": {k: v.isoformat() for k, v in mdns_discovery_service.mqtt_last_heartbeat.items()},
+        "service_running": mdns_discovery_service.is_running,
+        "offline_timeout": mdns_discovery_service.offline_timeout
+    }
+    
+    for display in discovered:
+        debug_data["discovered_displays"].append({
+            "service_name": display.service_name,
+            "display_id": display.display_id,
+            "display_name": display.display_name,
+            "hostname": display.hostname,
+            "is_online": display.is_online,
+            "last_seen": display.last_seen.isoformat(),
+            "assigned_scene_id": display.assigned_scene_id,
+            "assigned_subchannel_id": display.assigned_subchannel_id
+        })
+    
+    return debug_data

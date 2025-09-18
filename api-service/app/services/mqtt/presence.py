@@ -262,6 +262,8 @@ class MqttPresenceService:
 
     async def _handle_heartbeat_message(self, device_id: str, payload: Dict):
         """Handle device heartbeat messages"""
+        logger.info(f"Received heartbeat from device {device_id}: {payload}")
+        
         timestamp_str = payload.get("timestamp")
         if timestamp_str:
             try:
@@ -278,9 +280,11 @@ class MqttPresenceService:
         # Bridge to discovery service for heartbeat updates
         try:
             from app.services.mdns_discovery import mdns_discovery_service
+            logger.info(f"Bridging heartbeat to discovery service for device {device_id}")
             mdns_discovery_service.update_display_heartbeat(device_id, timestamp, payload)
+            logger.info(f"Successfully bridged heartbeat for device {device_id}")
         except Exception as e:
-            logger.error(f"Failed to bridge heartbeat to discovery service: {e}")
+            logger.error(f"Failed to bridge heartbeat to discovery service for device {device_id}: {e}", exc_info=True)
         
         # Heartbeats indicate the device is active
         if device_id not in self.online_devices:
