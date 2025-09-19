@@ -111,7 +111,13 @@ const ChannelSettings = ({ channel, onClose }) => {
           console.log(`Loading Management Component from ${fullModuleUrl}`);
           
           // Check if component is already loaded (check multiple possible names)
-          const possibleNames = ['x-photo-frame-manager', 'photo-frame-manager'];
+          const possibleNames = [
+            'x-spotify-status-manager',
+            'spotify-status-manager',
+            // legacy / other channel managers
+            'x-photo-frame-manager',
+            'photo-frame-manager'
+          ];
           const alreadyRegistered = possibleNames.some(name => customElements.get(name));
           
           if (!alreadyRegistered) {
@@ -191,7 +197,7 @@ const ChannelSettings = ({ channel, onClose }) => {
           }
           
           // Determine which element name is actually registered
-          const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-photo-frame-manager';
+          const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-spotify-status-manager';
           
           return { element: registeredName, moduleUrl: managementModuleUrl };
         } else {
@@ -250,11 +256,18 @@ const ChannelSettings = ({ channel, onClose }) => {
     if (!config?.ui?.components?.manager) return null;
 
     // Dynamically detect which element name is registered
-    const possibleNames = ['x-photo-frame-manager', 'photo-frame-manager'];
-    const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-photo-frame-manager';
+    const possibleNames = [
+      'x-spotify-status-manager',
+      'spotify-status-manager',
+      'x-photo-frame-manager',
+      'photo-frame-manager'
+    ];
+    const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-spotify-status-manager';
 
+    // Allow manifest to explicitly define element names (e.g., ui.elements.manager)
+  const manifestElementName = (config.ui.elements && config.ui.elements.manager) || null;
     const managementComponent = {
-      element: registeredName,
+      element: manifestElementName || registeredName,
       moduleUrl: config.ui.components.manager
     };
     
