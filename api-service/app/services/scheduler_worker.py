@@ -17,7 +17,7 @@ import base64
 import os  # May be used elsewhere; keep if referenced
 import time
 from datetime import UTC, datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 from functools import partial
 
@@ -522,29 +522,104 @@ class SchedulerWorker:
                         "error": "No channel_id in scene configuration"
                     }
                 
-                # Request image from channel
-                image_response = await self._request_channel_image(
-                    channel_id, subchannel_id, assignment.refresh_method
-                )
-                
-                if not image_response.get("success"):
+                # Collect assigned displays with resolution/orientation info
+                assigned_displays = self._collect_assigned_displays(scene)
+                if not assigned_displays:
                     return {
                         "scene_id": assignment.scene_id,
                         "success": False,
-                        "error": f"Channel image request failed: {image_response.get('error', 'Unknown error')}"
+                        "error": "No displays assigned to scene"
                     }
-                
-                # Distribute image to displays assigned to this scene
-                distribution_result = await self._distribute_to_displays(scene, image_response)
-                
+
+                # Group displays by (resolution, orientation)
+                groups: Dict[Tuple[int, int, str], List[Dict[str, Any]]] = {}
+                for d in assigned_displays:
+                    key = (d["width"], d["height"], d["orientation"])
+                    groups.setdefault(key, []).append(d)
+
+                logger.info(
+                    "scene.refresh.grouping scene_id=%s groups=%d", scene.id, len(groups)
+                )
+
+                total_displays_updated = 0
+                all_errors: List[str] = []
+                image_info_samples: List[Dict[str, Any]] = []
+
+                # For each group request an appropriately sized image once
+                for (w, h, orientation), display_group in groups.items():
+                    try:
+                        image_response = await self._request_channel_image(
+                            channel_id,
+                            subchannel_id,
+                            assignment.refresh_method,
+                            resolution=[w, h],
+                            orientation=orientation,
+                        )
+                    except ChannelRequestError as e:
+                        err = f"Channel image request failed for group {w}x{h}/{orientation}: {e}"
+                        logger.error(err)
+                        all_errors.append(err)
+                        continue
+
+                    if not image_response.get("success"):
+                        err = f"Channel group request unsuccessful {w}x{h}/{orientation}: {image_response.get('error')}"
+                        all_errors.append(err)
+                        continue
+
+                    image_info = image_response.get("image", {})
+                    image_info_samples.append(image_info)
+
+                    # Convert image to accessible URL
+                    image_url = _convert_image_to_url(image_info)
+                    if not image_url:
+                        all_errors.append(
+                            f"Unable to convert image to URL for group {w}x{h}/{orientation}"
+                        )
+                        continue
+
+                    distribution_mode = image_info.get("distribution_mode")
+                    # For simplicity we always distribute new/cached/existing here; policy refinement can be added later
+                    for display in display_group:
+                        device_id = display["device_id"]
+                        try:
+                            if mqtt_scene_service.is_connected():
+                                assignment_id = f"display-{uuid.uuid4().hex[:8]}"
+                                success = await mqtt_scene_service.send_display_image(
+                                    device_id=device_id,
+                                    image_url=image_url,
+                                    assignment_id=assignment_id,
+                                )
+                                if success:
+                                    total_displays_updated += 1
+                                    display_last_image_store.update(
+                                        device_id=device_id,
+                                        assignment_id=assignment_id,
+                                        image_url=image_url,
+                                        image_width=w,
+                                        image_height=h,
+                                        image_format=None,
+                                        scene_id=str(scene.id),
+                                        subchannel_id=subchannel_id,
+                                    )
+                                else:
+                                    all_errors.append(
+                                        f"MQTT send failed device={device_id} group={w}x{h}/{orientation}"
+                                    )
+                            else:
+                                all_errors.append("MQTT not connected")
+                        except Exception as e:  # noqa: BLE001
+                            all_errors.append(
+                                f"Error sending to device {device_id}: {e}"
+                            )
+
                 return {
                     "scene_id": assignment.scene_id,
-                    "success": True,
+                    "success": total_displays_updated > 0,
                     "channel_id": channel_id,
                     "subchannel_id": subchannel_id,
-                    "image_info": image_response.get("image", {}),
-                    "displays_updated": distribution_result.get("displays_updated", 0),
-                    "distribution_errors": distribution_result.get("errors", [])
+                    "image_samples": image_info_samples[:3],  # include a few samples for inspection
+                    "displays_updated": total_displays_updated,
+                    "distribution_errors": all_errors,
                 }
                 
         except (ChannelRequestError, ImageConversionError, DistributionError) as e:
@@ -563,10 +638,13 @@ class SchedulerWorker:
             }
     
     async def _request_channel_image(
-        self, 
-        channel_id: str, 
+        self,
+        channel_id: str,
         subchannel_id: Optional[str] = None,
-        refresh_method: str = "content_refresh"
+        refresh_method: str = "content_refresh",
+        *,
+        resolution: Optional[List[int]] = None,
+        orientation: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Request an image from a channel using the plugin system"""
         try:
@@ -579,11 +657,13 @@ class SchedulerWorker:
                 }
             
             # Prepare request data
-            request_data = {
+            res = resolution if (resolution and len(resolution) == 2) else [800, 600]
+            orient = orientation or "landscape"
+            request_data: Dict[str, Any] = {
                 "settings": {
-                    "resolution": [800, 600],  # Default resolution
-                    "orientation": "landscape",
-                    "distribution": "new"  # Always get new content for scheduled refreshes
+                    "resolution": res,
+                    "orientation": orient,
+                    "distribution": "new",  # scheduler always requests fresh content per group
                 }
             }
             
@@ -593,7 +673,14 @@ class SchedulerWorker:
                 request_data["settings"]["subChannelId"] = subchannel_id
             
             # Call the channel's request_image method
-            logger.info(f"Requesting image from channel {channel_id} with subchannel {subchannel_id}")
+            logger.info(
+                "channel.request group channel=%s subchannel=%s resolution=%sx%s orientation=%s",
+                channel_id,
+                subchannel_id,
+                res[0],
+                res[1],
+                orient,
+            )
             image_response = await plugin.instance.request_image(request_data)
             
             if image_response and image_response.get("success"):
@@ -614,6 +701,65 @@ class SchedulerWorker:
                 "success": False,
                 "error": str(e)
             }
+
+    # ----------------------------------------------
+    # Display collection & grouping helpers
+    # ----------------------------------------------
+    def _collect_assigned_displays(self, scene: Scene) -> List[Dict[str, Any]]:
+        """Gather displays (discovered + DB) assigned to a scene with resolution & orientation.
+
+        Returns list of dicts: {device_id, width, height, orientation}
+        """
+        collected: Dict[str, Dict[str, Any]] = {}
+
+        # mDNS discovered displays
+        if mdns_discovery_service.is_running:
+            try:
+                discovered = mdns_discovery_service.get_discovered_displays()
+                for d in discovered:
+                    if d.assigned_scene_id == scene.id or d.assigned_scene_id == str(scene.id):
+                        w, h = self._parse_resolution_string(d.resolution)
+                        collected[d.display_id] = {
+                            "device_id": d.hostname or d.display_id,
+                            "width": w,
+                            "height": h,
+                            "orientation": d.properties.get("orientation", "landscape"),
+                        }
+            except Exception as e:  # noqa: BLE001
+                logger.debug("collect_discovered.error scene=%s err=%s", scene.id, e)
+
+        # DB displays
+        with SessionLocal() as db:
+            db_displays = db.query(DisplayClient).filter(
+                DisplayClient.assigned_scene_id == scene.id
+            ).all()
+            for display in db_displays:
+                if display.id in collected:
+                    continue  # prefer discovered
+                w = display.width or 800
+                h = display.height or 600
+                collected[display.id] = {
+                    "device_id": display.hostname or display.id,
+                    "width": w,
+                    "height": h,
+                    "orientation": display.orientation or "landscape",
+                }
+
+        return list(collected.values())
+
+    @staticmethod
+    def _parse_resolution_string(res_str: Optional[str]) -> Tuple[int, int]:
+        if not res_str or "x" not in res_str:
+            return 800, 600
+        try:
+            w_str, h_str = res_str.lower().split("x", 1)
+            w = int(w_str)
+            h = int(h_str)
+            if w <= 0 or h <= 0:
+                return 800, 600
+            return w, h
+        except ValueError:
+            return 800, 600
     
     async def _distribute_to_displays(self, scene: Scene, image_response: Dict[str, Any]) -> Dict[str, Any]:
         """Distribute the generated image to displays assigned to this scene"""
