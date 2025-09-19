@@ -13,6 +13,8 @@ Key responsibilities:
 import asyncio
 import uuid
 import logging
+import base64
+import os
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
@@ -42,38 +44,114 @@ def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
         URL string if conversion is successful, None otherwise
     """
     try:
+        # Use the same hostname that displays use to connect to MQTT broker
+        api_hostname = settings.mqtt_broker_host  # "oak"
+        api_port = settings.api_port  # 5000
+        
         # Check if we have a base64 encoded image
         if "image" in image_info and isinstance(image_info["image"], str):
-            # If it looks like base64 data, we can't serve it directly as URL
-            # This would require storing it as a file first
             image_data = image_info["image"]
-            if len(image_data) > 100 and not image_data.startswith('/'):
-                logger.warning("Base64 image data received but not supported for URL conversion")
-                return None
+            
+            # Check if this is base64 data (typically starts with common base64 prefixes or is very long)
+            if (len(image_data) > 100 and 
+                (image_data.startswith(('/9j/', 'iVBORw0KGgo', 'R0lGOD', 'UklGR')) or
+                 not image_data.startswith('/') and '/' not in image_data[:50])):
+                
+                # Save base64 data to a temporary file and return URL
+                return _save_base64_and_get_url(image_info, api_hostname, api_port)
                 
             # If it's a file path, convert to URL
             image_path = image_data.strip()
             if image_path.startswith('/'):
                 # Absolute path - need to determine mount point
-                # For now, assume it's in channels directory
                 relative_path = image_path.lstrip('/')
-                return f"http://{settings.mqtt_broker_host}:{settings.api_port}/channels/{relative_path}"
+                return f"http://{api_hostname}:{api_port}/channels/{relative_path}"
             else:
                 # Relative path - assume it's relative to channels
-                return f"http://{settings.mqtt_broker_host}:{settings.api_port}/channels/{image_path}"
+                return f"http://{api_hostname}:{api_port}/channels/{image_path}"
         
-        # Check for filename in response (like photo_frame channel)
+        # Check for filename in response (like photo_frame channel with saved files)
         elif "filename" in image_info:
             filename = image_info["filename"]
             # Assume it's in uploads which might be served under channels
-            return f"http://{settings.mqtt_broker_host}:{settings.api_port}/channels/photo_frame/uploads/{filename}"
+            return f"http://{api_hostname}:{api_port}/channels/photo_frame/uploads/{filename}"
             
         else:
-            logger.error(f"Unable to determine image URL from response: {image_info}")
+            logger.error("Unable to determine image URL from channel response - no image path or filename found")
             return None
             
     except Exception as e:
         logger.error(f"Error converting image to URL: {e}")
+        return None
+
+
+def _save_base64_and_get_url(image_info: Dict[str, Any], api_hostname: str, api_port: int) -> Optional[str]:
+    """
+    Save base64 image data to a file and return the URL to access it.
+    
+    Args:
+        image_info: Image information containing base64 data
+        api_hostname: API hostname for URL construction
+        api_port: API port for URL construction
+        
+    Returns:
+        URL string if successful, None otherwise
+    """
+    try:
+        import base64
+        import os
+        from pathlib import Path
+        
+        # Get base64 data
+        image_data = image_info.get("image", "")
+        if not image_data:
+            return None
+            
+        # Get additional info for filename
+        image_id = image_info.get("image_id", "unknown")
+        filename = image_info.get("filename", f"image_{image_id}.jpg")
+        
+        # Ensure we have a proper extension
+        if not filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+            # Try to detect format from base64 header
+            if image_data.startswith('/9j/'):
+                filename += '.jpg'
+            elif image_data.startswith('iVBORw0KGgo'):
+                filename += '.png'
+            elif image_data.startswith('R0lGOD'):
+                filename += '.gif'
+            else:
+                filename += '.jpg'  # Default to jpg
+        
+        # Create temp directory for scheduler-generated images
+        temp_dir = Path(settings.channels_directory) / "scheduler_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create unique filename to avoid conflicts
+        timestamp = str(int(uuid.uuid4().int >> 64))  # Use part of UUID as timestamp
+        temp_filename = f"{timestamp}_{filename}"
+        temp_file_path = temp_dir / temp_filename
+        
+        # Decode and save base64 data
+        try:
+            decoded_data = base64.b64decode(image_data)
+            with open(temp_file_path, 'wb') as f:
+                f.write(decoded_data)
+                
+            logger.info(f"Saved base64 image to temporary file: {temp_file_path}")
+            
+            # Return URL that the API service can serve
+            relative_path = f"scheduler_temp/{temp_filename}"
+            url = f"http://{api_hostname}:{api_port}/channels/{relative_path}"
+            
+            return url
+            
+        except Exception as decode_error:
+            logger.error(f"Failed to decode base64 image data: {decode_error}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error saving base64 image: {e}")
         return None
 
 
@@ -419,15 +497,13 @@ class SchedulerWorker:
                     "errors": ["Unable to convert image to accessible URL"]
                 }
             
-            logger.info(f"Generated image URL for distribution: {image_url}")
-            
-            # Only send commands if there's actually new content or scene assignments changed
+            # For new content, always distribute. For existing content, only if scene assignments need updates
             should_distribute = False
             
             if distribution_mode == "new":
-                # New content available, should distribute
+                # New content available - always distribute
                 should_distribute = True
-                logger.info(f"New content available for scene {scene.id}, will distribute to displays")
+                logger.info(f"New content available for scene {scene.id}, distributing to {len(assigned_displays)} displays")
             elif distribution_mode in ["existing", "cached"]:
                 # No new content, check if any displays need scene assignment updates
                 for display in assigned_displays:
@@ -450,46 +526,7 @@ class SchedulerWorker:
                 should_distribute = True
                 logger.warning(f"Unknown distribution mode '{distribution_mode}', distributing to be safe")
             
-            
-            if distribution_mode == "new":
-                # New content available, should distribute
-                should_distribute = True
-                logger.info(f"New content available for scene {scene.id}, will distribute to displays")
-            elif distribution_mode in ["existing", "cached"]:
-                # No new content, check if any displays need scene assignment updates
-                for display in assigned_displays:
-                    current_scene = display.get("current_scene_id")
-                    target_scene = str(scene.id)
-                    if current_scene != target_scene and current_scene != scene.id:
-                        should_distribute = True
-                        logger.info(f"Display {display['id']} needs scene assignment update")
-                        break
-                
-                if not should_distribute:
-                    logger.info(f"No new content and all displays have correct scene assignment, skipping distribution")
-                    return {
-                        "displays_updated": 0,
-                        "errors": [],
-                        "message": "No distribution needed - content unchanged and displays up to date"
-                    }
-            else:
-                # Unknown distribution mode, be conservative and distribute
-                should_distribute = True
-                logger.warning(f"Unknown distribution mode '{distribution_mode}', distributing to be safe")
-            
-            if not should_distribute:
-                return {
-                    "displays_updated": 0,
-                    "errors": [],
-                    "message": "No distribution needed"
-                }
-            
-            if not should_distribute:
-                return {
-                    "displays_updated": 0,
-                    "errors": [],
-                    "message": "No distribution needed"
-                }
+            # Send display_image commands to each display via MQTT
 
             # Send display_image commands to each display via MQTT
             for display in assigned_displays:
@@ -499,7 +536,7 @@ class SchedulerWorker:
                         assignment_id = f"display-{uuid.uuid4().hex[:8]}"
                         
                         # Send display_image command directly - this is the correct architecture
-                        logger.info(f"Sending display_image command to display {device_id}: {image_url}")
+                        logger.debug(f"Sending display_image command to display {device_id}")
                         success = await mqtt_scene_service.send_display_image(
                             device_id=device_id,
                             image_url=image_url,
@@ -508,7 +545,7 @@ class SchedulerWorker:
                         
                         if success:
                             displays_updated += 1
-                            logger.info(f"Sent display_image command to display {display['id']}")
+                            logger.debug(f"Sent display_image command to display {display['id']}")
                         else:
                             errors.append(f"MQTT send failed for display {display['id']}")
                     else:
