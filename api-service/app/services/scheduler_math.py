@@ -115,6 +115,20 @@ def calculate_next_run_with_backoff(job: SchedulerJob, base_delay_seconds: int =
     return now_utc() + timedelta(seconds=backoff_seconds)
 
 
+def _ensure_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Return a timezone-aware UTC datetime.
+
+    If the provided datetime is naive (no tzinfo), assume it is already in UTC
+    and attach UTC tzinfo. We choose this over localtime conversion to avoid
+    accidental shifts and because all scheduling logic is UTC-based.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def is_job_due(job: SchedulerJob, current_time: Optional[datetime] = None) -> bool:
     """
     Check if a scheduler job is due to run.
@@ -129,8 +143,12 @@ def is_job_due(job: SchedulerJob, current_time: Optional[datetime] = None) -> bo
     if not job.enabled:
         return False
     
-    current = current_time or now_utc()
-    return job.next_run_at <= current
+    current = _ensure_aware(current_time) or now_utc()
+    next_run = _ensure_aware(job.next_run_at)
+    if next_run is None:
+        # If next_run_at is somehow missing, treat as not due (could also choose True to force catch-up)
+        return False
+    return next_run <= current
 
 
 def is_job_locked(job: SchedulerJob, current_time: Optional[datetime] = None) -> bool:
@@ -147,8 +165,11 @@ def is_job_locked(job: SchedulerJob, current_time: Optional[datetime] = None) ->
     if not job.locked_until:
         return False
     
-    current = current_time or now_utc()
-    return job.locked_until > current
+    current = _ensure_aware(current_time) or now_utc()
+    locked_until = _ensure_aware(job.locked_until)
+    if locked_until is None:
+        return False
+    return locked_until > current
 
 
 def get_execution_duration_ms(started_at: datetime, completed_at: Optional[datetime] = None) -> Optional[int]:
