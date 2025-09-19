@@ -274,7 +274,8 @@ class MqttSceneAssignmentService:
         image_url: str,
         assignment_id: Optional[str] = None,
         image_width: Optional[int] = None,
-        image_height: Optional[int] = None
+        image_height: Optional[int] = None,
+        image_format: Optional[str] = None,
     ) -> bool:
         """
         Send a display_image command to a device with the actual image URL.
@@ -294,6 +295,27 @@ class MqttSceneAssignmentService:
         if assignment_id is None:
             assignment_id = f"display-{uuid.uuid4().hex[:8]}"
         
+        # Infer format if not explicitly provided
+        fmt = (image_format or "").lower()
+        if not fmt:
+            lower_url = image_url.lower()
+            for ext, candidate in [
+                (".png", "png"),
+                (".jpg", "jpeg"),
+                (".jpeg", "jpeg"),
+                (".gif", "gif"),
+                (".webp", "webp"),
+                (".bmp", "bmp"),
+            ]:
+                if lower_url.endswith(ext):
+                    fmt = candidate
+                    break
+            if not fmt:
+                # Simple magic prefix hint (base64/served copy) – leave unset if unknown
+                if "scheduler_temp" in lower_url:
+                    # default jpeg assumption for generated images
+                    fmt = "jpeg"
+
         payload = {
             "type": "display_image",
             "image_url": image_url,
@@ -306,6 +328,8 @@ class MqttSceneAssignmentService:
             payload["image_width"] = image_width
         if image_height is not None:
             payload["image_height"] = image_height
+        if fmt:
+            payload["image_format"] = fmt
         
         logger.debug(f"Sending display_image command to {device_id}")
         return await self.publish_command(device_id, payload, qos=1, retain=False)

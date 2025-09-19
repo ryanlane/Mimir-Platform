@@ -14,12 +14,13 @@ import asyncio
 import uuid
 import logging
 import base64
-import os
+import os  # May be used elsewhere; keep if referenced
+import time
+from datetime import UTC, datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
-from sqlalchemy.orm import Session
-from sqlalchemy import and_
+# Removed unused sqlalchemy imports (Session, and_) to reduce dependencies
 
 from ..db.base import SessionLocal
 from ..db.models import SchedulerJob, SchedulerJobSceneAssignment, Scene, DisplayClient
@@ -29,6 +30,7 @@ from ..services.mdns_discovery import mdns_discovery_service
 from ..services.mqtt.publisher import mqtt_scene_service
 from ..services.plugin_discovery import plugin_discovery_service
 from ..config import settings
+from ..services.display_last_image import display_last_image_store
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +197,9 @@ class SchedulerWorker:
         self.running = False
         self._task = None
         self.poll_interval = 30  # Check for due jobs every 30 seconds
+        # Cleanup bookkeeping
+        self._last_cleanup_monotonic: float = 0.0
+        self._cleanup_interval_seconds: int = 300  # run cleanup at most every 5 minutes
         
     async def start(self):
         """Start the scheduler worker"""
@@ -226,6 +231,8 @@ class SchedulerWorker:
         
         while self.running:
             try:
+                # Opportunistic temp image cleanup (non-blocking best effort)
+                self._maybe_cleanup_temp_images()
                 await self._process_due_jobs()
             except Exception as e:
                 logger.error(f"Error in scheduler worker loop: {e}", exc_info=True)
@@ -333,6 +340,68 @@ class SchedulerWorker:
                 scheduler_service,
                 trigger_reason=trigger_reason,
                 worker_id="manual-trigger",
+            )
+
+    # -----------------------------------------------------
+    # Retention / cleanup support
+    # -----------------------------------------------------
+    def _maybe_cleanup_temp_images(self) -> None:
+        """Delete old scheduler temp images according to retention policy.
+
+        Runs at most every self._cleanup_interval_seconds to avoid excessive disk scans.
+        Disabled if scheduler_temp_max_age_minutes <= 0.
+        """
+        now_mono = time.monotonic()
+        if now_mono - self._last_cleanup_monotonic < self._cleanup_interval_seconds:
+            return
+        self._last_cleanup_monotonic = now_mono
+
+        # Determine retention
+        max_age_min = getattr(settings, "scheduler_temp_max_age_minutes", 1440)
+        if max_age_min <= 0:
+            return  # disabled
+
+        temp_root_raw = getattr(settings, "scheduler_temp_directory", "scheduler_temp")
+        temp_root = Path(temp_root_raw).resolve()
+        if not temp_root.exists() or not temp_root.is_dir():
+            return
+
+        cutoff_ts = datetime.now(UTC).timestamp() - (max_age_min * 60)
+        removed = 0
+        inspected = 0
+        try:
+            for path in temp_root.iterdir():
+                if not path.is_file():
+                    continue
+                inspected += 1
+                try:
+                    stat = path.stat()
+                except FileNotFoundError:  # race
+                    continue
+                except Exception:  # noqa: BLE001
+                    logger.debug("scheduler.cleanup.stat_error", extra={"path": str(path)})
+                    continue
+                if stat.st_mtime < cutoff_ts:
+                    try:
+                        path.unlink()
+                        removed += 1
+                    except FileNotFoundError:
+                        continue
+                    except Exception:  # noqa: BLE001
+                        logger.debug("scheduler.cleanup.unlink_error", extra={"path": str(path)})
+                        continue
+        except Exception:  # noqa: BLE001
+            logger.debug("scheduler.cleanup.iter_error", exc_info=True)
+            return
+        if inspected:
+            logger.info(
+                "scheduler.cleanup.summary",
+                extra={
+                    "dir": str(temp_root),
+                    "removed": removed,
+                    "inspected": inspected,
+                    "max_age_min": max_age_min,
+                },
             )
     
     async def _execute_refresh_scene(self, job: SchedulerJob, scheduler_service: SchedulerService) -> Dict[str, Any]:
@@ -602,12 +671,23 @@ class SchedulerWorker:
                         success = await mqtt_scene_service.send_display_image(
                             device_id=device_id,
                             image_url=image_url,
-                            assignment_id=assignment_id
+                            assignment_id=assignment_id,
                         )
                         
                         if success:
                             displays_updated += 1
                             logger.debug(f"Sent display_image command to display {display['id']}")
+                            # Record last image metadata (width/height unknown here unless channel provided)
+                            display_last_image_store.update(
+                                device_id=device_id,
+                                assignment_id=assignment_id,
+                                image_url=image_url,
+                                image_width=None,
+                                image_height=None,
+                                image_format=None,
+                                scene_id=str(scene.id),
+                                subchannel_id=scene.channels[0].get("subchannel_id") if scene.channels else None,
+                            )
                         else:
                             errors.append(f"MQTT send failed for display {display['id']}")
                     else:

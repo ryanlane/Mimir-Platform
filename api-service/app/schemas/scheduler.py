@@ -189,6 +189,8 @@ class BulkJobOperationRequest(BaseModel):
     """Request for bulk operations on scheduler jobs"""
     job_ids: List[str] = Field(..., description="List of job IDs to operate on")
     operation: str = Field(..., description="Operation to perform: enable, disable, trigger")
+    force: bool = Field(False, description="Force trigger even if job disabled/locked (trigger op only)")
+    immediate: bool = Field(True, description="Execute trigger immediately instead of just scheduling (trigger op only)")
 
 
 class BulkJobOperationResponse(BaseModel):

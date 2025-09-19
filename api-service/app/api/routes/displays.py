@@ -21,6 +21,7 @@ from app.schemas.displays import (
 from app.schemas.common import PaginationMeta
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt.publisher import mqtt_scene_service, mqtt_scene_assignment
+from app.services.display_last_image import display_last_image_store
 
 
 router = APIRouter(prefix="/displays", tags=["displays"])
@@ -276,6 +277,14 @@ async def get_discovery_status():
             for d in discovered
         ]
     }
+
+@router.get("/{device_id}/last-image", response_model=dict)
+async def get_last_image(device_id: str):
+    """Return the last image command issued to a display (in-memory, best effort)."""
+    record = display_last_image_store.get(device_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="No image record for device")
+    return record.to_dict()
 
 
 @router.get("/discovery/live")

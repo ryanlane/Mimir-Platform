@@ -313,13 +313,23 @@ async def bulk_job_operation(
             elif operation_data.operation == "disable":
                 job.enabled = False
             elif operation_data.operation == "trigger":
-                if job.enabled or operation_data.get("force", False):
-                    execution_id = await service.start_execution(
-                        job_id,
-                        worker_id="bulk-trigger",
-                        trigger_reason=TriggerReason.MANUAL
-                    )
-                    # TODO: Queue for execution
+                if job.enabled or operation_data.force:
+                    if operation_data.immediate:
+                        exec_id = await scheduler_worker.run_job_immediately(
+                            job_id,
+                            trigger_reason=TriggerReason.MANUAL,
+                            force=operation_data.force,
+                        )
+                        if not exec_id:
+                            failed_jobs.append({"job_id": job_id, "error": "Failed immediate execution"})
+                            continue
+                    else:
+                        # Fallback: just schedule by creating execution record (will run on next poll)
+                        await service.start_execution(
+                            job_id,
+                            worker_id="bulk-trigger",
+                            trigger_reason=TriggerReason.MANUAL,
+                        )
                 else:
                     failed_jobs.append({"job_id": job_id, "error": "Job is disabled"})
                     continue

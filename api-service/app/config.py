@@ -33,6 +33,11 @@ class Settings(BaseSettings):
         default="scheduler_temp",
         validation_alias=AliasChoices("SCHEDULER_TEMP", "SCHEDULER_TEMP_DIR"),
     )
+    scheduler_temp_max_age_minutes: int = Field(
+        1440,
+        validation_alias=AliasChoices("SCHEDULER_TEMP_MAX_AGE_MINUTES", "SCHEDULER_TEMP_RETENTION_MIN"),
+        description="Retention window for scheduler temp images (minutes).",
+    )
     api_prefix: str = Field("/api", validation_alias="API_PREFIX")
     api_host: str = Field("0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(5000, validation_alias="API_PORT")
