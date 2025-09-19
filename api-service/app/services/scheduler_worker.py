@@ -19,6 +19,7 @@ import time
 from datetime import UTC, datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+from functools import partial
 
 # Removed unused sqlalchemy imports (Session, and_) to reduce dependencies
 
@@ -33,6 +34,21 @@ from ..config import settings
 from ..services.display_last_image import display_last_image_store
 
 logger = logging.getLogger(__name__)
+
+
+# -----------------------------------------------------
+# Custom exception types to classify failure domains
+# -----------------------------------------------------
+class ChannelRequestError(Exception):
+    """Raised when a channel plugin request fails (logic / plugin layer)."""
+
+
+class ImageConversionError(Exception):
+    """Raised when converting or persisting image data fails."""
+
+
+class DistributionError(Exception):
+    """Raised when distributing image data to displays encounters a non-recoverable issue."""
 
 
 def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
@@ -77,7 +93,7 @@ def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
             "Unable to determine image URL from channel response - no image path, base64 content, or filename found"
         )
         return None
-    except Exception as e:  # Broad catch to avoid scheduler crash; upstream handles None
+    except (OSError, ValueError, KeyError) as e:
         logger.error("Error converting image to URL: %s", e)
         return None
 
@@ -185,7 +201,7 @@ def _save_base64_and_get_url(image_info: Dict[str, Any], base_url: str) -> Optio
             logger.error("Failed to decode base64 image data: %s", decode_error)
             return None
             
-    except Exception as e:
+    except (OSError, ValueError, base64.binascii.Error) as e:
         logger.error("Error saving base64 image: %s", e)
         return None
 
@@ -230,36 +246,45 @@ class SchedulerWorker:
         logger.info(f"Scheduler worker loop started (polling every {self.poll_interval}s)")
         
         while self.running:
+            # Guardrail: we intentionally keep a loop-level exception barrier so a single
+            # unhandled error does not terminate the scheduler background task.
             try:
-                # Opportunistic temp image cleanup (non-blocking best effort)
-                self._maybe_cleanup_temp_images()
+                self._maybe_cleanup_temp_images()  # best-effort
                 await self._process_due_jobs()
-            except Exception as e:
-                logger.error(f"Error in scheduler worker loop: {e}", exc_info=True)
+            except (OSError, TimeoutError) as e:
+                logger.error("Scheduler worker loop transient error: %s", e, exc_info=True)
+            except Exception as e:  # noqa: BLE001 - final safety net (see comment above)
+                logger.exception("Scheduler worker loop unexpected error: %s", e)
             
             # Wait for the next polling interval
             await asyncio.sleep(self.poll_interval)
     
     async def _process_due_jobs(self):
-        """Process all jobs that are due for execution"""
-        try:
-            with SessionLocal() as db:
-                scheduler_service = SchedulerService(db)
+        """Process all jobs that are due for execution."""
+        with SessionLocal() as db:
+            scheduler_service = SchedulerService(db)
+            try:
                 due_jobs = await scheduler_service.get_due_jobs(limit=50)
-                
-                if not due_jobs:
-                    return
-                
-                logger.info(f"Processing {len(due_jobs)} due jobs")
-                
-                for job in due_jobs:
-                    try:
-                        await self._execute_job(job, scheduler_service)
-                    except Exception as e:
-                        logger.error(f"Failed to execute job {job.id}: {e}", exc_info=True)
-                        
-        except Exception as e:
-            logger.error(f"Error processing due jobs: {e}", exc_info=True)
+            except Exception as e:  # noqa: BLE001 - DB / service layer unexpected
+                logger.exception("scheduler.jobs.fetch_failed: %s", e)
+                return
+
+            if not due_jobs:
+                return
+
+            logger.info("scheduler.jobs.processing count=%d", len(due_jobs))
+
+            for job in due_jobs:
+                try:
+                    await self._execute_job(job, scheduler_service)
+                except ChannelRequestError as e:
+                    logger.error("scheduler.job.channel_error job_id=%s error=%s", job.id, e)
+                except ImageConversionError as e:
+                    logger.error("scheduler.job.image_error job_id=%s error=%s", job.id, e)
+                except DistributionError as e:
+                    logger.error("scheduler.job.distribution_error job_id=%s error=%s", job.id, e)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("scheduler.job.unexpected job_id=%s error=%s", job.id, e)
     
     async def _execute_job(
         self,
@@ -304,7 +329,14 @@ class SchedulerWorker:
                 affected_scenes=result.get("affected_scenes", []),
             )
             logger.info("Job %s completed status=%s", job.id, status.value)
-        except Exception as e:  # noqa: BLE001
+        except (ChannelRequestError, ImageConversionError, DistributionError) as e:
+            await scheduler_service.complete_execution(
+                execution_id,
+                ExecutionStatus.FAILED,
+                error_message=str(e),
+            )
+            logger.error("Job %s domain failure: %s", job.id, e)
+        except Exception as e:  # noqa: BLE001 - unexpected internal failure
             await scheduler_service.complete_execution(
                 execution_id,
                 ExecutionStatus.FAILED,
@@ -444,8 +476,14 @@ class SchedulerWorker:
                 "summary": f"Refreshed {successful_scenes}/{total_scenes} scenes"
             }
             
-        except Exception as e:
-            logger.error(f"Error executing refresh_scene: {e}", exc_info=True)
+        except (ChannelRequestError, ImageConversionError, DistributionError) as e:
+            logger.error("refresh_scene.domain_error job_id=%s error=%s", job.id, e)
+            return {
+                "success": False,
+                "error": str(e)
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.exception("refresh_scene.unexpected job_id=%s error=%s", job.id, e)
             return {
                 "success": False,
                 "error": str(e)
@@ -509,8 +547,15 @@ class SchedulerWorker:
                     "distribution_errors": distribution_result.get("errors", [])
                 }
                 
-        except Exception as e:
-            logger.error(f"Error refreshing scene {assignment.scene_id}: {e}", exc_info=True)
+        except (ChannelRequestError, ImageConversionError, DistributionError) as e:
+            logger.error("scene.refresh.domain_error scene_id=%s error=%s", assignment.scene_id, e)
+            return {
+                "scene_id": assignment.scene_id,
+                "success": False,
+                "error": str(e)
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.exception("scene.refresh.unexpected scene_id=%s error=%s", assignment.scene_id, e)
             return {
                 "scene_id": assignment.scene_id,
                 "success": False,
@@ -562,8 +607,9 @@ class SchedulerWorker:
                     "error": f"Channel returned unsuccessful response: {image_response}"
                 }
                 
-        except Exception as e:
-            logger.error(f"Error requesting image from channel {channel_id}: {e}", exc_info=True)
+        except Exception as e:  # noqa: BLE001
+            # Wrap in domain-specific error so caller can classify
+            raise ChannelRequestError(str(e)) from e
             return {
                 "success": False,
                 "error": str(e)
@@ -704,8 +750,14 @@ class SchedulerWorker:
                 "image_url": image_url
             }
             
-        except Exception as e:
-            logger.error(f"Error distributing to displays: {e}", exc_info=True)
+        except (ImageConversionError, ChannelRequestError) as e:
+            logger.error("distribution.domain_error scene_id=%s error=%s", scene.id, e)
+            return {
+                "displays_updated": 0,
+                "errors": [str(e)]
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.exception("distribution.unexpected scene_id=%s error=%s", scene.id, e)
             return {
                 "displays_updated": 0,
                 "errors": [str(e)]
