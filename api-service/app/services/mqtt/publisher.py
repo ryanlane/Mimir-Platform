@@ -307,7 +307,7 @@ class MqttSceneAssignmentService:
         if image_height is not None:
             payload["image_height"] = image_height
         
-        logger.info(f"Sending display_image command to {device_id}: {image_url}")
+        logger.debug(f"Sending display_image command to {device_id}")
         return await self.publish_command(device_id, payload, qos=1, retain=False)
       
     async def unassign_scene_from_device(self, device_id: str) -> bool:
@@ -514,7 +514,7 @@ class MQTTSceneAssignmentPublisher:
         if image_height is not None:
             payload["image_height"] = image_height
         
-        logger.info(f"Sending display_image command to {device_id}: {image_url}")
+        logger.debug(f"Sending display_image command to {device_id}")
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
     # ---------- Worker / connection loop ----------
