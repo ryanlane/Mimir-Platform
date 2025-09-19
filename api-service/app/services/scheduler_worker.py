@@ -333,7 +333,8 @@ class SchedulerWorker:
                         assigned_displays.append({
                             "id": display.display_id,
                             "hostname": display.hostname,
-                            "type": "discovered"
+                            "type": "discovered",
+                            "current_scene_id": display.assigned_scene_id
                         })
             
             # Also check database displays (fallback)
@@ -348,7 +349,8 @@ class SchedulerWorker:
                         assigned_displays.append({
                             "id": display.id,
                             "hostname": display.hostname,
-                            "type": "database"
+                            "type": "database",
+                            "current_scene_id": display.assigned_scene_id
                         })
             
             if not assigned_displays:
@@ -362,29 +364,115 @@ class SchedulerWorker:
             
             # Extract image information
             image_info = image_response.get("image", {})
-            image_path = image_info.get("image")  # This should be the path to the image
+            distribution_mode = image_info.get("distribution_mode")
             
+            # Only send commands if there's actually new content or scene assignments changed
+            should_distribute = False
+            
+            if distribution_mode == "new":
+                # New content available, should distribute
+                should_distribute = True
+                logger.info(f"New content available for scene {scene.id}, will distribute to displays")
+            elif distribution_mode in ["existing", "cached"]:
+                # No new content, check if any displays need scene assignment updates
+                for display in assigned_displays:
+                    current_scene = display.get("current_scene_id")
+                    target_scene = str(scene.id)
+                    if current_scene != target_scene and current_scene != scene.id:
+                        should_distribute = True
+                        logger.info(f"Display {display['id']} needs scene assignment update")
+                        break
+                
+                if not should_distribute:
+                    logger.info(f"No new content and all displays have correct scene assignment, skipping distribution")
+                    return {
+                        "displays_updated": 0,
+                        "errors": [],
+                        "message": "No distribution needed - content unchanged and displays up to date"
+                    }
+            else:
+                # Unknown distribution mode, be conservative and distribute
+                should_distribute = True
+                logger.warning(f"Unknown distribution mode '{distribution_mode}', distributing to be safe")
+            
+            if not should_distribute:
+                return {
+                    "displays_updated": 0,
+                    "errors": [],
+                    "message": "No distribution needed"
+                }
+            
+            # Check for image path only if we're going to distribute
+            image_path = image_info.get("image")
             if not image_path:
                 return {
                     "displays_updated": 0,
                     "errors": ["No image path in channel response"]
                 }
             
-            # Send image to each display via MQTT
+            if distribution_mode == "new":
+                # New content available, should distribute
+                should_distribute = True
+                logger.info(f"New content available for scene {scene.id}, will distribute to displays")
+            elif distribution_mode in ["existing", "cached"]:
+                # No new content, check if any displays need scene assignment updates
+                for display in assigned_displays:
+                    current_scene = display.get("current_scene_id")
+                    target_scene = str(scene.id)
+                    if current_scene != target_scene and current_scene != scene.id:
+                        should_distribute = True
+                        logger.info(f"Display {display['id']} needs scene assignment update")
+                        break
+                
+                if not should_distribute:
+                    logger.info(f"No new content and all displays have correct scene assignment, skipping distribution")
+                    return {
+                        "displays_updated": 0,
+                        "errors": [],
+                        "message": "No distribution needed - content unchanged and displays up to date"
+                    }
+            else:
+                # Unknown distribution mode, be conservative and distribute
+                should_distribute = True
+                logger.warning(f"Unknown distribution mode '{distribution_mode}', distributing to be safe")
+            
+            if not should_distribute:
+                return {
+                    "displays_updated": 0,
+                    "errors": [],
+                    "message": "No distribution needed"
+                }
+
+            # Send commands to each display via MQTT
             for display in assigned_displays:
                 try:
                     if mqtt_scene_service.is_connected():
-                        # For now, we'll send a scene refresh command
-                        # In the future, this could send the actual image data
-                        success = await mqtt_scene_service.assign_scene_to_device(
-                            device_id=display["hostname"] or display["id"],
-                            scene_id=str(scene.id),
-                            assignment_id=f"refresh-{uuid.uuid4().hex[:8]}"
-                        )
+                        device_id = display["hostname"] or display["id"]
+                        assignment_id = f"refresh-{uuid.uuid4().hex[:8]}"
+                        
+                        # Check if display already has the correct scene assigned
+                        current_scene = display.get("current_scene_id")
+                        target_scene = str(scene.id)
+                        
+                        if current_scene == target_scene or current_scene == scene.id:
+                            # Display already has correct scene, send refresh command for new content
+                            logger.info(f"Sending refresh command to display {device_id} (new content available)")
+                            success = await mqtt_scene_service.refresh_device_content(
+                                device_id=device_id,
+                                assignment_id=assignment_id
+                            )
+                        else:
+                            # Display doesn't have correct scene, send assignment command
+                            logger.info(f"Assigning scene {target_scene} to display {device_id}")
+                            success = await mqtt_scene_service.assign_scene_to_device(
+                                device_id=device_id,
+                                scene_id=target_scene,
+                                assignment_id=assignment_id
+                            )
                         
                         if success:
                             displays_updated += 1
-                            logger.info(f"Sent refresh command to display {display['id']}")
+                            logger.info(f"Sent command to display {display['id']}")
                         else:
                             errors.append(f"MQTT send failed for display {display['id']}")
                     else:

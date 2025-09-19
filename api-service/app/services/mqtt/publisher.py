@@ -236,6 +236,32 @@ class MqttSceneAssignmentService:
         
         return await self.publish_command(device_id, payload, qos=1, retain=False)
     
+    async def refresh_device_content(
+        self, 
+        device_id: str,
+        assignment_id: Optional[str] = None
+    ) -> bool:
+        """
+        Send a refresh command to a device to trigger content update without scene reassignment.
+        
+        Args:
+            device_id: Target device identifier
+            assignment_id: Optional assignment tracking ID, auto-generated if not provided
+            
+        Returns:
+            bool: True if message was published successfully
+        """
+        # Generate assignment_id if not provided
+        if assignment_id is None:
+            assignment_id = f"refresh-{uuid.uuid4().hex[:8]}"
+        
+        payload = {
+            "type": "refresh",
+            "assignment_id": assignment_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        return await self.publish_command(device_id, payload, qos=1, retain=False)
       
     async def unassign_scene_from_device(self, device_id: str) -> bool:
         """Unassign scene from a device via MQTT"""
