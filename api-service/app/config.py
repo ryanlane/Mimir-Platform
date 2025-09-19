@@ -38,6 +38,18 @@ class Settings(BaseSettings):
     api_port: int = Field(5000, validation_alias="API_PORT")
     debug: bool = Field(False, validation_alias="DEBUG")
 
+    # --- Public URL (used in payloads sent to remote display clients) ---
+    # If not provided, falls back to mqtt_broker_host + api_port.
+    public_scheme: str = Field("http", validation_alias=AliasChoices("PUBLIC_SCHEME", "API_PUBLIC_SCHEME"))
+    public_host: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PUBLIC_HOST", "API_PUBLIC_HOST", "EXTERNAL_HOST"),
+    )
+    public_port: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PUBLIC_PORT", "API_PUBLIC_PORT", "EXTERNAL_PORT"),
+    )
+
     # --- Security / CORS ---
     secret_key: str = Field("change-me", validation_alias=AliasChoices("SECRET_KEY","JWT_SECRET","APP_SECRET"))
     cors_origins: list[str] = Field(default_factory=list, validation_alias=AliasChoices("CORS_ORIGINS","CORS_ALLOW_ORIGINS"))
@@ -105,5 +117,74 @@ class Settings(BaseSettings):
     def distribution_enabled(self) -> bool:
         """Distribution features are enabled when Redis is enabled."""
         return self.redis_enabled
+
+    @property
+    def public_base_url(self) -> str:
+        """Derive a base URL suitable for remote display clients without extra env config.
+
+        Resolution strategy (first successful wins):
+        1. Explicit public_host (env override)
+        2. mqtt_broker_host (often already a LAN-resolvable hostname)
+        3. Local system hostname (socket.gethostname())
+        4. hostname + ".local" (for mDNS-capable environments)
+        5. Primary outbound IPv4 (UDP connect probe)
+        6. Fallback 127.0.0.1 (last resort)
+
+        Ports: omit when standard (80 http / 443 https). This avoids confusing some
+        embedded HTTP clients that mishandle explicit default ports.
+        """
+        import socket
+
+        scheme = self.public_scheme or "http"
+
+        # Helper to test if host resolves to at least one non-loopback address
+        def _host_resolves(candidate: str | None) -> bool:
+            if not candidate:
+                return False
+            try:
+                infos = socket.getaddrinfo(candidate, None)
+            except Exception:
+                return False
+            for _family, _type, _proto, _canon, sockaddr in infos:
+                ip = sockaddr[0]
+                if not (ip.startswith("127.") or ip in ("::1",)):
+                    return True
+            return False
+
+        # Candidate hostnames in priority order (deduplicated later)
+        hostname = socket.gethostname()
+        candidates: list[str | None] = [
+            self.public_host,
+            self.mqtt_broker_host,
+            hostname,
+            f"{hostname}.local",
+        ]
+
+        seen = set()
+        chosen_host: str | None = None
+        for cand in candidates:
+            if not cand or cand in seen:
+                continue
+            seen.add(cand)
+            if _host_resolves(cand):
+                chosen_host = cand
+                break
+
+        if chosen_host is None:
+            # Derive primary outbound IP (does not create traffic, just local routing decision)
+            ip = None
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))  # any public IP works; no packets sent until write
+                ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                pass
+            chosen_host = ip or "127.0.0.1"
+
+        port = self.public_port if self.public_port is not None else self.api_port
+        if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+            return f"{scheme}://{chosen_host}"
+        return f"{scheme}://{chosen_host}:{port}"
 
 settings = Settings()

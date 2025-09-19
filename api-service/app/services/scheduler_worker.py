@@ -44,48 +44,43 @@ def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
         URL string if conversion is successful, None otherwise
     """
     try:
-        # Use the same hostname that displays use to connect to MQTT broker
-        api_hostname = settings.mqtt_broker_host  # "oak"
-        api_port = settings.api_port  # 5000
-        
-        # Check if we have a base64 encoded image
-        if "image" in image_info and isinstance(image_info["image"], str):
-            image_data = image_info["image"]
-            
-            # Check if this is base64 data (typically starts with common base64 prefixes or is very long)
-            if (len(image_data) > 100 and 
-                (image_data.startswith(('/9j/', 'iVBORw0KGgo', 'R0lGOD', 'UklGR')) or
-                 not image_data.startswith('/') and '/' not in image_data[:50])):
-                
-                # Save base64 data to a temporary file and return URL
-                return _save_base64_and_get_url(image_info, api_hostname, api_port)
-                
-            # If it's a file path, convert to URL
-            image_path = image_data.strip()
-            if image_path.startswith('/'):
-                # Absolute path - need to determine mount point
-                relative_path = image_path.lstrip('/')
-                return f"http://{api_hostname}:{api_port}/channels/{relative_path}"
-            else:
-                # Relative path - assume it's relative to channels
-                return f"http://{api_hostname}:{api_port}/channels/{image_path}"
-        
-        # Check for filename in response (like photo_frame channel with saved files)
-        elif "filename" in image_info:
-            filename = image_info["filename"]
-            # Assume it's in uploads which might be served under channels
-            return f"http://{api_hostname}:{api_port}/channels/photo_frame/uploads/{filename}"
-            
-        else:
-            logger.error("Unable to determine image URL from channel response - no image path or filename found")
-            return None
-            
-    except Exception as e:
+        base_url = settings.public_base_url  # External-facing base URL
+
+        # Case 1: "image" key present
+        img_val = image_info.get("image")
+        if isinstance(img_val, str):
+            # Heuristic for base64: long-ish string and either common prefixes or no early slash
+            if (
+                len(img_val) > 100
+                and (
+                    img_val.startswith(("/9j/", "iVBORw0KGgo", "R0lGOD", "UklGR"))
+                    or (not img_val.startswith("/") and "/" not in img_val[:50])
+                )
+            ):
+                return _save_base64_and_get_url(image_info, base_url)
+
+            # Treat as file path (absolute or relative within channels)
+            image_path = img_val.strip()
+            if image_path.startswith("/"):
+                relative_path = image_path.lstrip("/")
+                return f"{base_url}/channels/{relative_path}"
+            return f"{base_url}/channels/{image_path}"
+
+        # Case 2: filename provided separately
+        filename = image_info.get("filename")
+        if filename:
+            return f"{base_url}/channels/photo_frame/uploads/{filename}"
+
+        logger.error(
+            "Unable to determine image URL from channel response - no image path, base64 content, or filename found"
+        )
+        return None
+    except Exception as e:  # Broad catch to avoid scheduler crash; upstream handles None
         logger.error("Error converting image to URL: %s", e)
         return None
 
 
-def _save_base64_and_get_url(image_info: Dict[str, Any], api_hostname: str, api_port: int) -> Optional[str]:
+def _save_base64_and_get_url(image_info: Dict[str, Any], base_url: str) -> Optional[str]:
     """
     Save base64 image data to a file and return the URL to access it.
     
@@ -152,7 +147,7 @@ def _save_base64_and_get_url(image_info: Dict[str, Any], api_hostname: str, api_
             try:
                 relative_within_channels = temp_file_path.relative_to(channels_root)
                 # Served directly under /channels/<relative>
-                url = f"http://{api_hostname}:{api_port}/channels/{relative_within_channels.as_posix()}"
+                url = f"{base_url}/channels/{relative_within_channels.as_posix()}"
                 logger.debug(
                     "Temp image is within channels root; using direct relative path: %s -> %s",
                     temp_file_path,
@@ -168,7 +163,7 @@ def _save_base64_and_get_url(image_info: Dict[str, Any], api_hostname: str, api_
                     # Copy the file (avoid shutil for minimal deps)
                     with open(temp_file_path, 'rb') as src, open(mirror_path, 'wb') as dst:
                         dst.write(src.read())
-                    url = f"http://{api_hostname}:{api_port}/channels/scheduler_temp/{temp_filename}"
+                    url = f"{base_url}/channels/scheduler_temp/{temp_filename}"
                     logger.info(
                         "Mirrored scheduler image into channels: %s (origin %s) url=%s",
                         mirror_path,
@@ -259,57 +254,86 @@ class SchedulerWorker:
         except Exception as e:
             logger.error(f"Error processing due jobs: {e}", exc_info=True)
     
-    async def _execute_job(self, job: SchedulerJob, scheduler_service: SchedulerService):
-        """Execute a single scheduler job"""
-        # Lock the job to prevent concurrent execution
+    async def _execute_job(
+        self,
+        job: SchedulerJob,
+        scheduler_service: SchedulerService,
+        *,
+        trigger_reason: TriggerReason = TriggerReason.SCHEDULED,
+        worker_id: str = "scheduler-worker"
+    ) -> Optional[str]:
+        """Execute a single scheduler job.
+
+        Returns the execution_id created for this run (or None if lock failed).
+        """
         locked = await scheduler_service.lock_job(job.id)
         if not locked:
-            logger.warning(f"Could not lock job {job.id}, skipping")
-            return
-        
-        # Start execution tracking
+            logger.warning("Could not lock job %s, skipping", job.id)
+            return None
+
         execution_id = await scheduler_service.start_execution(
-            job.id, 
-            worker_id="scheduler-worker",
-            trigger_reason=TriggerReason.SCHEDULED
+            job.id,
+            worker_id=worker_id,
+            trigger_reason=trigger_reason,
         )
-        
+
         try:
-            logger.info(f"Executing job {job.id} ({job.name}) - action: {job.action_type}")
-            
+            logger.info(
+                "Executing job %s (%s) - action=%s trigger=%s", job.id, job.name, job.action_type, trigger_reason.value
+            )
+
             if job.action_type == "refresh_scene":
                 result = await self._execute_refresh_scene(job, scheduler_service)
             else:
-                logger.warning(f"Unknown action type: {job.action_type}")
-                result = {
-                    "success": False,
-                    "error": f"Unknown action type: {job.action_type}"
-                }
-            
-            # Complete execution tracking
+                logger.warning("Unknown action type: %s", job.action_type)
+                result = {"success": False, "error": f"Unknown action type: {job.action_type}"}
+
             status = ExecutionStatus.SUCCESS if result.get("success") else ExecutionStatus.FAILED
             await scheduler_service.complete_execution(
                 execution_id,
                 status,
                 output_data=result,
                 error_message=result.get("error"),
-                affected_scenes=result.get("affected_scenes", [])
+                affected_scenes=result.get("affected_scenes", []),
             )
-            
-            logger.info(f"Job {job.id} completed with status: {status.value}")
-            
-        except Exception as e:
-            # Mark execution as failed
+            logger.info("Job %s completed status=%s", job.id, status.value)
+        except Exception as e:  # noqa: BLE001
             await scheduler_service.complete_execution(
                 execution_id,
                 ExecutionStatus.FAILED,
-                error_message=str(e)
+                error_message=str(e),
             )
-            logger.error(f"Job {job.id} execution failed: {e}", exc_info=True)
-            
+            logger.error("Job %s execution failed: %s", job.id, e, exc_info=True)
         finally:
-            # Always unlock the job
             await scheduler_service.unlock_job(job.id)
+        return execution_id
+
+    async def run_job_immediately(
+        self,
+        job_id: str,
+        *,
+        trigger_reason: TriggerReason = TriggerReason.MANUAL,
+        force: bool = False,
+    ) -> Optional[str]:
+        """Convenience method to execute a job immediately bypassing the poll delay.
+
+        Returns execution_id on success, or None if job not found / not permitted.
+        """
+        with SessionLocal() as db:
+            scheduler_service = SchedulerService(db)
+            job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
+            if not job:
+                logger.warning("Immediate run requested for missing job %s", job_id)
+                return None
+            if (not job.enabled) and (not force):
+                logger.info("Immediate run skipped; job %s disabled and force not set", job_id)
+                return None
+            return await self._execute_job(
+                job,
+                scheduler_service,
+                trigger_reason=trigger_reason,
+                worker_id="manual-trigger",
+            )
     
     async def _execute_refresh_scene(self, job: SchedulerJob, scheduler_service: SchedulerService) -> Dict[str, Any]:
         """Execute a refresh_scene action"""

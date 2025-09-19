@@ -19,6 +19,7 @@ from app.schemas.scheduler import (
 )
 from app.services.scheduler_service import SchedulerService
 from app.services.scheduler_math import now_utc, is_job_due, is_job_locked
+from app.services.scheduler_worker import scheduler_worker
 
 router = APIRouter(prefix="/scheduler", tags=["scheduler"])
 
@@ -234,20 +235,20 @@ async def trigger_job_manually(
     
     # Start execution record
     service = SchedulerService(db)
-    execution_id = await service.start_execution(
-        job_id, 
-        worker_id="manual-trigger",
-        trigger_reason=trigger_data.trigger_reason
+    # Execute immediately via worker helper (bypasses polling delay)
+    execution_id = await scheduler_worker.run_job_immediately(
+        job_id,
+        trigger_reason=trigger_data.trigger_reason,
+        force=trigger_data.force,
     )
-    
-    # TODO: Queue the job for immediate execution by the worker
-    # This would integrate with your worker system
-    
+    if not execution_id:
+        raise HTTPException(status_code=500, detail="Failed to start manual execution")
+
     return ManualTriggerResponse(
         execution_id=execution_id,
         job_id=job_id,
         triggered_at=now_utc(),
-        message="Job queued for manual execution"
+        message="Job executed immediately"
     )
 
 
