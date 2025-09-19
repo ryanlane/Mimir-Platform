@@ -270,6 +270,34 @@ class SchedulerWorker:
                 return
 
             if not due_jobs:
+                # Diagnostic: log periodic idle state with earliest upcoming job
+                try:
+                    # Fetch a small sample of upcoming jobs to compute earliest next_run_at
+                    upcoming = (
+                        db.query(SchedulerJob)
+                        .filter(SchedulerJob.enabled == True)
+                        .order_by(SchedulerJob.next_run_at.asc())
+                        .limit(5)
+                        .all()
+                    )
+                    if upcoming:
+                        earliest = upcoming[0].next_run_at
+                        total_enabled = (
+                            db.query(SchedulerJob)
+                            .filter(SchedulerJob.enabled == True)
+                            .count()
+                        )
+                        logger.debug(
+                            "scheduler.jobs.idle no_due_jobs earliest_next_run=%s total_enabled=%d sample=%s",
+                            earliest,
+                            total_enabled,
+                            [j.id for j in upcoming],
+                        )
+                    else:
+                        logger.debug("scheduler.jobs.idle no_enabled_jobs")
+                except Exception:  # noqa: BLE001
+                    # Avoid breaking the loop for diagnostics
+                    pass
                 return
 
             logger.info("scheduler.jobs.processing count=%d", len(due_jobs))
