@@ -8,6 +8,8 @@ class FeatureDetectionService {
     this.detectionPromise = null;
     this.lastDetectionTime = null;
     this.cacheTimeout = 5 * 60 * 1000; // 5 minutes cache
+    // Channels we have detected that lack a /test endpoint; avoid re-spamming 404s
+    this.legacyNoTestChannels = new Set();
   }
 
   // Main feature detection method with caching
@@ -141,18 +143,26 @@ class FeatureDetectionService {
           
           const channelToTest = workingChannels.length > 0 ? workingChannels[0] : channels.data.channels[0];
           
-          try {
-            await api.testChannel(channelToTest.id);
-            console.log('✅ Channel testing endpoint detected for:', channelToTest.id);
-            this.supportedFeatures.add('channel_testing');
-          } catch (testError) {
-            if (testError.response?.status === 404) {
-              // Channel not found is OK, endpoint exists
+          if (!this.legacyNoTestChannels.has(channelToTest.id)) {
+            try {
+              await api.testChannel(channelToTest.id);
+              console.log('✅ Channel testing endpoint detected for:', channelToTest.id);
               this.supportedFeatures.add('channel_testing');
-              console.log('✅ Channel testing endpoint exists (404 response is expected)');
-            } else {
-              console.log('❌ Channel testing endpoint not available:', testError.message);
+            } catch (testError) {
+              if (testError.response?.status === 404) {
+                // Treat as legacy channel without /test; mark so we skip future probes
+                this.legacyNoTestChannels.add(channelToTest.id);
+                // Still enable overall feature so other channels can benefit
+                this.supportedFeatures.add('channel_testing');
+                console.log(`ℹ️ Channel ${channelToTest.id} has no /test endpoint (legacy). Suppressing further probes.`);
+              } else {
+                console.log('❌ Channel testing endpoint not available:', testError.message);
+              }
             }
+          } else {
+            // Already known legacy; don't probe again
+            this.supportedFeatures.add('channel_testing');
+            console.log(`↩️ Skipping /test probe for legacy channel ${channelToTest.id}`);
           }
         } else {
           console.log('❌ No channels available to test testing endpoint');
