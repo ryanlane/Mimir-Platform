@@ -27,6 +27,12 @@ class Settings(BaseSettings):
         default="/var/opt/mimir/mimir-api/uploads",
         validation_alias="UPLOAD_DIR",
     )
+    # Directory where scheduler-generated (transient) images are first written before being
+    # optionally copied/mirrored into the public channels directory for serving.
+    scheduler_temp_directory: str = Field(
+        default="scheduler_temp",
+        validation_alias=AliasChoices("SCHEDULER_TEMP", "SCHEDULER_TEMP_DIR"),
+    )
     api_prefix: str = Field("/api", validation_alias="API_PREFIX")
     api_host: str = Field("0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(5000, validation_alias="API_PORT")

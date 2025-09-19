@@ -81,7 +81,7 @@ def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
             return None
             
     except Exception as e:
-        logger.error(f"Error converting image to URL: {e}")
+        logger.error("Error converting image to URL: %s", e)
         return None
 
 
@@ -98,9 +98,6 @@ def _save_base64_and_get_url(image_info: Dict[str, Any], api_hostname: str, api_
         URL string if successful, None otherwise
     """
     try:
-        import base64
-        import os
-        from pathlib import Path
         
         # Get base64 data
         image_data = image_info.get("image", "")
@@ -123,9 +120,18 @@ def _save_base64_and_get_url(image_info: Dict[str, Any], api_hostname: str, api_
             else:
                 filename += '.jpg'  # Default to jpg
         
-        # Create temp directory for scheduler-generated images
-        temp_dir = Path(settings.channels_directory) / "scheduler_temp"
+        # Resolve temp directory preference:
+        # 1. settings.scheduler_temp_directory (absolute or relative)
+        # 2. Fallback: <channels_directory>/scheduler_temp
+        raw_temp = getattr(settings, "scheduler_temp_directory", "scheduler_temp")
+        temp_dir = Path(raw_temp)
+        if not temp_dir.is_absolute():
+            # Interpret relative path as relative to current working directory (consistent with previous behavior)
+            before = temp_dir
+            temp_dir = temp_dir.resolve()
+            logger.debug("Resolved relative scheduler_temp_directory: %s -> %s", before, temp_dir)
         temp_dir.mkdir(parents=True, exist_ok=True)
+        logger.debug("Scheduler temp directory in use: raw=%s resolved=%s", raw_temp, temp_dir)
         
         # Create unique filename to avoid conflicts
         timestamp = str(int(uuid.uuid4().int >> 64))  # Use part of UUID as timestamp
@@ -138,20 +144,52 @@ def _save_base64_and_get_url(image_info: Dict[str, Any], api_hostname: str, api_
             with open(temp_file_path, 'wb') as f:
                 f.write(decoded_data)
                 
-            logger.info(f"Saved base64 image to temporary file: {temp_file_path}")
-            
-            # Return URL that the API service can serve
-            relative_path = f"scheduler_temp/{temp_filename}"
-            url = f"http://{api_hostname}:{api_port}/channels/{relative_path}"
-            
-            return url
+            logger.info("Saved base64 image to temporary file: %s (size=%d bytes)", temp_file_path, len(decoded_data))
+
+            # Determine how to expose the file. If temp_dir is *inside* the channels_directory
+            # hierarchy, compute its relative path. Otherwise, mirror into channels/scheduler_temp.
+            channels_root = Path(settings.channels_directory).resolve()
+            try:
+                relative_within_channels = temp_file_path.relative_to(channels_root)
+                # Served directly under /channels/<relative>
+                url = f"http://{api_hostname}:{api_port}/channels/{relative_within_channels.as_posix()}"
+                logger.debug(
+                    "Temp image is within channels root; using direct relative path: %s -> %s",
+                    temp_file_path,
+                    url,
+                )
+                return url
+            except ValueError:
+                # Not under channels root – mirror copy
+                mirror_dir = channels_root / "scheduler_temp"
+                mirror_dir.mkdir(parents=True, exist_ok=True)
+                mirror_path = mirror_dir / temp_filename
+                try:
+                    # Copy the file (avoid shutil for minimal deps)
+                    with open(temp_file_path, 'rb') as src, open(mirror_path, 'wb') as dst:
+                        dst.write(src.read())
+                    url = f"http://{api_hostname}:{api_port}/channels/scheduler_temp/{temp_filename}"
+                    logger.info(
+                        "Mirrored scheduler image into channels: %s (origin %s) url=%s",
+                        mirror_path,
+                        temp_file_path,
+                        url,
+                    )
+                    return url
+                except Exception as mirror_err:
+                    logger.error(
+                        "Failed to mirror scheduler image into channels: %s (origin %s)",
+                        mirror_err,
+                        temp_file_path,
+                    )
+                    return None
             
         except Exception as decode_error:
-            logger.error(f"Failed to decode base64 image data: {decode_error}")
+            logger.error("Failed to decode base64 image data: %s", decode_error)
             return None
             
     except Exception as e:
-        logger.error(f"Error saving base64 image: {e}")
+        logger.error("Error saving base64 image: %s", e)
         return None
 
 
