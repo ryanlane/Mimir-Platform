@@ -127,6 +127,33 @@ export const api = {
     return result;
   },
   
+  // Convenience helper (plural) requested by some callers: aggregate manifests for supplied or all channels
+  // If channelIds omitted, will first fetch channel list then resolve each manifest.
+  getChannelsManifest: async (channelIds = null) => {
+    try {
+      let ids = channelIds;
+      if (!ids) {
+        const listResp = await api.getChannels();
+        ids = (listResp.data?.channels || []).map(c => c.id || c.channel_id || c.identifier).filter(Boolean);
+      }
+      const manifests = {};
+      for (const id of ids) {
+        try {
+          const resp = await api.getChannelManifest(id);
+            // Use .data fallback; axios response holds payload in data
+          manifests[id] = resp.data || resp;
+        } catch (e) {
+          console.warn(`⚠️ Failed to fetch manifest for channel ${id}:`, e?.response?.status, e?.message);
+          manifests[id] = { error: true, message: 'manifest_unavailable', detail: e?.message };
+        }
+      }
+      return { data: manifests };
+    } catch (outer) {
+      console.error('Failed aggregating channel manifests', outer);
+      throw outer;
+    }
+  },
+  
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
   requestChannelImage: (channelId, requestData, subchannelId = null) => {

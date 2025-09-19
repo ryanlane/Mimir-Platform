@@ -41,10 +41,11 @@ const Channels = () => {
     
     try {
       const response = await api.getChannelsManifest();
-      // Extract the channels array from the response object
-      const manifestData = response.data?.channels || [];
+      // New aggregated map structure: { data: { channelId: manifestObj } }
+      const manifestsMap = response.data || {};
+      const manifestData = Object.values(manifestsMap).filter(Boolean);
       setManifest(manifestData);
-      console.log('📋 Loaded channel manifest:', response.data);
+      console.log('📋 Loaded channel manifest (aggregated):', manifestsMap);
     } catch (error) {
       console.error('Error loading channel manifest:', error);
     }
