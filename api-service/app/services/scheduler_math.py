@@ -165,5 +165,11 @@ def get_execution_duration_ms(started_at: datetime, completed_at: Optional[datet
     if not completed_at:
         completed_at = now_utc()
     
+    # Ensure both datetimes have timezone info for proper subtraction
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+    
     duration = completed_at - started_at
     return int(duration.total_seconds() * 1000)
