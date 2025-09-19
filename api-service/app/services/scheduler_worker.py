@@ -12,9 +12,7 @@ Key responsibilities:
 """
 import asyncio
 import uuid
-import httpx
 import logging
-from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
@@ -28,8 +26,55 @@ from ..services.scheduler_service import SchedulerService
 from ..services.mdns_discovery import mdns_discovery_service
 from ..services.mqtt.publisher import mqtt_scene_service
 from ..services.plugin_discovery import plugin_discovery_service
+from ..config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
+    """
+    Convert image information from a channel to a publicly accessible URL.
+    
+    Args:
+        image_info: Image information from channel response
+        
+    Returns:
+        URL string if conversion is successful, None otherwise
+    """
+    try:
+        # Check if we have a base64 encoded image
+        if "image" in image_info and isinstance(image_info["image"], str):
+            # If it looks like base64 data, we can't serve it directly as URL
+            # This would require storing it as a file first
+            image_data = image_info["image"]
+            if len(image_data) > 100 and not image_data.startswith('/'):
+                logger.warning("Base64 image data received but not supported for URL conversion")
+                return None
+                
+            # If it's a file path, convert to URL
+            image_path = image_data.strip()
+            if image_path.startswith('/'):
+                # Absolute path - need to determine mount point
+                # For now, assume it's in channels directory
+                relative_path = image_path.lstrip('/')
+                return f"http://{settings.mqtt_broker_host}:{settings.api_port}/channels/{relative_path}"
+            else:
+                # Relative path - assume it's relative to channels
+                return f"http://{settings.mqtt_broker_host}:{settings.api_port}/channels/{image_path}"
+        
+        # Check for filename in response (like photo_frame channel)
+        elif "filename" in image_info:
+            filename = image_info["filename"]
+            # Assume it's in uploads which might be served under channels
+            return f"http://{settings.mqtt_broker_host}:{settings.api_port}/channels/photo_frame/uploads/{filename}"
+            
+        else:
+            logger.error(f"Unable to determine image URL from response: {image_info}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error converting image to URL: {e}")
+        return None
 
 
 class SchedulerWorker:
@@ -362,9 +407,19 @@ class SchedulerWorker:
             
             logger.info(f"Distributing to {len(assigned_displays)} displays for scene {scene.id}")
             
-            # Extract image information
+            # Extract image information and convert to URL
             image_info = image_response.get("image", {})
             distribution_mode = image_info.get("distribution_mode")
+            
+            # Convert image to publicly accessible URL
+            image_url = _convert_image_to_url(image_info)
+            if not image_url:
+                return {
+                    "displays_updated": 0,
+                    "errors": ["Unable to convert image to accessible URL"]
+                }
+            
+            logger.info(f"Generated image URL for distribution: {image_url}")
             
             # Only send commands if there's actually new content or scene assignments changed
             should_distribute = False
@@ -395,20 +450,6 @@ class SchedulerWorker:
                 should_distribute = True
                 logger.warning(f"Unknown distribution mode '{distribution_mode}', distributing to be safe")
             
-            if not should_distribute:
-                return {
-                    "displays_updated": 0,
-                    "errors": [],
-                    "message": "No distribution needed"
-                }
-            
-            # Check for image path only if we're going to distribute
-            image_path = image_info.get("image")
-            if not image_path:
-                return {
-                    "displays_updated": 0,
-                    "errors": ["No image path in channel response"]
-                }
             
             if distribution_mode == "new":
                 # New content available, should distribute
@@ -442,37 +483,32 @@ class SchedulerWorker:
                     "errors": [],
                     "message": "No distribution needed"
                 }
+            
+            if not should_distribute:
+                return {
+                    "displays_updated": 0,
+                    "errors": [],
+                    "message": "No distribution needed"
+                }
 
-            # Send commands to each display via MQTT
+            # Send display_image commands to each display via MQTT
             for display in assigned_displays:
                 try:
                     if mqtt_scene_service.is_connected():
                         device_id = display["hostname"] or display["id"]
-                        assignment_id = f"refresh-{uuid.uuid4().hex[:8]}"
+                        assignment_id = f"display-{uuid.uuid4().hex[:8]}"
                         
-                        # Check if display already has the correct scene assigned
-                        current_scene = display.get("current_scene_id")
-                        target_scene = str(scene.id)
-                        
-                        if current_scene == target_scene or current_scene == scene.id:
-                            # Display already has correct scene, send refresh command for new content
-                            logger.info(f"Sending refresh command to display {device_id} (new content available)")
-                            success = await mqtt_scene_service.refresh_device_content(
-                                device_id=device_id,
-                                assignment_id=assignment_id
-                            )
-                        else:
-                            # Display doesn't have correct scene, send assignment command
-                            logger.info(f"Assigning scene {target_scene} to display {device_id}")
-                            success = await mqtt_scene_service.assign_scene_to_device(
-                                device_id=device_id,
-                                scene_id=target_scene,
-                                assignment_id=assignment_id
-                            )
+                        # Send display_image command directly - this is the correct architecture
+                        logger.info(f"Sending display_image command to display {device_id}: {image_url}")
+                        success = await mqtt_scene_service.send_display_image(
+                            device_id=device_id,
+                            image_url=image_url,
+                            assignment_id=assignment_id
+                        )
                         
                         if success:
                             displays_updated += 1
-                            logger.info(f"Sent command to display {display['id']}")
+                            logger.info(f"Sent display_image command to display {display['id']}")
                         else:
                             errors.append(f"MQTT send failed for display {display['id']}")
                     else:
@@ -486,7 +522,7 @@ class SchedulerWorker:
             return {
                 "displays_updated": displays_updated,
                 "errors": errors,
-                "image_path": image_path
+                "image_url": image_url
             }
             
         except Exception as e:

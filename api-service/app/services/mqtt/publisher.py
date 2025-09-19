@@ -208,7 +208,8 @@ class MqttSceneAssignmentService:
         assignment_id: Optional[str] = None
     ) -> bool:
         """
-        Assign a scene to a device via MQTT.
+        Assign a scene to a device via MQTT. This sets the scene assignment but does not
+        send content. To display actual content, use send_display_image() with the image URL.
         
         Args:
             device_id: Target device identifier
@@ -244,6 +245,10 @@ class MqttSceneAssignmentService:
         """
         Send a refresh command to a device to trigger content update without scene reassignment.
         
+        DEPRECATED: This method sends a generic refresh command but doesn't include actual content.
+        The correct architecture is to use send_display_image() with the actual image URL instead.
+        The display client will acknowledge refresh commands but waits for display_image commands.
+        
         Args:
             device_id: Target device identifier
             assignment_id: Optional assignment tracking ID, auto-generated if not provided
@@ -261,6 +266,48 @@ class MqttSceneAssignmentService:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         
+        return await self.publish_command(device_id, payload, qos=1, retain=False)
+
+    async def send_display_image(
+        self,
+        device_id: str,
+        image_url: str,
+        assignment_id: Optional[str] = None,
+        image_width: Optional[int] = None,
+        image_height: Optional[int] = None
+    ) -> bool:
+        """
+        Send a display_image command to a device with the actual image URL.
+        This is the correct way to tell displays to show specific content.
+        
+        Args:
+            device_id: Target device identifier
+            image_url: Direct URL to the image to display
+            assignment_id: Optional assignment tracking ID, auto-generated if not provided
+            image_width: Optional image width hint
+            image_height: Optional image height hint
+            
+        Returns:
+            bool: True if message was published successfully
+        """
+        # Generate assignment_id if not provided
+        if assignment_id is None:
+            assignment_id = f"display-{uuid.uuid4().hex[:8]}"
+        
+        payload = {
+            "type": "display_image",
+            "image_url": image_url,
+            "assignment_id": assignment_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Add optional image dimensions if provided
+        if image_width is not None:
+            payload["image_width"] = image_width
+        if image_height is not None:
+            payload["image_height"] = image_height
+        
+        logger.info(f"Sending display_image command to {device_id}: {image_url}")
         return await self.publish_command(device_id, payload, qos=1, retain=False)
       
     async def unassign_scene_from_device(self, device_id: str) -> bool:
@@ -426,6 +473,48 @@ class MQTTSceneAssignmentPublisher:
             "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        return await self.publish_command(device_id, payload, qos=1, retain=False)
+
+    # Convenience helper: send display_image command with URL
+    async def display_image(
+        self,
+        device_id: str,
+        image_url: str,
+        assignment_id: Optional[str] = None,
+        image_width: Optional[int] = None,
+        image_height: Optional[int] = None
+    ) -> bool:
+        """
+        Send a display_image command to a device with the actual image URL.
+        This follows the simple display architecture where displays just render URLs.
+        
+        Args:
+            device_id: Target device identifier
+            image_url: Direct URL to the image to display
+            assignment_id: Optional assignment tracking ID, auto-generated if not provided
+            image_width: Optional image width hint
+            image_height: Optional image height hint
+            
+        Returns:
+            bool: True if message was published successfully
+        """
+        if assignment_id is None:
+            assignment_id = f"display-{uuid.uuid4().hex[:8]}"
+            
+        payload = {
+            "type": "display_image",
+            "image_url": image_url,
+            "assignment_id": assignment_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Add optional image dimensions if provided
+        if image_width is not None:
+            payload["image_width"] = image_width
+        if image_height is not None:
+            payload["image_height"] = image_height
+        
+        logger.info(f"Sending display_image command to {device_id}: {image_url}")
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
     # ---------- Worker / connection loop ----------
