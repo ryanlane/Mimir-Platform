@@ -38,6 +38,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SCHEDULER_TEMP_MAX_AGE_MINUTES", "SCHEDULER_TEMP_RETENTION_MIN"),
         description="Retention window for scheduler temp images (minutes).",
     )
+    # Directory for persisted display images & thumbnails (may be overridden for writable volume)
+    display_images_directory: str = Field(
+        "display_images",
+        validation_alias=AliasChoices("DISPLAY_IMAGES_DIR", "DISPLAY_IMAGES_DIRECTORY"),
+        description="Directory (absolute or relative). Relative paths are resolved under UPLOAD_DIR for persisted display scene images.",
+    )
     # Persisted display image retention (database rows + local copies)
     display_image_retention_enabled: bool = Field(
         True,

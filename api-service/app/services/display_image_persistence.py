@@ -17,6 +17,8 @@ import io
 import uuid
 import hashlib
 import logging
+import errno
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -33,14 +35,47 @@ logger = logging.getLogger(__name__)
 class DisplayImagePersistenceService:
     def __init__(self, db: Session, media_root: Optional[Path] = None):
         if media_root is None:
-            # Default under channels directory for now; could be configurable
             root = getattr(settings, "display_images_directory", "display_images")
-            media_root = Path(root).resolve()
+            media_root = Path(root)
+            if not media_root.is_absolute():
+                # Resolve relative directory under configured upload_dir root
+                try:
+                    upload_base = Path(getattr(settings, "upload_dir", ".")).resolve()
+                except Exception:  # noqa: BLE001
+                    upload_base = Path.cwd()
+                media_root = (upload_base / media_root).resolve()
         self.db = db
         self.media_root = media_root
         self.thumb_max_width = 240
         self.thumb_max_height = 180
-        self.media_root.mkdir(parents=True, exist_ok=True)
+        self.read_only_mode = False
+        try:
+            self.media_root.mkdir(parents=True, exist_ok=True)
+        except OSError as e:  # Handle read-only filesystems gracefully
+            if e.errno in (errno.EROFS, errno.EACCES, errno.EPERM):
+                # Fallback to temp dir (ephemeral) so GET routes don't 500.
+                fallback = Path(tempfile.gettempdir()) / "mimir_display_images"
+                try:
+                    fallback.mkdir(parents=True, exist_ok=True)
+                    logger.warning(
+                        "display.images.read_only root=%s errno=%s fallback=%s (metadata only mode)",
+                        self.media_root,
+                        e.errno,
+                        fallback,
+                    )
+                    self.media_root = fallback
+                    self.read_only_mode = True
+                except Exception as inner:  # noqa: BLE001
+                    # As a last resort keep read_only_mode True, disable local copy/thumbnail
+                    logger.error(
+                        "display.images.fallback_failed root=%s errno=%s err=%s (operating metadata-only)",
+                        self.media_root,
+                        e.errno,
+                        inner,
+                    )
+                    self.read_only_mode = True
+            else:
+                raise
 
     def store_distribution_image(
         self,
@@ -81,7 +116,7 @@ class DisplayImagePersistenceService:
             if public_base and image_url.startswith(public_base):
                 needs_download = False
 
-            if needs_download:
+            if needs_download and not self.read_only_mode:
                 resp = requests.get(image_url, timeout=15)
                 resp.raise_for_status()
                 binary = resp.content
@@ -133,6 +168,15 @@ class DisplayImagePersistenceService:
                         im.convert("RGB").save(thumb_path, "JPEG", quality=75, optimize=True)
                 except Exception as e:  # noqa: BLE001
                     logger.debug("persist.image thumb generation failed: %s", e)
+            elif needs_download and self.read_only_mode:
+                # We are in metadata-only mode: skip downloading to disk, but optionally hash
+                try:
+                    resp = requests.get(image_url, timeout=10)
+                    resp.raise_for_status()
+                    binary = resp.content
+                    sha256_hash = hashlib.sha256(binary).hexdigest()
+                except Exception:  # noqa: BLE001
+                    pass  # Non-fatal; continue storing reference
             else:
                 # We trust provided image_url; not downloading
                 logger.debug("persist.image skipping download (public base match)")
