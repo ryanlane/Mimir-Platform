@@ -38,12 +38,17 @@ const Dashboard = () => {
   // --- Normalization Helpers ----------------------------------------------
   const normalizeDisplay = useCallback((d) => {
     if (!d || typeof d !== 'object') return null;
+    // Some API responses wrap assigned_scene_id as an object { id, subchannel_id }
+    let assignedScene = d.assigned_scene_id || d.assignedSceneId || d.scene_id || null;
+    if (assignedScene && typeof assignedScene === 'object') {
+      assignedScene = assignedScene.id || assignedScene.scene_id || null;
+    }
     return {
       id: d.id || d.display_id || d.device_id || d.hostname || d.name,
       name: d.name || d.display_name || d.hostname || 'Unnamed',
       location: d.location || d.site || d.room || null,
       is_online: d.is_online !== undefined ? d.is_online : (d.online !== undefined ? d.online : true),
-      assigned_scene_id: d.assigned_scene_id || d.assignedSceneId || d.scene_id || null,
+      assigned_scene_id: assignedScene,
       assigned_scene_name: d.assigned_scene_name || d.assignedSceneName || d.scene_name || d.scene || null,
       last_seen: d.last_seen || d.lastSeen || null
     };
@@ -68,7 +73,10 @@ const Dashboard = () => {
       const MAX_LIMIT = 100; // Backend enforces le=100
       const resp = await api.getDisplays({ limit: MAX_LIMIT });
       // Possible shapes: { displays: [...] }, { data: [...] }, [...]
-      const raw = resp.data?.displays || resp.data?.items || (Array.isArray(resp.data) ? resp.data : []);
+      const raw = resp.data?.displays || resp.data?.data || resp.data?.items || (Array.isArray(resp.data) ? resp.data : []);
+      if (!raw || !raw.length) {
+        console.debug('[Dashboard] Displays fetch returned empty shape', resp.data);
+      }
       setDisplays(normalizeDisplayArray(raw));
     } catch (e) {
       console.error('Failed to load displays', e);
@@ -100,6 +108,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (currentState) {
       if (currentState.displays) setDisplays(normalizeDisplayArray(currentState.displays));
+      else if (currentState.displayClients) setDisplays(normalizeDisplayArray(currentState.displayClients));
       if (currentState.allScenes) setScenes(normalizeSceneArray(currentState.allScenes));
       setLoading(false);
     }
@@ -136,7 +145,10 @@ const Dashboard = () => {
   const unassignedDisplays = displays.filter(d => !d.assigned_scene_id && !d.assignedSceneId);
 
   const sceneDisplayCounts = scenes.reduce((acc, s) => {
-    const count = displaysWithScene.filter(d => (d.assigned_scene_id || d.assignedSceneId) === s.id).length;
+    const count = displaysWithScene.filter(d => {
+      const assigned = d.assigned_scene_id || d.assignedSceneId;
+      return assigned === s.id;
+    }).length;
     acc[s.id] = count; return acc;
   }, {});
 
