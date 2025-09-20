@@ -1,401 +1,196 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Monitor, Layers, Settings, Activity } from 'lucide-react';
+import { Monitor, Layers, Activity, Play } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
-import DistributionMonitor from '../../components/DistributionMonitor/DistributionMonitor';
-// import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import './Dashboard.css';
 
+// --- New Dashboard Concept -------------------------------------------------
+// 1. Summary bar (displays online/offline, active scenes, unassigned displays)
+// 2. Active Displays Grid (icon cards with status + scene + quick actions)
+// 3. Quick Scene Launcher (recent or all scenes with counts)
+// 4. Lightweight recent activity (last few scene changes) – optional
+// Channel status & verbose logging removed to reduce noise.
+
 const Dashboard = () => {
-  const [displayStatus, setDisplayStatus] = useState(null);
   const [displays, setDisplays] = useState([]);
   const [scenes, setScenes] = useState([]);
-  const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activityLog, setActivityLog] = useState([]);
+  const [activity, setActivity] = useState([]); // recent events
 
-  // Initialize WebSocket connection with automatic state sync on mount
   const { isConnected, currentState } = useEnsureFreshState();
 
-  // Listen to scene events for real-time activity updates
+  // WebSocket scene events update activity + optionally refresh displays
   useSceneEvents({
-    onActivated: (data) => {
-      console.log('🟢 Dashboard: Scene activated via WebSocket:', data);
-      // Update display status and add to activity log
-      const sceneId = data?.sceneId || data?.scene_id || data?.id;
-      const sceneName = data?.sceneName || data?.scene_name;
-      console.log('🔄 Dashboard: Current display status before update:', displayStatus);
-      console.log('🔄 Dashboard: Updating with scene ID:', sceneId);
-      setDisplayStatus(prev => {
-        const newStatus = prev ? { ...prev, currentScene: sceneId, currentSceneName: sceneName } : { currentScene: sceneId, currentSceneName: sceneName };
-        console.log('🔄 Dashboard: New display status after activation:', newStatus);
-        return newStatus;
-      });
-      addToActivityLog(`Scene "${sceneName || sceneId}" activated`);
-    },
-    onDeactivated: (data) => {
-      console.log('🔴 Dashboard: Scene deactivated via WebSocket:', data);
-      console.log('🔄 Dashboard: Current display status before deactivation:', displayStatus);
-      setDisplayStatus(prev => {
-        const newStatus = prev ? { ...prev, currentScene: null, currentSceneName: null } : null;
-        console.log('🔄 Dashboard: New display status after deactivation:', newStatus);
-        return newStatus;
-      });
-      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" deactivated`);
-    },
-    onDisplayed: (data) => {
-      console.log('Scene displayed via WebSocket:', data);
-      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" displayed`);
-    },
-    onCreated: (data) => {
-      console.log('Scene created via WebSocket:', data);
-      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" created`);
-      loadDashboardData(); // Refresh scenes list
-    },
-    onDeleted: (data) => {
-      console.log('Scene deleted via WebSocket:', data);
-      addToActivityLog(`Scene "${data.sceneName || data.sceneId}" deleted`);
-      loadDashboardData(); // Refresh scenes list
-    }
+    onActivated: (data) => recordActivity(`Scene "${data.sceneName || data.sceneId || data.id}" activated`),
+    onDisplayed: (data) => recordActivity(`Scene "${data.sceneName || data.sceneId}" displayed`),
+    onCreated: (data) => { recordActivity(`Scene "${data.sceneName || data.sceneId}" created`); refreshScenes(); },
+    onDeleted: (data) => { recordActivity(`Scene "${data.sceneName || data.sceneId}" deleted`); refreshScenes(); }
   });
 
-  const addToActivityLog = (message) => {
-    const newActivity = {
-      timestamp: new Date().toLocaleTimeString(),
-      message
-    };
-    setActivityLog(prev => [newActivity, ...prev.slice(0, 9)]); // Keep last 10 items
-  };
+  const recordActivity = (msg) => setActivity(prev => [{ ts: new Date(), msg }, ...prev].slice(0, 6));
 
+  const refreshDisplays = useCallback(async () => {
+    try {
+      const resp = await api.getDisplays({ limit: 100 });
+      const list = Array.isArray(resp.data) ? resp.data : [];
+      setDisplays(list);
+    } catch (e) {
+      console.error('Failed to load displays', e);
+    }
+  }, []);
+
+  const refreshScenes = useCallback(async () => {
+    try {
+      const resp = await api.getScenes({ limit: 50 });
+      setScenes(resp.data.scenes || []);
+    } catch (e) {
+      console.error('Failed to load scenes', e);
+    }
+  }, []);
+
+  // Initial load (fallback if websocket state not populated quickly)
   useEffect(() => {
-    // Wait a bit for WebSocket to potentially connect and provide state
-    const timer = setTimeout(() => {
-      if (!currentState && !isConnected) {
-        console.log('⏰ WebSocket not connected after timeout, loading via API as fallback');
-        loadDashboardData();
-      } else if (!currentState && isConnected) {
-        console.log('⏰ WebSocket connected but no state received, loading via API');
-        loadDashboardData();
-      } else {
-        console.log('✅ Using WebSocket state, but still loading displays via API');
-        // WebSocket doesn't provide displays, so we need to load them separately
-        loadDisplaysOnly();
-      }
-    }, 1000); // Give WebSocket 1 second to connect and send state
+    let timeout = setTimeout(() => {
+      refreshDisplays();
+      refreshScenes();
+      setLoading(false);
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [refreshDisplays, refreshScenes]);
 
-    return () => clearTimeout(timer);
-  }, [currentState, isConnected]);
-
-  // Handle full state received on connection
+  // If websocket provided displays/scenes in state
   useEffect(() => {
-    if (currentState?.displayStatus) {
-      console.log('🚀 Dashboard initializing from full state:', currentState.displayStatus);
-      setDisplayStatus(currentState.displayStatus);
-      setLoading(false); // Mark as loaded from WebSocket
-      
-      // Also update scenes if provided
-      if (currentState.allScenes) {
-        console.log('📋 Setting scenes from WebSocket:', currentState.allScenes);
-        setScenes(currentState.allScenes);
-      }
-      
-      // Update channels if provided
-      if (currentState.channels) {
-        console.log('🔌 Setting channels from WebSocket:', currentState.channels);
-        setChannels(currentState.channels);
-      }
-
-      // Update displays if provided
-      if (currentState.displays) {
-        console.log('📺 Setting displays from WebSocket:', currentState.displays);
-        setDisplays(currentState.displays);
-      }
-      
-      // Add activity log entry for connection
-      addToActivityLog('WebSocket connected with live state');
+    if (currentState) {
+      if (currentState.displays) setDisplays(currentState.displays);
+      if (currentState.allScenes) setScenes(currentState.allScenes);
+      setLoading(false);
     }
   }, [currentState]);
 
-  const loadDisplaysOnly = async () => {
-    try {
-      console.log('🔍 Dashboard: Loading displays only...');
-      const displaysResponse = await api.getDisplays({ limit: 10 });
-      console.log('🔍 Dashboard: Displays-only API response:', displaysResponse);
-      
-      const displaysData = Array.isArray(displaysResponse.data) ? displaysResponse.data : [];
-      console.log('🔍 Dashboard: Setting displays data:', displaysData);
-      setDisplays(displaysData);
-    } catch (error) {
-      console.error('❌ Error loading displays:', error);
-    }
-  };
+  // ---- Derived Metrics ----
+  const onlineDisplays = displays.filter(d => d.is_online !== false);
+  const offlineDisplays = displays.filter(d => d.is_online === false);
+  const displaysWithScene = displays.filter(d => d.assigned_scene_id || d.assignedSceneId);
+  const unassignedDisplays = displays.filter(d => !d.assigned_scene_id && !d.assignedSceneId);
 
-  const loadDashboardData = async () => {
-    try {
-      console.log('🔍 Dashboard: Starting API calls...');
-      
-      const [displayResponse, scenesResponse, channelsResponse, displaysResponse] = await Promise.all([
-        api.getDisplayStatus().catch(err => {
-          console.error('❌ getDisplayStatus failed:', err);
-          return { data: null };
-        }),
-        api.getScenes({ limit: 5 }).catch(err => {
-          console.error('❌ getScenes failed:', err);
-          return { data: { scenes: [] } };
-        }),
-        api.getChannels({ limit: 5 }).catch(err => {
-          console.error('❌ getChannels failed:', err);
-          return { data: { channels: [] } };
-        }),
-        api.getDisplays({ limit: 10 }).catch(err => {
-          console.error('❌ getDisplays failed:', err);
-          console.error('❌ getDisplays error details:', err.response || err.message || err);
-          return { data: [] };
-        })
-      ]);
-
-      console.log('🔍 Dashboard: API calls completed');
-      console.log('🔍 Dashboard: Raw displaysResponse:', displaysResponse);
-      console.log('🔍 Dashboard: displaysResponse.data:', displaysResponse.data);
-      
-      setDisplayStatus(displayResponse.data);
-      setScenes(scenesResponse.data.scenes || []);
-      setChannels(channelsResponse.data.channels || []);
-      
-      // Handle displays response - it should be an array directly in data
-      const displaysData = Array.isArray(displaysResponse.data) ? displaysResponse.data : [];
-      console.log('🔍 Dashboard: Processed displays data:', displaysData);
-      setDisplays(displaysData);
-    } catch (error) {
-      console.error('❌ Error loading dashboard data:', error);
-      console.error('❌ Error details:', error.response || error.message || error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const sceneDisplayCounts = scenes.reduce((acc, s) => {
+    const count = displaysWithScene.filter(d => (d.assigned_scene_id || d.assignedSceneId) === s.id).length;
+    acc[s.id] = count; return acc;
+  }, {});
 
   const handleDisplayScene = async (sceneId) => {
     try {
-      console.log(`📺 Dashboard: Displaying scene ${sceneId}`);
       await api.displayScene(sceneId);
-      console.log('📺 Dashboard: Display action completed');
-    } catch (error) {
-      console.error('Error displaying scene:', error);
+      recordActivity(`Display scene triggered: ${sceneId}`);
+      // small delay then refresh to reflect new assignments
+      setTimeout(refreshDisplays, 800);
+    } catch (e) {
+      console.error('Failed to display scene', e);
+      recordActivity(`Failed to display scene ${sceneId}`);
     }
   };
 
-  // Helper to count displays connected to a scene
-  const getDisplaysConnectedToScene = (sceneId) => {
-    return displays.filter(display => 
-      display.assigned_scene_id === sceneId || 
-      display.assignedSceneId === sceneId
-    ).length;
+  const DisplayCard = ({ d }) => {
+    const sceneName = d.assigned_scene_name || d.assignedSceneName;
+    return (
+      <div className={`display-card ${d.is_online !== false ? 'online' : 'offline'}`}>
+        <div className="display-card-header">
+          <Monitor size={18} />
+          <span className="name" title={d.name}>{d.name}</span>
+        </div>
+        <div className="display-card-body">
+          <div className="scene-line">
+            {sceneName ? <span className="scene-badge">{sceneName}</span> : <span className="scene-badge empty">Unassigned</span>}
+          </div>
+          <div className="meta">
+            <span className="loc" title={d.location || 'No location'}>{d.location || '—'}</span>
+            <span className={`status-dot ${d.is_online !== false ? 'up' : 'down'}`}></span>
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  // Helper to get connected displays that have scenes assigned
-  const getConnectedDisplays = () => {
-    console.log('🔍 Dashboard: getConnectedDisplays called');
-    console.log('🔍 Dashboard: displays array length:', displays.length);
-    console.log('🔍 Dashboard: displays array:', displays);
-    
-    const connectedDisplays = displays.filter(display => {
-      const hasScene = display.assigned_scene_id || display.assignedSceneId;
-      console.log(`🔍 Display ${display.name || display.id}: assigned_scene_id=${display.assigned_scene_id}, assignedSceneId=${display.assignedSceneId}, hasScene=${hasScene}`);
-      return hasScene;
-    });
-    
-    console.log('🔍 Dashboard: Connected displays with scenes:', connectedDisplays);
-    return connectedDisplays;
+  const QuickSceneList = () => {
+    if (!scenes.length) return <p className="text-tertiary">No scenes</p>;
+    return (
+      <div className="quick-scenes">
+        {scenes.slice(0, 10).map(s => (
+          <button key={s.id} className="scene-chip" onClick={() => handleDisplayScene(s.id)}>
+            <Layers size={14} />
+            <span className="label">{s.name}</span>
+            <span className="count">{sceneDisplayCounts[s.id] || 0}</span>
+          </button>
+        ))}
+        <Link to="/scenes" className="scene-chip secondary" title="Manage scenes">Manage…</Link>
+      </div>
+    );
   };
 
   if (loading) {
     return (
       <div className="loading">
-        <div className="loading-spinner"></div>
-        <span>Loading dashboard...</span>
+        <div className="loading-spinner" />
+        <span>Loading dashboard…</span>
       </div>
     );
   }
 
   return (
-    <div className="dashboard">
+    <div className="dashboard new-layout">
       <div className="dashboard-header">
         <h1>Dashboard</h1>
-        <p className="text-tertiary">
-          Monitor and control your Mimir display platform
-          {isConnected && <span className="connection-status"> • Live updates enabled</span>}
-        </p>
+        <p className="text-tertiary">Real-time overview of displays & scenes{isConnected && <span className="connection-status"> • Live</span>}</p>
+      </div>
+      {/* Summary Bar */}
+      <div className="summary-bar">
+        <div className="metric"><span className="metric-label">Displays</span><span className="metric-value">{displays.length}</span></div>
+        <div className="metric"><span className="metric-label">Online</span><span className="metric-value success">{onlineDisplays.length}</span></div>
+        <div className="metric"><span className="metric-label">Offline</span><span className="metric-value danger">{offlineDisplays.length}</span></div>
+        <div className="metric"><span className="metric-label">Scenes Active</span><span className="metric-value">{Object.values(sceneDisplayCounts).filter(c => c>0).length}</span></div>
+        <div className="metric"><span className="metric-label">Unassigned</span><span className="metric-value warning">{unassignedDisplays.length}</span></div>
       </div>
 
-      {/* WebSocket Status Component */}
-      {/* <WebSocketStatus /> */}
-
-      <div className="dashboard-grid">
-        {/* Display Status */}
-        <div className="dashboard-card">
-          <div className="card-header">
-            <div className="flex items-center gap-sm">
-              <Monitor size={20} />
-              <h3 className="card-title">
-                <Link to="/displays" className="display-status-header-link">
-                  Display Status
-                </Link>
-              </h3>
-            </div>
-          </div>
-          <div className="card-body">
-            {getConnectedDisplays().length > 0 ? (
-              <div className="displays-list">
-                {getConnectedDisplays().map((display) => (
-                  <div key={display.id} className="display-item">
-                    <div className="display-info">
-                      <h4>{display.name}</h4>
-                      <p className="text-tertiary">
-                        {display.location || 'No location set'}
-                      </p>
-                    </div>
-                    <div className="display-status">
-                      <div className="status-row">
-                        <span>Scene:</span>
-                        <span>{display.assigned_scene_name || display.assignedSceneName || 'None'}</span>
-                      </div>
-                      <div className="status-row">
-                        <span>Status:</span>
-                        <span className={`status-indicator ${display.is_online !== false ? 'status-success' : 'status-error'}`}>
-                          {display.is_online !== false ? 'Online' : 'Offline'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <p className="text-tertiary">No displays connected to scenes</p>
-                <Link to="/displays" className="btn btn-sm btn-primary">
-                  Manage Displays
-                </Link>
-              </div>
-            )}
-          </div>
+      {/* Active Displays Grid */}
+      <section className="panel">
+        <div className="panel-header">
+          <h3><Monitor size={18} /> Active Displays</h3>
+          <Link to="/displays" className="link-sm">View All</Link>
         </div>
-
-        {/* Recent Scenes */}
-        <div className="dashboard-card">
-          <div className="card-header">
-            <div className="flex items-center gap-sm">
-              <Layers size={20} />
-              <h3 className="card-title">Recent Scenes</h3>
-            </div>
-          </div>
-          <div className="card-body">
-            {scenes.length > 0 ? (
-              <div className="scenes-list">
-                {scenes.map((scene) => {
-                  const connectedDisplays = getDisplaysConnectedToScene(scene.id);
-                  return (
-                    <div key={scene.id} className="scene-item">
-                      <div className="scene-info">
-                        <h4>{scene.name}</h4>
-                        <p className="text-tertiary">
-                          {scene.channels?.length || 0} channels • {connectedDisplays} {connectedDisplays === 1 ? 'display' : 'displays'} connected
-                        </p>
-                      </div>
-                      <div className="scene-actions">
-                        <button 
-                          className="btn btn-sm btn-accent"
-                          onClick={() => handleDisplayScene(scene.id)}
-                        >
-                          Display
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-tertiary">No scenes available</p>
-            )}
-          </div>
+        <div className="display-grid">
+          {displays.length ? (
+            displays.map(d => <DisplayCard key={d.id} d={d} />)
+          ) : (
+            <div className="empty">No displays discovered</div>
+          )}
         </div>
+      </section>
 
-        {/* Channel Status */}
-        <div className="dashboard-card">
-          <div className="card-header">
-            <div className="flex items-center gap-sm">
-              <Settings size={20} />
-              <h3 className="card-title">Channel Status</h3>
-            </div>
-          </div>
-          <div className="card-body">
-            {channels.length > 0 ? (
-              <div className="channels-list">
-                {channels.map((channel) => (
-                  <div key={channel.id} className="channel-item">
-                    <div className="channel-info">
-                      <h4>{channel.name}</h4>
-                      <p className="text-tertiary">{channel.description}</p>
-                    </div>
-                    <div className="channel-status">
-                      <span className={`status-indicator ${
-                        channel.status?.usingFallback ? 'status-warning' : 'status-success'
-                      }`}>
-                        {channel.status?.usingFallback ? 'Fallback' : 'Active'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-tertiary">No channels available</p>
-            )}
-          </div>
+      {/* Quick Scene Launcher */}
+      <section className="panel">
+        <div className="panel-header">
+          <h3><Play size={18} /> Quick Scenes</h3>
         </div>
+        <QuickSceneList />
+      </section>
 
-        {/* System Activity */}
-        <div className="dashboard-card">
-          <div className="card-header">
-            <div className="flex items-center gap-sm">
-              <Activity size={20} />
-              <h3 className="card-title">System Activity</h3>
-            </div>
-          </div>
-          <div className="card-body">
-            <div className="activity-list">
-              <div className="activity-item">
-                <span className="activity-time">
-                  {new Date().toLocaleTimeString()}
-                </span>
-                <span>Dashboard loaded</span>
-              </div>
-              {activityLog.map((activity, index) => (
-                <div key={index} className="activity-item">
-                  <span className="activity-time">
-                    {activity.timestamp}
-                  </span>
-                  <span>{activity.message}</span>
-                </div>
-              ))}
-              {displayStatus?.currentScene && (
-                <div className="activity-item">
-                  <span className="activity-time">
-                    {displayStatus.currentImage?.uploadedAt ? 
-                      new Date(displayStatus.currentImage.uploadedAt).toLocaleTimeString() : 
-                      'Unknown'
-                    }
-                  </span>
-                  <span>Scene "{displayStatus.currentScene}" displayed</span>
-                </div>
-              )}
-            </div>
-          </div>
+      {/* Recent Activity */}
+      <section className="panel activity-panel">
+        <div className="panel-header">
+          <h3><Activity size={18} /> Recent Activity</h3>
         </div>
+        <ul className="activity-feed">
+          {activity.length ? activity.map((a,i) => (
+            <li key={i}><span className="ts">{a.ts.toLocaleTimeString()}</span> {a.msg}</li>
+          )) : <li className="empty">No recent events</li>}
+        </ul>
+      </section>
 
-        {/* Distribution Monitoring */}
-        <div className="dashboard-card">
-          <DistributionMonitor compact={true} />
-        </div>
+      {/* Footer small status */}
+      <div className="dashboard-footer">
+        <span className={`conn-dot ${isConnected ? 'up' : 'down'}`}></span>
+        {isConnected ? 'WebSocket connected' : 'Live connection unavailable'}
       </div>
     </div>
   );
