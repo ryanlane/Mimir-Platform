@@ -1,5 +1,5 @@
 // Display Card component for individual display clients
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, Eye, RotateCcw, Image, Play } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -9,10 +9,47 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
   const [imageError, setImageError] = useState(false);
   const [thumbLoading, setThumbLoading] = useState(false);
   const [thumbError, setThumbError] = useState(false);
+  const [persisted, setPersisted] = useState({ loading: false, error: null, thumb: null, image: null });
 
-  const thumbnailUrl = display.current_image_url
+  // Fetch persisted last-image (per display+scene) if a scene is assigned
+  useEffect(() => {
+    let cancelled = false;
+    // Some display objects may carry complex assigned_scene_id structure; normalize to primitive
+    const assignedSceneId = typeof display.assigned_scene_id === 'object' && display.assigned_scene_id?.id
+      ? display.assigned_scene_id.id
+      : display.assigned_scene_id;
+    if (!assignedSceneId) {
+      setPersisted(p => ({ ...p, thumb: null, image: null }));
+      return () => { cancelled = true; };
+    }
+    setPersisted(p => ({ ...p, loading: true, error: null }));
+    api.getPersistedLastImage(display.id, assignedSceneId)
+      .then(resp => {
+        if (cancelled) return;
+        const data = resp?.data || {};
+        setPersisted({
+          loading: false,
+          error: null,
+          thumb: data.thumbnail_url || data.image_url || null,
+          image: data.image_url || null,
+        });
+      })
+      .catch(err => {
+        if (cancelled) return;
+        // 404 simply means no persisted record yet; treat silently
+        if (err?.response?.status === 404) {
+          setPersisted(p => ({ ...p, loading: false }));
+        } else {
+            setPersisted(p => ({ ...p, loading: false, error: err?.message || 'persisted fetch failed' }));
+        }
+      });
+    return () => { cancelled = true; };
+  }, [display.id, display.assigned_scene_id]);
+
+  const fallbackThumb = display.current_image_url
     ? `${api.getDisplayImageUrl(display.id)}?thumb=1&ts=${Date.now()}`
     : null;
+  const thumbnailUrl = persisted.thumb || fallbackThumb;
 
   const handleRefreshImage = async () => {
     setImageLoading(true);
@@ -87,7 +124,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
 
         {/* Inline Thumbnail */}
         <div className="display-thumbnail-wrapper">
-          {display.current_image_url ? (
+          {thumbnailUrl ? (
             <div
               className={`display-thumbnail ${thumbLoading ? 'loading' : ''} ${thumbError ? 'error' : ''} ${!display.is_online ? 'offline' : ''}`}
               onClick={() => {
@@ -125,6 +162,9 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
                 <div className="thumb-placeholder">No Image</div>
               )}
               <div className="reload-hint">View</div>
+              {persisted.thumb && !thumbError && (
+                <div className="thumb-badge" title="Persisted thumbnail">P</div>
+              )}
             </div>
           ) : (
             <div className={`display-thumbnail ${!display.is_online ? 'offline' : ''}`}>
@@ -204,7 +244,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
           )}
         </div>
 
-        {display.current_image_url && (
+        {(thumbnailUrl || display.current_image_url) && (
           <div className="display-image-section">
             <div className="image-info">
               <div className="image-status">
@@ -260,7 +300,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
             </div>
             <div className="modal-body">
               <img
-                src={api.getDisplayImageUrl(display.id)}
+                src={persisted.image || api.getDisplayImageUrl(display.id)}
                 alt={`Current display for ${display.name}`}
                 onError={() => setImageError(true)}
                 style={{
@@ -281,7 +321,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
                 Close
               </button>
               <a 
-                href={api.getDisplayImageUrl(display.id)}
+                href={persisted.image || api.getDisplayImageUrl(display.id)}
                 download={`display-${display.name}-current.jpg`}
                 className="btn btn-primary"
               >
