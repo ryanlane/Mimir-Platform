@@ -1,12 +1,18 @@
 // Display Card component for individual display clients
 import React, { useState } from 'react';
-import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, Settings, Eye, Trash2, RotateCcw, Image, Play } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, Eye, RotateCcw, Image, Play } from 'lucide-react';
 import { api } from '../../services/api';
 
 const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) => {
   const [imageLoading, setImageLoading] = useState(false);
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [thumbLoading, setThumbLoading] = useState(false);
+  const [thumbError, setThumbError] = useState(false);
+
+  const thumbnailUrl = display.current_image_url
+    ? `${api.getDisplayImageUrl(display.id)}?thumb=1&ts=${Date.now()}`
+    : null;
 
   const handleRefreshImage = async () => {
     setImageLoading(true);
@@ -77,6 +83,54 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
           <div className="display-actions">
             
           </div>
+        </div>
+
+        {/* Inline Thumbnail */}
+        <div className="display-thumbnail-wrapper">
+          {display.current_image_url ? (
+            <div
+              className={`display-thumbnail ${thumbLoading ? 'loading' : ''} ${thumbError ? 'error' : ''} ${!display.is_online ? 'offline' : ''}`}
+              onClick={() => {
+                if (!thumbError) {
+                  setShowImagePreview(true);
+                }
+              }}
+              title={thumbError ? 'Image failed to load' : 'Click to view current image'}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  if (!thumbError) setShowImagePreview(true);
+                }
+              }}
+            >
+              {thumbnailUrl && (
+                <img
+                  src={thumbnailUrl}
+                  alt={`Thumbnail for ${display.name}`}
+                  loading="lazy"
+                  onLoad={() => setThumbLoading(false)}
+                  onError={() => {
+                    setThumbLoading(false);
+                    setThumbError(true);
+                  }}
+                  style={{ display: thumbError ? 'none' : 'block' }}
+                />
+              )}
+              {thumbError && (
+                <div className="thumb-placeholder">Image Error</div>
+              )}
+              {!thumbnailUrl && (
+                <div className="thumb-placeholder">No Image</div>
+              )}
+              <div className="reload-hint">View</div>
+            </div>
+          ) : (
+            <div className={`display-thumbnail ${!display.is_online ? 'offline' : ''}`}>
+              <div className="thumb-placeholder">No Image</div>
+            </div>
+          )}
         </div>
 
         <div className="display-details">
