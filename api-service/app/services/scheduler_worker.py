@@ -32,6 +32,8 @@ from ..services.mqtt.publisher import mqtt_scene_service
 from ..services.plugin_discovery import plugin_discovery_service
 from ..config import settings
 from ..services.display_last_image import display_last_image_store
+from ..db.base import SessionLocal as _PersistenceSessionLocal
+from ..services.display_image_persistence import DisplayImagePersistenceService
 
 logger = logging.getLogger(__name__)
 
@@ -629,6 +631,24 @@ class SchedulerWorker:
                                         scene_id=str(scene.id),
                                         subchannel_id=subchannel_id,
                                     )
+                                    # Persist record (best effort)
+                                    try:
+                                        with _PersistenceSessionLocal() as p_db:
+                                            persistence = DisplayImagePersistenceService(p_db)
+                                            persistence.store_distribution_image(
+                                                display_id=device_id,
+                                                scene_id=str(scene.id),
+                                                subchannel_id=subchannel_id,
+                                                assignment_id=assignment_id,
+                                                image_url=image_url,
+                                                width=w,
+                                                height=h,
+                                                image_format=None,
+                                                source="distribution",
+                                                retain_history=True,
+                                            )
+                                    except Exception as perr:  # noqa: BLE001
+                                        logger.warning("persist.image failure device=%s err=%s", device_id, perr)
                                 else:
                                     all_errors.append(
                                         f"MQTT send failed device={device_id} group={w}x{h}/{orientation}"
@@ -636,9 +656,7 @@ class SchedulerWorker:
                             else:
                                 all_errors.append("MQTT not connected")
                         except Exception as e:  # noqa: BLE001
-                            all_errors.append(
-                                f"Error sending to device {device_id}: {e}"
-                            )
+                            all_errors.append(f"Error sending to device {device_id}: {e}")
 
                 return {
                     "scene_id": assignment.scene_id,
@@ -908,6 +926,24 @@ class SchedulerWorker:
                                 scene_id=str(scene.id),
                                 subchannel_id=scene.channels[0].get("subchannel_id") if scene.channels else None,
                             )
+                            # Persist record
+                            try:
+                                with _PersistenceSessionLocal() as p_db:
+                                    persistence = DisplayImagePersistenceService(p_db)
+                                    persistence.store_distribution_image(
+                                        display_id=device_id,
+                                        scene_id=str(scene.id),
+                                        subchannel_id=scene.channels[0].get("subchannel_id") if scene.channels else None,
+                                        assignment_id=assignment_id,
+                                        image_url=image_url,
+                                        width=None,
+                                        height=None,
+                                        image_format=None,
+                                        source="distribution",
+                                        retain_history=True,
+                                    )
+                            except Exception as perr:  # noqa: BLE001
+                                logger.warning("persist.image failure device=%s err=%s", device_id, perr)
                         else:
                             errors.append(f"MQTT send failed for display {display['id']}")
                     else:

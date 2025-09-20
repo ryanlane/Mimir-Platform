@@ -324,6 +324,44 @@ class SchedulerExecution(Base):
     )
 
 
+class DisplaySceneImage(Base):
+    """Persistent record of last (and historical) images distributed per display and scene.
+
+    This supports the admin UI showing thumbnails even after process restarts.
+    Retention policy can prune older rows per (display_id, scene_id, subchannel_id).
+    """
+    __tablename__ = "display_scene_images"
+
+    id = Column(String, primary_key=True, index=True)  # UUID
+    display_id = Column(String, nullable=False, index=True)
+    scene_id = Column(String, nullable=False, index=True)
+    subchannel_id = Column(String, nullable=True, index=True)
+    assignment_id = Column(String, nullable=False, index=True)
+
+    # Original image URL (as distributed to display)
+    image_url = Column(String, nullable=False)
+    # Local stored copy path (relative or absolute) if we fetch/persist binary
+    stored_local_path = Column(String, nullable=True)
+    # Optional derivative thumbnail path
+    thumbnail_path = Column(String, nullable=True)
+
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    format = Column(String, nullable=True)
+    hash = Column(String, nullable=True, index=True)  # content hash for dedupe
+
+    source = Column(String, nullable=False, default="distribution", index=True)  # distribution|manual|channel
+
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+
+    __table_args__ = (
+        Index('ix_display_scene_images_display_scene', 'display_id', 'scene_id'),
+        Index('ix_display_scene_images_scene_created', 'scene_id', 'created_at'),
+        Index('ix_display_scene_images_display_created', 'display_id', 'created_at'),
+    )
+
+
 # TODO: Add proper foreign key relationships in a future migration
 # class Scene(Base):
 #     display_clients = relationship("DisplayClient", back_populates="assigned_scene")
