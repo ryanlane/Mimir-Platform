@@ -5,7 +5,7 @@ Handles both registered displays (database) and discovered displays (in-memory)
 """
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, cast, Integer
 from datetime import datetime
 import uuid
 
@@ -227,18 +227,25 @@ class DisplaySceneService:
         """Get all scenes with their display assignment counts"""
         
         # Query scenes with display counts using a subquery
-        scene_display_counts = self.db.query(
-            Scene.id,
-            Scene.name,
-            Scene.is_active,
-            Scene.distribution_mode,
-            Scene.created_at,
-            Scene.updated_at,
-            func.count(DisplayClient.id).label('display_count'),
-            func.sum(func.cast(DisplayClient.is_online, 'integer')).label('online_count')
-        ).outerjoin(
-            DisplayClient, Scene.id == DisplayClient.assigned_scene_id
-        ).group_by(Scene.id).all()
+        # NOTE: Previous implementation used func.cast(..., 'integer') which passed a plain string
+        # type name. Some SQLAlchemy versions attempt to access internal attributes on the type
+        # object (e.g. _isnull) leading to AttributeError when given a raw string. Use the
+        # sqlalchemy.cast helper with Integer type instead for portable numeric aggregation.
+        scene_display_counts = (
+            self.db.query(
+                Scene.id,
+                Scene.name,
+                Scene.is_active,
+                Scene.distribution_mode,
+                Scene.created_at,
+                Scene.updated_at,
+                func.count(DisplayClient.id).label('display_count'),
+                func.coalesce(func.sum(cast(DisplayClient.is_online, Integer)), 0).label('online_count'),
+            )
+            .outerjoin(DisplayClient, Scene.id == DisplayClient.assigned_scene_id)
+            .group_by(Scene.id)
+            .all()
+        )
         
         scenes_with_stats = []
         for result in scene_display_counts:
