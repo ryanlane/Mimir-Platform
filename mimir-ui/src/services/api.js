@@ -355,6 +355,14 @@ export const api = {
   getDiscoveredDisplays: () => apiClient.get('/displays/discover'),
   getDisplayImage: (displayId, headers = {}) => apiClient.get(`/displays/${displayId}/current-image`, { headers }),
   getDisplayImageFile: (displayId) => apiClient.get(`/displays/${displayId}/current_image_file`, { responseType: 'blob' }),
+  // Persisted last-image endpoints (v2.5 persistence layer)
+  getPersistedLastImage: (displayId, sceneId, subchannelId = null) => {
+    const params = {};
+    if (subchannelId) params.subchannel_id = subchannelId;
+    return apiClient.get(`/displays/${encodeURIComponent(displayId)}/scenes/${encodeURIComponent(sceneId)}/last-image`, { params });
+  },
+  getPersistedLastImagesForDisplay: (displayId, limitPerScene = 1) =>
+    apiClient.get(`/displays/${encodeURIComponent(displayId)}/last-images`, { params: { limit_per_scene: limitPerScene } }),
   // Enhanced display image polling with ETag support
   pollDisplayImage: async (displayId, currentETag = null) => {
     const headers = {};
