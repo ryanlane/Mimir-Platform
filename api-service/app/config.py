@@ -1,10 +1,18 @@
 # app/config.py
 from __future__ import annotations
 
-from pydantic import Field, AliasChoices, field_validator
+from pydantic import Field, AliasChoices, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    """Application configuration loaded from environment variables.
+
+    Notes:
+        - `cors_origins_raw` is kept as a raw string to avoid pydantic's early JSON parsing.
+        - `cors_origins` is derived in a model-level validator so we can reliably
+          inspect the already-normalized raw value regardless of field ordering.
+    """
+
     model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
 
     # --- Database ---
@@ -88,25 +96,56 @@ class Settings(BaseSettings):
 
     # --- Security / CORS ---
     secret_key: str = Field("change-me", validation_alias=AliasChoices("SECRET_KEY","JWT_SECRET","APP_SECRET"))
-    cors_origins: list[str] = Field(default_factory=list, validation_alias=AliasChoices("CORS_ORIGINS","CORS_ALLOW_ORIGINS"))
+    # Raw CORS env value (string) to avoid early pydantic JSON coercion issues
+    cors_origins_raw: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORS_ORIGINS", "CORS_ALLOW_ORIGINS"),
+        description="Raw CORS origins environment value (JSON array or comma-separated).",
+    )
+    # Final parsed list (intentionally given a dummy alias so env var CORS_ORIGINS maps ONLY to cors_origins_raw)
+    # Without this, pydantic_settings will also try to feed the raw env value into this list field
+    # (because the field name uppercases to CORS_ORIGINS) and attempt JSON decoding before our model validator runs.
+    cors_origins: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("_CORS_ORIGINS_DERIVED_DO_NOT_SET"),
+    )
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins_raw", mode="before")
     @classmethod
-    def _parse_cors(cls, v):
-        # Accept list, JSON, or comma-separated string
-        if v is None or v == "":
-            return []
-        if isinstance(v, (list, tuple)):
-            return list(v)
+    def _normalize_cors_raw(cls, v):
+        # Accept empty string as None; leave other values untouched for later parsing
+        if v is None:
+            return None
         s = str(v).strip()
+        return s or None
+
+    @model_validator(mode="after")
+    def _finalize_cors(self):
+        """Populate `cors_origins` from `cors_origins_raw`.
+
+        Accepts either a JSON array (e.g. '["https://a","https://b"])' or a
+        simple comma-separated list (e.g. 'https://a, https://b'). Whitespace and
+        empty segments are stripped. Malformed JSON falls back to comma parsing.
+        """
+        raw = self.cors_origins_raw
+        if not raw:
+            self.cors_origins = []
+            return self
+        s = raw.strip()
+        # JSON array path
         if s.startswith("["):
-            # JSON-like list
             import json
             try:
-                return json.loads(s)
-            except Exception:
-                pass
-        return [item.strip() for item in s.split(",") if item.strip()]
+                loaded = json.loads(s)
+            except json.JSONDecodeError:
+                loaded = None
+            else:
+                if isinstance(loaded, list):
+                    self.cors_origins = [str(item).strip() for item in loaded if str(item).strip()]
+                    return self
+        # Comma-separated fallback
+        self.cors_origins = [part.strip() for part in s.split(",") if part.strip()]
+        return self
 
     # --- Logging ---
     log_level: str = Field("INFO", validation_alias=AliasChoices("LOG_LEVEL", "UVICORN_LOG_LEVEL"))
@@ -179,7 +218,7 @@ class Settings(BaseSettings):
                 return False
             try:
                 infos = socket.getaddrinfo(candidate, None)
-            except Exception:
+            except OSError:
                 return False
             for _family, _type, _proto, _canon, sockaddr in infos:
                 ip = sockaddr[0]
@@ -214,7 +253,7 @@ class Settings(BaseSettings):
                 s.connect(("8.8.8.8", 80))  # any public IP works; no packets sent until write
                 ip = s.getsockname()[0]
                 s.close()
-            except Exception:
+            except OSError:
                 pass
             chosen_host = ip or "127.0.0.1"
 

@@ -422,6 +422,44 @@ async def test_persist_display_image(body: TestPersistRequest, db: Session = Dep
         raise HTTPException(status_code=500, detail=f"Persist failed: {e}")
 
 
+@admin_router.get("/db/info")
+async def get_db_info():
+    """Return active database configuration & file presence (SQLite diagnostics)."""
+    from app.config import settings as cfg
+    import os, pathlib, sqlite3
+    url = cfg.database_url
+    resolved_path = None
+    size = None
+    tables = []
+    if url.startswith("sqlite"):
+        # Extract path after last ':' and slashes handling
+        # Variants: sqlite:///relative.db  sqlite:////absolute/path.db
+        raw = url.split('sqlite:///', 1)[-1]
+        # If starts with '/', it's absolute
+        if raw.startswith('/'):
+            resolved_path = raw
+        else:
+            resolved_path = str(pathlib.Path(raw).resolve())
+        if os.path.exists(resolved_path):
+            size = os.path.getsize(resolved_path)
+            try:
+                conn = sqlite3.connect(resolved_path)
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = [r[0] for r in cur.fetchall()]
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+    return {
+        "database_url": url,
+        "resolved_path": resolved_path,
+        "file_exists": bool(resolved_path and os.path.exists(resolved_path)),
+        "file_size": size,
+        "has_display_scene_images": "display_scene_images" in tables,
+        "tables_sample": tables[:15],
+    }
+
+
 @admin_router.get("/display-images/status")
 async def get_display_images_status(db: Session = Depends(get_db)):
     """Return operational status of the persisted display images feature.
