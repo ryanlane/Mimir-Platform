@@ -94,8 +94,9 @@ const ChannelSettings = ({ channel, onClose }) => {
   useEffect(() => {
     const loadManagementComponent = async (configData) => {
       try {
-        // Find management component from manifest UI structure
-        const managementModuleUrl = configData?.ui?.components?.manager;
+  // Determine the management module + target custom element explicitly from manifest
+  const managementModuleUrl = configData?.ui?.components?.manager;
+  const manifestElementName = configData?.ui?.elements?.manager || null;
         
         if (managementModuleUrl) {
           // Construct full URL for the module
@@ -110,15 +111,14 @@ const ChannelSettings = ({ channel, onClose }) => {
           
           console.log(`Loading Management Component from ${fullModuleUrl}`);
           
-          // Check if component is already loaded (check multiple possible names)
-          const possibleNames = [
-            'x-spotify-status-manager',
-            'spotify-status-manager',
-            // legacy / other channel managers
-            'x-photo-frame-manager',
-            'photo-frame-manager'
-          ];
-          const alreadyRegistered = possibleNames.some(name => customElements.get(name));
+          // Choose the expected element strictly for THIS channel to prevent cross-channel collisions
+          const expectedElement = manifestElementName || (channel.id === 'com.spotify.status'
+            ? 'x-spotify-status-manager'
+            : channel.id === 'com.epaperframe.photoframe'
+              ? 'x-photo-frame-manager'
+              : 'x-spotify-status-manager'); // fallback if unknown
+
+          const alreadyRegistered = !!customElements.get(expectedElement);
           
           if (!alreadyRegistered) {
             // Set global API configuration for the Web Component
@@ -197,9 +197,8 @@ const ChannelSettings = ({ channel, onClose }) => {
           }
           
           // Determine which element name is actually registered
-          const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-spotify-status-manager';
-          
-          return { element: registeredName, moduleUrl: managementModuleUrl };
+          const finalElement = customElements.get(expectedElement) ? expectedElement : expectedElement; // explicit
+          return { element: finalElement, moduleUrl: managementModuleUrl };
         } else {
           console.log(`No management component found for ${channel.id}`);
           return null;
@@ -256,20 +255,13 @@ const ChannelSettings = ({ channel, onClose }) => {
     if (!config?.ui?.components?.manager) return null;
 
     // Dynamically detect which element name is registered
-    const possibleNames = [
-      'x-spotify-status-manager',
-      'spotify-status-manager',
-      'x-photo-frame-manager',
-      'photo-frame-manager'
-    ];
-    const registeredName = possibleNames.find(name => customElements.get(name)) || 'x-spotify-status-manager';
-
-    // Allow manifest to explicitly define element names (e.g., ui.elements.manager)
-  const manifestElementName = (config.ui.elements && config.ui.elements.manager) || null;
-    const managementComponent = {
-      element: manifestElementName || registeredName,
-      moduleUrl: config.ui.components.manager
-    };
+    const manifestElementName = (config.ui?.elements && config.ui.elements.manager) || null;
+    const expectedElement = manifestElementName || (channel.id === 'com.spotify.status'
+      ? 'x-spotify-status-manager'
+      : channel.id === 'com.epaperframe.photoframe'
+        ? 'x-photo-frame-manager'
+        : 'x-spotify-status-manager');
+    const managementComponent = { element: expectedElement, moduleUrl: config.ui.components.manager };
     
     if (!managementComponent) return null;
 
