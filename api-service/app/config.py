@@ -38,6 +38,31 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SCHEDULER_TEMP_MAX_AGE_MINUTES", "SCHEDULER_TEMP_RETENTION_MIN"),
         description="Retention window for scheduler temp images (minutes).",
     )
+    # Persisted display image retention (database rows + local copies)
+    display_image_retention_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices(
+            "DISPLAY_IMAGE_RETENTION_ENABLED",
+            "DISPLAY_LAST_IMAGE_RETENTION_ENABLED",
+        ),
+        description="Enable periodic pruning of persisted display scene images",
+    )
+    display_image_retention_max_per_pair: int = Field(
+        10,
+        validation_alias=AliasChoices(
+            "DISPLAY_IMAGE_RETENTION_MAX_PER_PAIR",
+            "DISPLAY_LAST_IMAGE_MAX_PER_PAIR",
+        ),
+        description="Max persisted rows to keep per (display, scene, subchannel) pair.",
+    )
+    display_image_retention_interval_seconds: int = Field(
+        600,
+        validation_alias=AliasChoices(
+            "DISPLAY_IMAGE_RETENTION_INTERVAL_SECONDS",
+            "DISPLAY_LAST_IMAGE_RETENTION_INTERVAL_SECONDS",
+        ),
+        description="Interval between retention prune passes (seconds).",
+    )
     api_prefix: str = Field("/api", validation_alias="API_PREFIX")
     api_host: str = Field("0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(5000, validation_alias="API_PORT")

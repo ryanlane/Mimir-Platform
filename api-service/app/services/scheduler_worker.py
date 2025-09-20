@@ -218,6 +218,8 @@ class SchedulerWorker:
         # Cleanup bookkeeping
         self._last_cleanup_monotonic: float = 0.0
         self._cleanup_interval_seconds: int = 300  # run cleanup at most every 5 minutes
+        # Persisted image retention bookkeeping
+        self._last_image_retention_monotonic: float = 0.0
         
     async def start(self):
         """Start the scheduler worker"""
@@ -252,6 +254,7 @@ class SchedulerWorker:
             # unhandled error does not terminate the scheduler background task.
             try:
                 self._maybe_cleanup_temp_images()  # best-effort
+                self._maybe_prune_persisted_images()  # best-effort DB pruning
                 await self._process_due_jobs()
             except (OSError, TimeoutError) as e:
                 logger.error("Scheduler worker loop transient error: %s", e, exc_info=True)
@@ -465,6 +468,39 @@ class SchedulerWorker:
                     "max_age_min": max_age_min,
                 },
             )
+    
+    def _maybe_prune_persisted_images(self) -> None:
+        """Prune persisted display scene images according to retention settings.
+
+        Uses simple per-(display,scene,subchannel) cap implemented in service layer.
+        Runs at most every settings.display_image_retention_interval_seconds.
+        """
+        if not getattr(settings, "display_image_retention_enabled", True):
+            return
+        interval = getattr(settings, "display_image_retention_interval_seconds", 600)
+        now_mono = time.monotonic()
+        if now_mono - self._last_image_retention_monotonic < interval:
+            return
+        self._last_image_retention_monotonic = now_mono
+
+        max_per_pair = getattr(settings, "display_image_retention_max_per_pair", 10)
+        if max_per_pair <= 0:
+            return
+
+        try:
+            with _PersistenceSessionLocal() as db:
+                svc = DisplayImagePersistenceService(db)
+                deleted = svc.prune_retention(max_per_pair=max_per_pair)
+                if deleted:
+                    logger.info(
+                        "persist.images.retention pruned=%d max_per_pair=%d", deleted, max_per_pair
+                    )
+                else:
+                    logger.debug(
+                        "persist.images.retention nothing_to_prune max_per_pair=%d", max_per_pair
+                    )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("persist.images.retention.error err=%s", e)
     
     async def _execute_refresh_scene(self, job: SchedulerJob, scheduler_service: SchedulerService) -> Dict[str, Any]:
         """Execute a refresh_scene action"""
