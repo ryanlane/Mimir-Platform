@@ -81,8 +81,14 @@ export const api = {
   updateScene: (sceneId, sceneData) => apiClient.put(`/scenes/${sceneId}`, sceneData),
   deleteScene: (sceneId) => apiClient.delete(`/scenes/${sceneId}`),
   activateScene: (sceneId) => apiClient.post(`/scenes/${sceneId}/activate`),
-  deactivateScene: (sceneId) => apiClient.post(`/scenes/${sceneId}/deactivate`),
-  displayScene: (sceneId) => apiClient.post(`/scenes/${sceneId}/display`),
+  // NOTE: deactivateScene / displayScene endpoints do not exist in current API.
+  // Provide graceful fallbacks so existing callers don't break.
+  deactivateScene: (sceneId) => {
+    console.warn('deactivateScene endpoint not implemented on server; no-op');
+    return Promise.resolve({ data: { message: 'deactivate not implemented' } });
+  },
+  // Treat displayScene as activateScene for now (legacy alias in UI code)
+  displayScene: (sceneId) => apiClient.post(`/scenes/${sceneId}/activate`),
 
   // Channels with caching
   getChannels: async (params = {}) => {
@@ -156,10 +162,7 @@ export const api = {
   
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
-  requestChannelImage: (channelId, requestData, subchannelId = null) => {
-    const params = subchannelId ? { subchannel_id: subchannelId } : {};
-    return apiClient.post(`/channels/${channelId}/image_request`, requestData, { params });
-  },
+  requestChannelImage: (channelId, requestData) => apiClient.post(`/channels/${channelId}/request_image`, requestData || {}),
 
   // Sub-Channels (NEW) with Performance Caching
   getSubChannelConfig: async (channelId, includeSubchannels = false) => {
@@ -282,9 +285,16 @@ export const api = {
 
   // v2.1 Channel System (Updated for embedded plugin architecture)
   // Note: /channels/manifest endpoint doesn't exist - use individual channel manifests
-  testChannel: (channelId) => apiClient.post(`/channels/${channelId}/test`),
+  // Unsupported / legacy channel endpoints retained as safe warnings
+  testChannel: (channelId) => {
+    console.warn('testChannel endpoint not implemented for embedded plugins');
+    return Promise.resolve({ data: { message: 'testChannel not implemented' } });
+  },
   getChannelHealth: (channelId) => apiClient.get(`/channels/${channelId}/health`),
-  getChannelToken: (channelId) => apiClient.get(`/channels/${channelId}/token`),
+  getChannelToken: (channelId) => {
+    console.warn('getChannelToken endpoint not implemented');
+    return Promise.resolve({ data: { token: null } });
+  },
 
   // v2.1 WebSocket Status
   getWebSocketStatus: () => apiClient.get('/websocket/status'),
@@ -379,7 +389,7 @@ export const api = {
   getDisplayImageUrl: (displayId) => `${getApiBaseUrl()}/displays/${displayId}/current_image_file`,
 
   // v2.4: Admin Operations
-  reloadChannels: () => apiClient.post('/admin/reload-channels'),
+  reloadChannels: () => apiClient.post('/admin/channels/reload'),
   getOrphanedChannels: () => apiClient.get('/admin/channels/orphaned'),
   removeChannelFromDatabase: (channelId) => apiClient.delete(`/admin/channels/${channelId}`),
   resetChannelsDatabase: () => apiClient.post('/admin/channels/reset'),
@@ -402,6 +412,17 @@ export const api = {
   },
   getRedisStatus: () => apiClient.get('/admin/redis/status'),
   cleanupRedis: () => apiClient.post('/admin/redis/cleanup'),
+
+  // Overlays (newly wired to backend overlays router)
+  listOverlays: (params = {}) => apiClient.get('/overlays', { params }),
+  getOverlay: (overlayId) => apiClient.get(`/overlays/${overlayId}`),
+  createOverlay: (overlay) => apiClient.post('/overlays', overlay),
+  updateOverlay: (overlayId, data) => apiClient.put(`/overlays/${overlayId}`, data),
+  deleteOverlay: (overlayId) => apiClient.delete(`/overlays/${overlayId}`),
+
+  // Health & metrics helpers
+  getHealth: () => apiClient.get('/health'),
+  getPrometheusMetrics: () => apiClient.get('/admin/metrics'),
 
   // Display Content Claims (for testing distribution)
   claimContent: (displayId) => apiClient.post(`/displays/${displayId}/claim_content`),

@@ -455,6 +455,10 @@
 .activity-feed li .ts { font-family: var(--font-family-mono); color: var(--color-tertiary); font-size: 0.65rem; }
 .activity-feed li.empty { color: var(--color-tertiary); font-style: italic; }
 
+/* Live Device Feed (reuses activity styles) */
+.activity-panel h3 svg { opacity: 0.85; }
+.activity-feed li strong { font-size: 0.65rem; text-transform: uppercase; letter-spacing: .05em; color: var(--color-tertiary); }
+
 /* Footer */
 .dashboard-footer {
   display: flex;

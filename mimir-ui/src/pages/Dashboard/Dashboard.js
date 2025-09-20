@@ -16,7 +16,8 @@ const Dashboard = () => {
   const [displays, setDisplays] = useState([]);
   const [scenes, setScenes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activity, setActivity] = useState([]); // recent events
+  const [activity, setActivity] = useState([]); // recent scene events
+  const [mqttFeed, setMqttFeed] = useState([]); // mqtt + display status events
 
   const { isConnected, currentState } = useEnsureFreshState();
 
@@ -29,6 +30,10 @@ const Dashboard = () => {
   });
 
   const recordActivity = (msg) => setActivity(prev => [{ ts: new Date(), msg }, ...prev].slice(0, 6));
+  const recordMqtt = (type, payload) => setMqttFeed(prev => [
+    { ts: new Date(), type, payload },
+    ...prev
+  ].slice(0, 25));
 
   const refreshDisplays = useCallback(async () => {
     try {
@@ -67,6 +72,25 @@ const Dashboard = () => {
       setLoading(false);
     }
   }, [currentState]);
+
+  // Listen for display status & generic mqtt-related events via websocket raw events
+  useEffect(() => {
+    // Access underlying ws service lazily to avoid import cycle
+    const { wsService } = require('../../services/websocket');
+
+    const cleanupDisplay = wsService.on('display_status_changed', (data) => {
+      recordMqtt('display_status', data);
+      // Patch local display list if present
+      if (data?.displayId || data?.id) {
+        setDisplays(prev => prev.map(d => (d.id === (data.displayId || data.id) ? { ...d, ...data } : d)));
+      }
+    });
+    // Generic server forwarded mqtt message (if backend emits 'mqtt_message')
+    const cleanupMqtt = wsService.on('mqtt_message', (data) => {
+      recordMqtt('mqtt', data);
+    });
+    return () => { cleanupDisplay(); cleanupMqtt(); };
+  }, []);
 
   // ---- Derived Metrics ----
   const onlineDisplays = displays.filter(d => d.is_online !== false);
@@ -187,6 +211,22 @@ const Dashboard = () => {
         </ul>
       </section>
 
+      {/* Real-time Display / MQTT Feed */}
+      <section className="panel activity-panel">
+        <div className="panel-header">
+          <h3><Activity size={18} /> Live Device Feed</h3>
+        </div>
+        <ul className="activity-feed">
+          {mqttFeed.length ? mqttFeed.map((e,i) => (
+            <li key={i}>
+              <span className="ts">{e.ts.toLocaleTimeString()}</span>
+              <strong>[{e.type}]</strong>&nbsp;
+              {formatMqttPayload(e)}
+            </li>
+          )) : <li className="empty">No device updates</li>}
+        </ul>
+      </section>
+
       {/* Footer small status */}
       <div className="dashboard-footer">
         <span className={`conn-dot ${isConnected ? 'up' : 'down'}`}></span>
@@ -197,3 +237,26 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+
+// Helper to format feed entries (placed after export to avoid re-renders from function identity changes)
+function formatMqttPayload(entry) {
+  try {
+    const p = entry.payload || {};
+    if (entry.type === 'display_status') {
+      const name = p.name || p.displayName || p.id || 'display';
+      const online = p.is_online !== false;
+      return `${name} is ${online ? 'online' : 'offline'}${p.assigned_scene_name ? ' • scene=' + p.assigned_scene_name : ''}`;
+    }
+    if (entry.type === 'mqtt') {
+      if (p.topic && p.payload) return `${p.topic}: ${truncate(JSON.stringify(p.payload), 60)}`;
+    }
+    return truncate(JSON.stringify(p).replace(/"/g, ''), 80);
+  } catch (e) {
+    return 'unparseable payload';
+  }
+}
+
+function truncate(str, len) {
+  if (!str) return '';
+  return str.length > len ? str.slice(0, len - 1) + '…' : str;
+}
