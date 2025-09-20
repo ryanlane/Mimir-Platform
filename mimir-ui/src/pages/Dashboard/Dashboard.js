@@ -65,7 +65,8 @@ const Dashboard = () => {
 
   const refreshDisplays = useCallback(async () => {
     try {
-      const resp = await api.getDisplays({ limit: 200 });
+      const MAX_LIMIT = 100; // Backend enforces le=100
+      const resp = await api.getDisplays({ limit: MAX_LIMIT });
       // Possible shapes: { displays: [...] }, { data: [...] }, [...]
       const raw = resp.data?.displays || resp.data?.items || (Array.isArray(resp.data) ? resp.data : []);
       setDisplays(normalizeDisplayArray(raw));
