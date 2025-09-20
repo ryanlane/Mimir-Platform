@@ -669,9 +669,17 @@ class SchedulerWorker:
                                     )
                                     # Persist record (best effort)
                                     try:
+                                        logger.debug(
+                                            "persist.image.attempt device=%s scene=%s subchannel=%s assignment=%s url=%s",
+                                            device_id,
+                                            scene.id,
+                                            subchannel_id,
+                                            assignment_id,
+                                            image_url,
+                                        )
                                         with _PersistenceSessionLocal() as p_db:
                                             persistence = DisplayImagePersistenceService(p_db)
-                                            persistence.store_distribution_image(
+                                            rec = persistence.store_distribution_image(
                                                 display_id=device_id,
                                                 scene_id=str(scene.id),
                                                 subchannel_id=subchannel_id,
@@ -682,6 +690,14 @@ class SchedulerWorker:
                                                 image_format=None,
                                                 source="distribution",
                                                 retain_history=True,
+                                            )
+                                            logger.info(
+                                                "persist.image stored device=%s scene=%s id=%s thumb=%s read_only=%s",
+                                                device_id,
+                                                scene.id,
+                                                getattr(rec, 'id', None),
+                                                getattr(rec, 'thumbnail_path', None),
+                                                getattr(persistence, 'read_only_mode', None),
                                             )
                                     except Exception as perr:  # noqa: BLE001
                                         logger.warning("persist.image failure device=%s err=%s", device_id, perr)
@@ -964,9 +980,16 @@ class SchedulerWorker:
                             )
                             # Persist record
                             try:
+                                logger.debug(
+                                    "persist.image.attempt device=%s scene=%s assignment=%s url=%s",
+                                    device_id,
+                                    scene.id,
+                                    assignment_id,
+                                    image_url,
+                                )
                                 with _PersistenceSessionLocal() as p_db:
                                     persistence = DisplayImagePersistenceService(p_db)
-                                    persistence.store_distribution_image(
+                                    rec = persistence.store_distribution_image(
                                         display_id=device_id,
                                         scene_id=str(scene.id),
                                         subchannel_id=scene.channels[0].get("subchannel_id") if scene.channels else None,
@@ -977,6 +1000,14 @@ class SchedulerWorker:
                                         image_format=None,
                                         source="distribution",
                                         retain_history=True,
+                                    )
+                                    logger.info(
+                                        "persist.image stored device=%s scene=%s id=%s thumb=%s read_only=%s",
+                                        device_id,
+                                        scene.id,
+                                        getattr(rec, 'id', None),
+                                        getattr(rec, 'thumbnail_path', None),
+                                        getattr(persistence, 'read_only_mode', None),
                                     )
                             except Exception as perr:  # noqa: BLE001
                                 logger.warning("persist.image failure device=%s err=%s", device_id, perr)

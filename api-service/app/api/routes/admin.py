@@ -8,15 +8,34 @@ import logging
 from datetime import datetime, timezone
 
 from app.dependencies import get_channel_service, get_scene_service, get_display_service
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+from pathlib import Path
+import os
+import uuid
+import requests
+from PIL import Image
 from app.config import settings
 from app.core.scheduler import scheduler_service
 from app.core.metrics import get_metrics_content
+from app.db.base import SessionLocal
+from app.db.models import DisplaySceneImage
+from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.services.mqtt.presence import mqtt_presence_service
 
 logger = logging.getLogger(__name__)
 
 health_router = APIRouter(tags=["health"])
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def get_db():
+    """Database session dependency for admin endpoints."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 @health_router.get("/health")
@@ -345,6 +364,216 @@ async def get_prometheus_metrics():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving metrics: {str(e)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Display Image Persistence – Status & Maintenance
+# ---------------------------------------------------------------------------
+
+class BackfillThumbnailsRequest(BaseModel):
+    limit: int = Field(100, ge=1, le=2000, description="Maximum rows to process (ignored if regenerate_all=true)")
+    force: bool = Field(False, description="Regenerate thumbnails even if a thumbnail_path already exists")
+    dry_run: bool = Field(False, description="Report what would be done without writing changes")
+    regenerate_all: bool = Field(False, description="Backfill across all rows (not just missing thumbnails)")
+
+
+class TestPersistRequest(BaseModel):
+    display_id: str
+    scene_id: str
+    image_url: str
+    subchannel_id: Optional[str] = None
+    assignment_id: Optional[str] = Field(None, description="Optional explicit assignment id; auto-generated if missing")
+    width: Optional[int] = None
+    height: Optional[int] = None
+    image_format: Optional[str] = None
+
+@admin_router.post("/display-images/test-persist")
+async def test_persist_display_image(body: TestPersistRequest, db: Session = Depends(get_db)):
+    """Manually persist an image record (diagnostics / backfill helper).
+
+    This bypasses channel + MQTT distribution to validate persistence logic.
+    """
+    svc = DisplayImagePersistenceService(db)
+    assignment_id = body.assignment_id or f"manual-{uuid.uuid4().hex[:8]}"
+    try:
+        rec = svc.store_distribution_image(
+            display_id=body.display_id,
+            scene_id=body.scene_id,
+            subchannel_id=body.subchannel_id,
+            assignment_id=assignment_id,
+            image_url=body.image_url,
+            width=body.width,
+            height=body.height,
+            image_format=body.image_format,
+            source="manual-test",
+            retain_history=True,
+        )
+        return {
+            "ok": True,
+            "id": rec.id,
+            "display_id": rec.display_id,
+            "scene_id": rec.scene_id,
+            "thumbnail_path": rec.thumbnail_path,
+            "thumbnail_url": rec.thumbnail_path,
+            "read_only_mode": svc.read_only_mode,
+            "stored_local_path": rec.stored_local_path,
+        }
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Persist failed: {e}")
+
+
+@admin_router.get("/display-images/status")
+async def get_display_images_status(db: Session = Depends(get_db)):
+    """Return operational status of the persisted display images feature.
+
+    Provides directory info, mode flags, counts, and sample records to aid diagnostics.
+    """
+    svc = DisplayImagePersistenceService(db)
+    media_root: Path = svc.media_root
+    configured_dir = getattr(settings, "display_images_directory", None)
+
+    total_rows = db.query(DisplaySceneImage).count()
+    missing_q = db.query(DisplaySceneImage).filter(DisplaySceneImage.thumbnail_path.is_(None))
+    rows_missing = missing_q.count()
+    sample_missing = [
+        {
+            "id": r.id,
+            "display_id": r.display_id,
+            "scene_id": r.scene_id,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in missing_q.order_by(DisplaySceneImage.created_at.desc()).limit(5).all()
+    ]
+    recent_rows = [
+        {
+            "id": r.id,
+            "display_id": r.display_id,
+            "scene_id": r.scene_id,
+            "has_thumb": bool(r.thumbnail_path),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in db.query(DisplaySceneImage).order_by(DisplaySceneImage.created_at.desc()).limit(5).all()
+    ]
+
+    exists = media_root.exists()
+    writable = os.access(media_root, os.W_OK) if exists else False
+
+    return {
+        "configured_dir": configured_dir,
+        "resolved_path": str(media_root),
+        "exists": exists,
+        "writable": writable,
+        "read_only_mode": svc.read_only_mode,
+        "thumb_dimensions": {
+            "max_width": svc.thumb_max_width,
+            "max_height": svc.thumb_max_height,
+        },
+        "retention": {
+            "enabled": getattr(settings, "display_image_retention_enabled", False),
+            "max_per_pair": getattr(settings, "display_image_retention_max_per_pair", None),
+            "prune_interval_seconds": getattr(settings, "display_image_retention_interval_seconds", None),
+        },
+        "counts": {
+            "total_rows": total_rows,
+            "rows_missing_thumbnails": rows_missing,
+        },
+        "samples": {
+            "missing_thumbnails": sample_missing,
+            "recent": recent_rows,
+        },
+    }
+
+
+@admin_router.post("/display-images/backfill-thumbnails")
+async def backfill_display_image_thumbnails(body: BackfillThumbnailsRequest, db: Session = Depends(get_db)):
+    """Generate thumbnails for persisted images missing them (or force regenerate).
+
+    Safeguards:
+    - Respects read_only_mode (unless dry_run=True).
+    - Limit controls batch size; set regenerate_all to ignore missing-only filtering.
+    - Force allows regenerating existing thumbnails.
+    - Dry run avoids making filesystem or DB changes.
+    """
+    svc = DisplayImagePersistenceService(db)
+    if svc.read_only_mode and not body.dry_run:
+        raise HTTPException(
+            status_code=409,
+            detail="Persistence service is in read-only mode; cannot write thumbnails (use dry_run).",
+        )
+
+    # Build base query
+    q = db.query(DisplaySceneImage).order_by(DisplaySceneImage.created_at.desc())
+    if not body.regenerate_all and not body.force:
+        # Only rows missing thumbnails
+        q = q.filter(DisplaySceneImage.thumbnail_path.is_(None))
+    elif not body.regenerate_all and body.force:
+        # Rows that currently have thumbnails (to regenerate) OR missing
+        # Simpler: operate over all rows but limit
+        pass
+    # If regenerate_all True: operate over all rows regardless
+
+    rows = q.limit(None if body.regenerate_all else body.limit).all()
+    attempted = len(rows)
+    generated = 0
+    skipped_download = 0
+    failures = 0
+    results = []
+
+    if body.dry_run:
+        return {
+            "dry_run": True,
+            "attempted": attempted,
+            "would_process_ids": [r.id for r in rows[:50]],
+            "read_only_mode": svc.read_only_mode,
+        }
+
+    for r in rows:
+        try:
+            # Skip if already has thumb and not forcing
+            if r.thumbnail_path and not body.force:
+                continue
+            # Download original image
+            resp = requests.get(r.image_url, timeout=15)
+            if resp.status_code != 200:
+                skipped_download += 1
+                continue
+            binary = resp.content
+            try:
+                with Image.open(io.BytesIO(binary)) as im:  # type: ignore[name-defined]
+                    im.thumbnail((svc.thumb_max_width, svc.thumb_max_height))
+                    rel_dir = Path(r.scene_id) / r.display_id
+                    abs_dir = svc.media_root / rel_dir
+                    abs_dir.mkdir(parents=True, exist_ok=True)
+                    thumb_filename = f"{r.id}.thumb.jpg"
+                    thumb_path = abs_dir / thumb_filename
+                    im.convert("RGB").save(thumb_path, "JPEG", quality=75, optimize=True)
+                    r.thumbnail_path = str(thumb_path)
+                    generated += 1
+                    results.append({"id": r.id, "thumbnail_path": r.thumbnail_path})
+            except Exception as pil_err:  # noqa: BLE001
+                failures += 1
+                logger.debug("backfill.thumbnail PIL failure id=%s err=%s", r.id, pil_err)
+        except Exception as e:  # noqa: BLE001
+            failures += 1
+            logger.debug("backfill.thumbnail failure id=%s err=%s", r.id, e)
+
+    try:
+        db.commit()
+    except Exception as commit_err:  # noqa: BLE001
+        logger.error("backfill.thumbnail commit failure err=%s", commit_err)
+        raise HTTPException(status_code=500, detail="Failed to commit thumbnail updates")
+
+    return {
+        "dry_run": False,
+        "attempted": attempted,
+        "generated": generated,
+        "skipped_download": skipped_download,
+        "failures": failures,
+        "force": body.force,
+        "regenerate_all": body.regenerate_all,
+        "processed_sample": results[:20],
+        "read_only_mode": svc.read_only_mode,
+    }
 
 
 @admin_router.get("/mqtt/status")
