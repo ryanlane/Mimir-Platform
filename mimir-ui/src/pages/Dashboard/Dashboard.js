@@ -35,24 +35,55 @@ const Dashboard = () => {
     ...prev
   ].slice(0, 25));
 
+  // --- Normalization Helpers ----------------------------------------------
+  const normalizeDisplay = useCallback((d) => {
+    if (!d || typeof d !== 'object') return null;
+    return {
+      id: d.id || d.display_id || d.device_id || d.hostname || d.name,
+      name: d.name || d.display_name || d.hostname || 'Unnamed',
+      location: d.location || d.site || d.room || null,
+      is_online: d.is_online !== undefined ? d.is_online : (d.online !== undefined ? d.online : true),
+      assigned_scene_id: d.assigned_scene_id || d.assignedSceneId || d.scene_id || null,
+      assigned_scene_name: d.assigned_scene_name || d.assignedSceneName || d.scene_name || d.scene || null,
+      last_seen: d.last_seen || d.lastSeen || null
+    };
+  }, []);
+
+  const normalizeScene = useCallback((s) => {
+    if (!s || typeof s !== 'object') return null;
+    return {
+      id: s.id || s.scene_id,
+      name: s.name || s.scene_name || 'Unnamed Scene',
+      is_active: s.is_active !== undefined ? s.is_active : s.active,
+      channels: s.channels || [],
+      distribution_mode: s.distribution_mode || s.mode || null
+    };
+  }, []);
+
+  const normalizeDisplayArray = useCallback((arr) => (Array.isArray(arr) ? arr.map(normalizeDisplay).filter(Boolean) : []), [normalizeDisplay]);
+  const normalizeSceneArray = useCallback((arr) => (Array.isArray(arr) ? arr.map(normalizeScene).filter(Boolean) : []), [normalizeScene]);
+
   const refreshDisplays = useCallback(async () => {
     try {
-      const resp = await api.getDisplays({ limit: 100 });
-      const list = Array.isArray(resp.data) ? resp.data : [];
-      setDisplays(list);
+      const resp = await api.getDisplays({ limit: 200 });
+      // Possible shapes: { displays: [...] }, { data: [...] }, [...]
+      const raw = resp.data?.displays || resp.data?.items || (Array.isArray(resp.data) ? resp.data : []);
+      setDisplays(normalizeDisplayArray(raw));
     } catch (e) {
       console.error('Failed to load displays', e);
     }
-  }, []);
+  }, [normalizeDisplayArray]);
 
   const refreshScenes = useCallback(async () => {
     try {
-      const resp = await api.getScenes({ limit: 50 });
-      setScenes(resp.data.scenes || []);
+      const resp = await api.getScenes({ limit: 200 });
+      // Expected shape: { scenes: [...] }
+      const raw = resp.data?.scenes || resp.data?.items || (Array.isArray(resp.data) ? resp.data : []);
+      setScenes(normalizeSceneArray(raw));
     } catch (e) {
       console.error('Failed to load scenes', e);
     }
-  }, []);
+  }, [normalizeSceneArray]);
 
   // Initial load (fallback if websocket state not populated quickly)
   useEffect(() => {
@@ -67,11 +98,11 @@ const Dashboard = () => {
   // If websocket provided displays/scenes in state
   useEffect(() => {
     if (currentState) {
-      if (currentState.displays) setDisplays(currentState.displays);
-      if (currentState.allScenes) setScenes(currentState.allScenes);
+      if (currentState.displays) setDisplays(normalizeDisplayArray(currentState.displays));
+      if (currentState.allScenes) setScenes(normalizeSceneArray(currentState.allScenes));
       setLoading(false);
     }
-  }, [currentState]);
+  }, [currentState, normalizeDisplayArray, normalizeSceneArray]);
 
   // Listen for display status & generic mqtt-related events via websocket raw events
   useEffect(() => {
@@ -80,17 +111,22 @@ const Dashboard = () => {
 
     const cleanupDisplay = wsService.on('display_status_changed', (data) => {
       recordMqtt('display_status', data);
-      // Patch local display list if present
-      if (data?.displayId || data?.id) {
-        setDisplays(prev => prev.map(d => (d.id === (data.displayId || data.id) ? { ...d, ...data } : d)));
-      }
+      const nd = normalizeDisplay(data);
+      if (!nd || !nd.id) return;
+      setDisplays(prev => {
+        const idx = prev.findIndex(p => p.id === nd.id);
+        if (idx === -1) return [...prev, nd];
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], ...nd };
+        return copy;
+      });
     });
     // Generic server forwarded mqtt message (if backend emits 'mqtt_message')
     const cleanupMqtt = wsService.on('mqtt_message', (data) => {
       recordMqtt('mqtt', data);
     });
     return () => { cleanupDisplay(); cleanupMqtt(); };
-  }, []);
+  }, [normalizeDisplay]);
 
   // ---- Derived Metrics ----
   const onlineDisplays = displays.filter(d => d.is_online !== false);
