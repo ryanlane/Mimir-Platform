@@ -5,6 +5,7 @@ Handles discovery and loading of channel plugins into the main API process
 import json
 import sys
 import importlib.util
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.core.logging import get_logger
+from app.services.channel_events import channel_event_dispatcher, ChannelUpdateEvent
+from app.services.channel_event_consumer import channel_event_consumer
 
 logger = get_logger(__name__)
 
@@ -187,6 +190,45 @@ class PluginDiscoveryService:
             
             plugin.healthy = True
             logger.info(f"Successfully loaded plugin instance for {plugin.id}")
+
+            # Register push listener if plugin advertises push capability
+            try:
+                inst = plugin.instance
+                if getattr(inst, "supports_push", False) and hasattr(inst, "register_listener"):
+                    # Define listener callback bridging to central dispatcher
+                    def _on_channel_event(raw_evt: dict):  # raw dict from plugin (thread context allowed)
+                        # We hop into asyncio loop for dispatcher publish.
+                        try:
+                            evt = ChannelUpdateEvent(
+                                channel_id=raw_evt.get("channel_id", plugin.id),
+                                event_type=raw_evt.get("event_type", "update"),
+                                payload=raw_evt.get("payload", {}),
+                                ts=raw_evt.get("ts") or time.time(),
+                                version=raw_evt.get("version", 1),
+                                hash=raw_evt.get("hash")
+                            )
+                        except Exception as build_exc:  # noqa: BLE001
+                            logger.warning(f"Failed constructing ChannelUpdateEvent for {plugin.id}: {build_exc}")
+                            return
+                        # Schedule coroutine safely
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                loop.create_task(channel_event_dispatcher.publish(evt))
+                        except RuntimeError:
+                            # No running loop (during startup) - ignore
+                            pass
+                    inst.register_listener(_on_channel_event)
+                    logger.info(f"Registered push listener for plugin {plugin.id}")
+                    # Register consumer subscription (async) after loop available
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            loop.create_task(channel_event_consumer.register_channel(plugin.id))
+                    except RuntimeError:
+                        pass
+            except Exception as push_err:  # noqa: BLE001
+                logger.warning(f"Failed to register push listener for {plugin.id}: {push_err}")
             
         except Exception as e:
             logger.error(f"Error loading plugin instance for {plugin.id}: {e}")
