@@ -25,7 +25,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.db.base import SessionLocal
 from app.db.models import Scene, DisplayClient
-from app.services.plugin_discovery import plugin_discovery_service
 from app.services.mqtt.publisher import mqtt_scene_service
 from app.services.display_last_image import display_last_image_store
 from app.services.display_image_persistence import DisplayImagePersistenceService
@@ -157,6 +156,9 @@ class SceneRefreshService:
                     # Track first channel/subchannel used for sample
                     channel_id: Optional[str] = None
                     subchannel_id: Optional[str] = None
+
+                    # Lazy import to avoid circular dependency during module import
+                    from app.services.plugin_discovery import plugin_discovery_service  # noqa: WPS433
 
                     for entry in channel_entries:
                         ch_id = entry.get("channel_id")
