@@ -27,6 +27,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
     availableSubChannels,
     loadingSubChannels,
     pushSelectable,
+  pushSelectableReason,
     scheduleData,
     currentSchedule,
     scheduleLoading,
@@ -124,6 +125,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
             fallbackSeconds={formData.push_fallback_poll_seconds}
             pushAllowed={pushSelectable}
             hasChannelSelected={formData.channels.length > 0}
+            disabledReason={pushSelectableReason}
             onChange={({ strategy, fallbackSeconds }) =>
               setFormData(prev => ({
                 ...prev,

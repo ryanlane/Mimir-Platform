@@ -23,6 +23,8 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
   const [channelPushCapabilities, setChannelPushCapabilities] = useState({});
   const [loadingSubChannels, setLoadingSubChannels] = useState(false);
   const [pushSelectable, setPushSelectable] = useState(false);
+  const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
+  const [pushSelectableReason, setPushSelectableReason] = useState('Select a channel');
 
   // Schedule state
   const [scheduleData, setScheduleData] = useState({ freq_unit: 'hour', freq_value: 1, enabled: true });
@@ -30,11 +32,32 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleModified, setScheduleModified] = useState(false);
 
-  const evaluatePushSelectable = useCallback((assignments, caps) => {
+  const evaluatePushSelectable = useCallback((assignments, caps, loaded) => {
+    // If nothing selected
+    if (!assignments || assignments.length === 0) {
+      setPushSelectable(false);
+      setPushSelectableReason('Select a channel');
+      if (loaded && formData.update_strategy === 'push') {
+        setFormData(prev => ({ ...prev, update_strategy: 'scheduler' }));
+      }
+      return;
+    }
+    // If capabilities still loading
+    const allHaveCaps = assignments.every(a => caps[a.channel_id] !== undefined);
+    if (!loaded || !allHaveCaps) {
+      setPushSelectable(false);
+      setPushSelectableReason('Loading channel capabilities...');
+      return; // do not auto-downgrade until we know
+    }
     const selectable = evalPushSelectable(assignments, caps);
     setPushSelectable(selectable);
-    if (!selectable && formData.update_strategy === 'push') {
-      setFormData(prev => ({ ...prev, update_strategy: 'scheduler' }));
+    if (!selectable) {
+      setPushSelectableReason('Selected channel does not support real-time push');
+      if (formData.update_strategy === 'push') {
+        setFormData(prev => ({ ...prev, update_strategy: 'scheduler' }));
+      }
+    } else {
+      setPushSelectableReason(null);
     }
   }, [formData.update_strategy]);
 
@@ -70,6 +93,7 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
   const loadCapabilities = useCallback(async () => {
     if (!channels.length) return;
     setLoadingSubChannels(true);
+    setCapabilitiesLoaded(false);
     const supportInfo = {}; const requirementsInfo = {}; const subData = {}; const pushCaps = {};
     for (const channel of channels) {
       try {
@@ -106,11 +130,12 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
     setAvailableSubChannels(subData);
     setChannelPushCapabilities(pushCaps);
     setLoadingSubChannels(false);
-    evaluatePushSelectable(formData.channels, pushCaps);
+    setCapabilitiesLoaded(true);
+    evaluatePushSelectable(formData.channels, pushCaps, true);
   }, [channels, formData.channels, evaluatePushSelectable]);
 
   useEffect(() => { loadCapabilities(); }, [loadCapabilities]);
-  useEffect(() => { evaluatePushSelectable(formData.channels, channelPushCapabilities); }, [formData.channels, channelPushCapabilities, evaluatePushSelectable]);
+  useEffect(() => { evaluatePushSelectable(formData.channels, channelPushCapabilities, capabilitiesLoaded); }, [formData.channels, channelPushCapabilities, capabilitiesLoaded, evaluatePushSelectable]);
 
 
   const handleScheduleChange = (field, value) => {
@@ -219,6 +244,7 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
     channelPushCapabilities,
     loadingSubChannels,
     pushSelectable,
+    pushSelectableReason,
     scheduleData,
     currentSchedule,
     scheduleLoading,

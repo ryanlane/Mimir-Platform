@@ -11,7 +11,7 @@ import PropTypes from 'prop-types';
  *  - hasChannelSelected: boolean (informational hint for description)
  *  - onChange: ({ strategy, fallbackSeconds }) => void
  */
-const UpdateStrategySelector = ({ strategy, fallbackSeconds, pushAllowed, hasChannelSelected, onChange }) => {
+const UpdateStrategySelector = ({ strategy, fallbackSeconds, pushAllowed, hasChannelSelected, onChange, disabledReason }) => {
   const handleStrategyChange = (e) => {
     const value = e.target.value;
     if (value === 'push') {
@@ -37,9 +37,13 @@ const UpdateStrategySelector = ({ strategy, fallbackSeconds, pushAllowed, hasCha
           <div className="mode-info">
             <span className="mode-name">Real-time Push</span>
             <span className="mode-description">
-              Instant updates driven by channel events
-              {!pushAllowed && ' (not supported by selected channel)'}
-              {pushAllowed && !hasChannelSelected && ' (select a channel first)'}.
+              Instant updates driven by channel events.
+              {!pushAllowed && (
+                <>
+                  {' '}
+                  <em>{disabledReason || 'Not supported by selected channel'}</em>
+                </>
+              )}
             </span>
           </div>
         </label>
@@ -85,5 +89,6 @@ UpdateStrategySelector.propTypes = {
   fallbackSeconds: PropTypes.number,
   pushAllowed: PropTypes.bool.isRequired,
   hasChannelSelected: PropTypes.bool.isRequired,
-  onChange: PropTypes.func.isRequired
+  onChange: PropTypes.func.isRequired,
+  disabledReason: PropTypes.string
 };
