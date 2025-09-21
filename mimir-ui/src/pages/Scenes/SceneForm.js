@@ -1,415 +1,38 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React from 'react';
 import { X, Save } from 'lucide-react';
-import { api } from '../../services/api';
 import './SceneForm.css';
+// Extracted presentational components
+import ValidationErrors from './components/ValidationErrors';
+import DistributionModeSelector from './components/DistributionModeSelector';
+import UpdateStrategySelector from './components/UpdateStrategySelector';
+import ChannelSelector from './components/ChannelSelector';
+import ScheduleEditor from './components/ScheduleEditor';
+import { useSceneFormLogic } from './useSceneFormLogic';
 
 const SceneForm = ({ scene, channels, onClose }) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    channels: [],
-    distribution_mode: 'MIRROR', // Default distribution mode
-    overlay: {
-      overlays: [],
-      position: ['top', 'right'],
-      background: true,
-      backgroundColor: { red: 0, green: 0, blue: 0, alpha: 10 }
-    },
-    schedule: null
-  });
-  const [loading, setLoading] = useState(false);
-  
-  // Schedule management state
-  const [scheduleData, setScheduleData] = useState({
-    freq_unit: 'hour',
-    freq_value: 1,
-    enabled: true
-  });
-  const [currentSchedule, setCurrentSchedule] = useState(null);
-  const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [scheduleModified, setScheduleModified] = useState(false);
-  
-  // Plugin manifest support for subchannels/galleries
-  const [subChannelSupport, setSubChannelSupport] = useState({});
-  const [subChannelRequirements, setSubChannelRequirements] = useState({});
-  const [availableSubChannels, setAvailableSubChannels] = useState({});
-  const [loadingSubChannels, setLoadingSubChannels] = useState(false);
-  const [validationErrors, setValidationErrors] = useState([]);
+  const {
+    formData,
+    setFormData,
+    validationErrors,
+    loading,
+    subChannelSupport,
+    subChannelRequirements,
+    availableSubChannels,
+    loadingSubChannels,
+    pushSelectable,
+    scheduleData,
+    currentSchedule,
+    scheduleLoading,
+    scheduleModified,
+    handleScheduleChange,
+    createSchedule,
+    updateSchedule,
+    deleteSchedule,
+    isFormValid,
+    save
+  } = useSceneFormLogic({ scene, channels, onClose });
 
-  // Load channel capabilities and subchannels/galleries from plugin manifests
-  const loadSubChannelData = useCallback(async () => {
-    if (!channels.length) return;
-    
-    setLoadingSubChannels(true);
-    const supportInfo = {};
-    const requirementsInfo = {};
-    const subChannelsData = {};
-    
-    for (const channel of channels) {
-      try {
-        // Use the new plugin manifest endpoint to get capabilities
-        const manifestResponse = await api.getChannelManifest(channel.id);
-        const manifest = manifestResponse.data;
-        
-        // Check if channel supports galleries (photo frame) or other subchannel types
-        const hasGalleries = manifest.galleries && Array.isArray(manifest.galleries) && manifest.galleries.length > 0;
-        const hasSubchannels = manifest.subchannels && Array.isArray(manifest.subchannels) && manifest.subchannels.length > 0;
-        const supportsSubchannels = hasGalleries || hasSubchannels;
-        
-        supportInfo[channel.id] = supportsSubchannels;
-        
-        // For photo frame channel, galleries are optional subchannels
-        // Other plugins might have different requirements
-        requirementsInfo[channel.id] = {
-          requires_subchannel_selection: false // Most channels don't require subchannel selection
-        };
-        
-        // Convert galleries or subchannels to unified subchannel format
-        if (hasGalleries) {
-          subChannelsData[channel.id] = manifest.galleries.map(gallery => ({
-            id: gallery.id,
-            name: gallery.name,
-            image_count: gallery.image_count,
-            type: 'gallery'
-          }));
-        } else if (hasSubchannels) {
-          subChannelsData[channel.id] = manifest.subchannels.map(subchannel => ({
-            id: subchannel.id,
-            name: subchannel.name,
-            type: 'subchannel'
-          }));
-        } else {
-          subChannelsData[channel.id] = [];
-        }
-        
-        console.log(`Channel ${channel.id}:`, {
-          supports: supportInfo[channel.id],
-          requires: requirementsInfo[channel.id].requires_subchannel_selection,
-          subchannels: subChannelsData[channel.id].length,
-          type: hasGalleries ? 'galleries' : hasSubchannels ? 'subchannels' : 'none'
-        });
-        
-      } catch (error) {
-        // Channel doesn't support manifest or error occurred
-        console.log(`Channel ${channel.id} manifest error:`, error.message);
-        supportInfo[channel.id] = false;
-        requirementsInfo[channel.id] = { requires_subchannel_selection: false };
-        subChannelsData[channel.id] = [];
-      }
-    }
-    
-    setSubChannelSupport(supportInfo);
-    setSubChannelRequirements(requirementsInfo);
-    setAvailableSubChannels(subChannelsData);
-    setLoadingSubChannels(false);
-    
-    // Debug logging
-    console.log('SubChannel Support (from manifests):', supportInfo);
-    console.log('SubChannel Requirements:', requirementsInfo);
-    console.log('Available SubChannels:', subChannelsData);
-  }, [channels]);
-
-  useEffect(() => {
-    if (scene) {
-      // Normalize channels to new format and limit to single selection
-      const normalizedChannels = scene.channels.map(channel => {
-        if (typeof channel === 'string') {
-          // Old format: just channel ID
-          return { channel_id: channel, subchannel_id: null };
-        } else if (channel && typeof channel === 'object') {
-          // New format: channel assignment object (subchannel_id could be gallery ID)
-          return {
-            channel_id: channel.channel_id,
-            subchannel_id: channel.subchannel_id || null
-          };
-        }
-        return { channel_id: String(channel), subchannel_id: null };
-      });
-
-      // Only keep the first channel for single selection
-      const singleChannel = normalizedChannels.length > 0 ? [normalizedChannels[0]] : [];
-
-      setFormData({
-        name: scene.name || '',
-        channels: singleChannel,
-        distribution_mode: scene.distributionMode || scene.distribution_mode || 'MIRROR',
-        overlay: scene.overlay || {
-          overlays: [],
-          position: ['top', 'right'],
-          background: true,
-          backgroundColor: { red: 0, green: 0, blue: 0, alpha: 10 }
-        },
-        schedule: scene.schedule || null
-      });
-    }
-  }, [scene]);
-
-  useEffect(() => {
-    loadSubChannelData();
-  }, [loadSubChannelData]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setValidationErrors([]);
-
-    // Validate subchannel requirements
-    const errors = [];
-    for (const assignment of formData.channels) {
-      const channelId = assignment.channel_id;
-      const requirements = subChannelRequirements[channelId];
-      
-      if (requirements?.requires_subchannel_selection && !assignment.subchannel_id) {
-        const channel = channels.find(ch => ch.id === channelId);
-        const availableSubchannels = availableSubChannels[channelId] || [];
-        const subchannelNames = availableSubchannels.map(sc => sc.name).join(', ');
-        
-        errors.push(
-          `Channel "${channel?.name || channelId}" requires a gallery/subchannel selection. ` +
-          `Available options: ${subchannelNames || 'None available'}`
-        );
-      }
-    }
-
-    if (errors.length > 0) {
-      setValidationErrors(errors);
-      setLoading(false);
-      return;
-    }
-
-    try {
-      if (scene) {
-        await api.updateScene(scene.id, formData);
-      } else {
-        await api.createScene(formData);
-      }
-      onClose();
-    } catch (error) {
-      console.error('Error saving scene:', error);
-      // Handle API validation errors
-      if (error.response?.data?.detail) {
-        if (Array.isArray(error.response.data.detail)) {
-          setValidationErrors(error.response.data.detail);
-        } else {
-          setValidationErrors([error.response.data.detail]);
-        }
-      } else {
-        setValidationErrors(['An error occurred while saving the scene']);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleChannelToggle = (channelId) => {
-    setFormData(prev => {
-      const existingAssignment = prev.channels.find(ch => ch.channel_id === channelId);
-      
-      if (existingAssignment) {
-        // Remove channel assignment (deselect)
-        return {
-          ...prev,
-          channels: []
-        };
-      } else {
-        // Replace with new channel assignment (single selection)
-        return {
-          ...prev,
-          channels: [{ channel_id: channelId, subchannel_id: null }]
-        };
-      }
-    });
-  };
-
-  const handleSubChannelChange = (channelId, subChannelId) => {
-    setFormData(prev => ({
-      ...prev,
-      channels: prev.channels.map(ch => 
-        ch.channel_id === channelId 
-          ? { ...ch, subchannel_id: subChannelId || null }
-          : ch
-      )
-    }));
-  };
-
-  const isChannelSelected = (channelId) => {
-    return formData.channels.some(ch => ch.channel_id === channelId);
-  };
-
-  const getSelectedSubChannel = (channelId) => {
-    const assignment = formData.channels.find(ch => ch.channel_id === channelId);
-    return assignment?.subchannel_id || '';
-  };
-
-  // Validation function to check if form is valid for submission
-  const isFormValid = () => {
-    // Check if scene name is provided
-    if (!formData.name.trim()) {
-      return false;
-    }
-
-    // Check if at least one channel is selected
-    if (formData.channels.length === 0) {
-      return false;
-    }
-
-    // Check subchannel requirements
-    for (const assignment of formData.channels) {
-      const channelId = assignment.channel_id;
-      const requirements = subChannelRequirements[channelId];
-      
-      if (requirements?.requires_subchannel_selection && !assignment.subchannel_id) {
-        return false;
-      }
-    }
-
-    return true;
-  };
-
-  // Schedule management functions
-  const loadSceneSchedule = useCallback(async (sceneId) => {
-    if (!sceneId) return;
-    
-    try {
-      setScheduleLoading(true);
-      const response = await api.getSceneSchedules(sceneId);
-      const assignments = response.data || [];
-      
-      if (assignments.length > 0) {
-        // Get the first assignment and fetch the job details
-        const assignment = assignments[0];
-        const jobResponse = await api.getSchedulerJob(assignment.job_id);
-        const schedule = jobResponse.data;
-        
-        setCurrentSchedule(schedule);
-        setScheduleData({
-          freq_unit: schedule.freq_unit,
-          freq_value: schedule.freq_value,
-          enabled: schedule.enabled
-        });
-        setScheduleModified(false);
-      } else {
-        setCurrentSchedule(null);
-        setScheduleData({
-          freq_unit: 'hour',
-          freq_value: 1,
-          enabled: true
-        });
-        setScheduleModified(false);
-      }
-    } catch (error) {
-      console.error('Failed to load scene schedule:', error);
-      setCurrentSchedule(null);
-    } finally {
-      setScheduleLoading(false);
-    }
-  }, []);
-
-  const createSchedule = async () => {
-    if (!scene?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
-    
-    try {
-      setScheduleLoading(true);
-      const jobData = {
-        name: `Auto-refresh ${formData.name || scene.name}`,
-        description: `Automatically refresh scene every ${scheduleData.freq_value} ${scheduleData.freq_unit}(s)`,
-        enabled: scheduleData.enabled,
-        freq_unit: scheduleData.freq_unit,
-        freq_value: parseInt(scheduleData.freq_value),
-        action_type: 'refresh_scene',
-        scene_ids: [scene.id],
-        refresh_method: 'content_refresh'
-      };
-      
-      const response = await api.createSchedulerJob(jobData);
-      setCurrentSchedule(response.data);
-      console.log('Schedule created successfully');
-    } catch (error) {
-      console.error('Failed to create schedule:', error);
-    } finally {
-      setScheduleLoading(false);
-    }
-  };
-
-  const updateSchedule = async () => {
-    if (!currentSchedule?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
-    
-    try {
-      setScheduleLoading(true);
-      const updates = {
-        freq_unit: scheduleData.freq_unit,
-        freq_value: parseInt(scheduleData.freq_value),
-        enabled: scheduleData.enabled
-      };
-      
-      console.log('Updating schedule with:', updates);
-      const response = await api.updateSchedulerJob(currentSchedule.id, updates);
-      const updatedSchedule = response.data;
-      setCurrentSchedule(updatedSchedule);
-      
-      // Update the local state to match the saved schedule
-      setScheduleData({
-        freq_unit: updatedSchedule.freq_unit,
-        freq_value: updatedSchedule.freq_value,
-        enabled: updatedSchedule.enabled
-      });
-      setScheduleModified(false);
-      
-      console.log('Schedule updated successfully:', updatedSchedule);
-    } catch (error) {
-      console.error('Failed to update schedule:', error);
-      // Revert the local state if the update failed
-      if (currentSchedule) {
-        setScheduleData({
-          freq_unit: currentSchedule.freq_unit,
-          freq_value: currentSchedule.freq_value,
-          enabled: currentSchedule.enabled
-        });
-      }
-    } finally {
-      setScheduleLoading(false);
-    }
-  };
-
-  const deleteSchedule = async () => {
-    if (!currentSchedule?.id) return;
-    
-    try {
-      setScheduleLoading(true);
-      await api.deleteSchedulerJob(currentSchedule.id);
-      setCurrentSchedule(null);
-      setScheduleData({
-        freq_unit: 'hour',
-        freq_value: 1,
-        enabled: true
-      });
-      setScheduleModified(false);
-      console.log('Schedule deleted successfully');
-    } catch (error) {
-      console.error('Failed to delete schedule:', error);
-    } finally {
-      setScheduleLoading(false);
-    }
-  };
-
-  const handleScheduleChange = (field, value) => {
-    console.log(`Schedule field '${field}' changed to:`, value);
-    setScheduleData(prev => {
-      const newData = {
-        ...prev,
-        [field]: field === 'freq_value' ? Math.max(1, parseInt(value) || 1) : value
-      };
-      console.log('New schedule data:', newData);
-      return newData;
-    });
-    setScheduleModified(true);
-  };
-
-  // Load schedule when scene changes
-  useEffect(() => {
-    if (scene?.id) {
-      loadSceneSchedule(scene.id);
-    }
-  }, [scene?.id, loadSceneSchedule]);
+  const handleSubmit = (e) => { e.preventDefault(); save(); };
 
   /* Schedule functions temporarily disabled
   const handleScheduleChange = (field, value) => {
@@ -448,228 +71,51 @@ const SceneForm = ({ scene, channels, onClose }) => {
             />
           </div>
 
-          {validationErrors.length > 0 && (
-            <div className="validation-errors">
-              <h4>Validation Errors:</h4>
-              <ul>
-                {validationErrors.map((error, index) => (
-                  <li key={index}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <ValidationErrors errors={validationErrors} />
 
-          <div className="form-group">
-            <label className="form-label">Channel</label>
-            <div className="channels-selection">
-              {channels.map((channel) => (
-                <div key={channel.id} className="channel-assignment-group">
-                  <label className="radio-item">
-                    <input
-                      type="radio"
-                      name="channel"
-                      checked={isChannelSelected(channel.id)}
-                      onChange={() => handleChannelToggle(channel.id)}
-                    />
-                    <span>{channel.name}</span>
-                  </label>
-                  
-                  {isChannelSelected(channel.id) && subChannelSupport[channel.id] && (
-                    <div className="subchannel-selection">
-                      <label className="subchannel-label">Gallery/Sub-Channel:</label>
-                      {availableSubChannels[channel.id]?.length > 0 ? (
-                        <select
-                          value={getSelectedSubChannel(channel.id)}
-                          onChange={(e) => handleSubChannelChange(channel.id, e.target.value)}
-                          className="subchannel-select"
-                        >
-                          {!subChannelRequirements[channel.id]?.requires_subchannel_selection && (
-                            <option value="">All Content (Random from all galleries)</option>
-                          )}
-                          {subChannelRequirements[channel.id]?.requires_subchannel_selection && !getSelectedSubChannel(channel.id) && (
-                            <option value="">Select a gallery...</option>
-                          )}
-                          {availableSubChannels[channel.id].map(subChannel => (
-                            <option key={subChannel.id} value={subChannel.id}>
-                              {subChannel.name}
-                              {subChannel.image_count !== undefined && ` (${subChannel.image_count || 0} images)`}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="subchannel-loading">No galleries available</div>
-                      )}
-                      {subChannelRequirements[channel.id]?.requires_subchannel_selection && (
-                        <div className="subchannel-requirement-note">
-                          * Gallery selection required
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {isChannelSelected(channel.id) && loadingSubChannels && (
-                    <div className="subchannel-loading">Loading sub-channels...</div>
-                  )}
+          <ChannelSelector
+            channels={channels}
+            assignments={formData.channels}
+            subChannelSupport={subChannelSupport}
+            availableSubChannels={availableSubChannels}
+            subChannelRequirements={subChannelRequirements}
+            loadingSubChannels={loadingSubChannels}
+            onChange={(assignments) => setFormData(prev => ({ ...prev, channels: assignments }))}
+          />
 
-                  {isChannelSelected(channel.id) && !subChannelSupport[channel.id] && !loadingSubChannels && (
-                    <div className="subchannel-loading">This channel does not support galleries or sub-channels</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+          <DistributionModeSelector
+            value={formData.distribution_mode}
+            onChange={(newMode) => setFormData(prev => ({ ...prev, distribution_mode: newMode }))}
+          />
 
-          <div className="form-group">
-            <label className="form-label">Distribution Mode</label>
-            <div className="distribution-mode-selection">
-              <label className="radio-item">
-                <input
-                  type="radio"
-                  name="distribution_mode"
-                  value="MIRROR"
-                  checked={formData.distribution_mode === 'MIRROR'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, distribution_mode: e.target.value }))}
-                />
-                <div className="mode-info">
-                  <span className="mode-name">Mirror Mode</span>
-                  <span className="mode-description">All displays show the same content simultaneously</span>
-                </div>
-              </label>
-              <label className="radio-item">
-                <input
-                  type="radio"
-                  name="distribution_mode"
-                  value="SEQUENTIAL"
-                  checked={formData.distribution_mode === 'SEQUENTIAL'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, distribution_mode: e.target.value }))}
-                />
-                <div className="mode-info">
-                  <span className="mode-name">Sequential Mode</span>
-                  <span className="mode-description">Displays cycle through content in order</span>
-                </div>
-              </label>
-              <label className="radio-item">
-                <input
-                  type="radio"
-                  name="distribution_mode"
-                  value="RANDOM_UNIQUE"
-                  checked={formData.distribution_mode === 'RANDOM_UNIQUE'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, distribution_mode: e.target.value }))}
-                />
-                <div className="mode-info">
-                  <span className="mode-name">Random Unique Mode</span>
-                  <span className="mode-description">Displays get randomized content without duplication</span>
-                </div>
-              </label>
-            </div>
-          </div>
+          <UpdateStrategySelector
+            strategy={formData.update_strategy}
+            fallbackSeconds={formData.push_fallback_poll_seconds}
+            pushAllowed={pushSelectable}
+            hasChannelSelected={formData.channels.length > 0}
+            onChange={({ strategy, fallbackSeconds }) =>
+              setFormData(prev => ({
+                ...prev,
+                update_strategy: strategy,
+                // Only persist fallback value if push; remove when switching away
+                ...(strategy === 'push'
+                  ? { push_fallback_poll_seconds: fallbackSeconds }
+                  : { push_fallback_poll_seconds: prev.push_fallback_poll_seconds })
+              }))
+            }
+          />
 
-          {/* Scene Auto-Refresh Schedule */}
-          <div className="form-group">
-            <label className="form-label">Auto-Refresh Schedule</label>
-            <div className="schedule-controls">
-              {currentSchedule ? (
-                <div className="current-schedule">
-                  <div className="schedule-info">
-                    <span className="schedule-text">
-                      Current: Every {currentSchedule.freq_value} {currentSchedule.freq_unit}(s)
-                    </span>
-                    <span className={`schedule-status ${currentSchedule.enabled ? 'enabled' : 'disabled'}`}>
-                      {currentSchedule.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                  <div className="schedule-form">
-                    <div className="schedule-inputs">
-                      <span className="schedule-prefix">Every</span>
-                      <input
-                        type="number"
-                        min="1"
-                        className="form-input schedule-value"
-                        value={scheduleData.freq_value}
-                        onChange={(e) => handleScheduleChange('freq_value', e.target.value)}
-                        required
-                      />
-                      <select
-                        className="form-select schedule-unit"
-                        value={scheduleData.freq_unit}
-                        onChange={(e) => handleScheduleChange('freq_unit', e.target.value)}
-                      >
-                        <option value="minute">Minute(s)</option>
-                        <option value="hour">Hour(s)</option>
-                        <option value="day">Day(s)</option>
-                        <option value="week">Week(s)</option>
-                      </select>
-                    </div>
-                    <div className="schedule-actions">
-                      <label className="schedule-enabled">
-                        <input
-                          type="checkbox"
-                          checked={scheduleData.enabled}
-                          onChange={(e) => handleScheduleChange('enabled', e.target.checked)}
-                        />
-                        <span>Enabled</span>
-                      </label>
-                      <button
-                        type="button"
-                        className={`btn btn-sm ${scheduleModified ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={updateSchedule}
-                        disabled={scheduleLoading || !scheduleData.freq_value || scheduleData.freq_value < 1}
-                      >
-                        {scheduleLoading ? 'Updating...' : scheduleModified ? 'Save Changes' : 'Update'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-error"
-                        onClick={deleteSchedule}
-                        disabled={scheduleLoading}
-                      >
-                        {scheduleLoading ? 'Removing...' : 'Remove'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="no-schedule">
-                  <p className="schedule-description">
-                    Set up automatic content refresh for this scene. The system will periodically update the scene's content.
-                  </p>
-                  <div className="schedule-form">
-                    <div className="schedule-inputs">
-                      <span className="schedule-prefix">Every</span>
-                      <input
-                        type="number"
-                        min="1"
-                        className="form-input schedule-value"
-                        value={scheduleData.freq_value}
-                        onChange={(e) => handleScheduleChange('freq_value', e.target.value)}
-                        required
-                      />
-                      <select
-                        className="form-select schedule-unit"
-                        value={scheduleData.freq_unit}
-                        onChange={(e) => handleScheduleChange('freq_unit', e.target.value)}
-                      >
-                        <option value="minute">Minute(s)</option>
-                        <option value="hour">Hour(s)</option>
-                        <option value="day">Day(s)</option>
-                        <option value="week">Week(s)</option>
-                      </select>
-                    </div>
-                    <div className="schedule-actions">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary"
-                        onClick={createSchedule}
-                        disabled={scheduleLoading || !scene?.id || !scheduleData.freq_value || scheduleData.freq_value < 1}
-                      >
-                        {scheduleLoading ? 'Creating...' : 'Add Schedule'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          <ScheduleEditor
+            currentSchedule={currentSchedule}
+            scheduleData={scheduleData}
+            scheduleModified={scheduleModified}
+            loading={scheduleLoading}
+            sceneId={scene?.id}
+            onChange={handleScheduleChange}
+            onCreate={createSchedule}
+            onUpdate={updateSchedule}
+            onDelete={deleteSchedule}
+          />
 
           {/* Overlays section temporarily hidden
           <div className="form-group">

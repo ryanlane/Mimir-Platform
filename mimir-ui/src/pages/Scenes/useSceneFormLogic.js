@@ -1,0 +1,221 @@
+import { useState, useEffect, useCallback } from 'react';
+import { api } from '../../services/api';
+import { normalizeScene, buildPayload, evaluatePushSelectable as evalPushSelectable, validateForm } from './sceneFormUtils';
+
+/**
+ * useSceneFormLogic
+ * Centralizes state + side-effects for SceneForm.
+ * Responsibilities:
+ *  - Manage formData
+ *  - Load channel manifests (subchannels + push capabilities)
+ *  - Handle schedule CRUD
+ *  - Provide validation + submit save function
+ */
+export function useSceneFormLogic({ scene, channels, onClose }) {
+  const [formData, setFormData] = useState(normalizeScene(scene));
+  const [validationErrors, setValidationErrors] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Subchannel / capability state
+  const [subChannelSupport, setSubChannelSupport] = useState({});
+  const [subChannelRequirements, setSubChannelRequirements] = useState({});
+  const [availableSubChannels, setAvailableSubChannels] = useState({});
+  const [channelPushCapabilities, setChannelPushCapabilities] = useState({});
+  const [loadingSubChannels, setLoadingSubChannels] = useState(false);
+  const [pushSelectable, setPushSelectable] = useState(false);
+
+  // Schedule state
+  const [scheduleData, setScheduleData] = useState({ freq_unit: 'hour', freq_value: 1, enabled: true });
+  const [currentSchedule, setCurrentSchedule] = useState(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleModified, setScheduleModified] = useState(false);
+
+  const evaluatePushSelectable = useCallback((assignments, caps) => {
+    const selectable = evalPushSelectable(assignments, caps);
+    setPushSelectable(selectable);
+    if (!selectable && formData.update_strategy === 'push') {
+      setFormData(prev => ({ ...prev, update_strategy: 'scheduler' }));
+    }
+  }, [formData.update_strategy]);
+
+  // Schedule CRUD
+  const loadSceneSchedule = useCallback(async (sceneId) => {
+    if (!sceneId) return;
+    try {
+      setScheduleLoading(true);
+      const resp = await api.getSceneSchedules(sceneId);
+      const assignments = resp.data || [];
+      if (assignments.length > 0) {
+        const jobResp = await api.getSchedulerJob(assignments[0].job_id);
+        const schedule = jobResp.data;
+        setCurrentSchedule(schedule);
+        setScheduleData({ freq_unit: schedule.freq_unit, freq_value: schedule.freq_value, enabled: schedule.enabled });
+        setScheduleModified(false);
+      } else {
+        setCurrentSchedule(null);
+        setScheduleData({ freq_unit: 'hour', freq_value: 1, enabled: true });
+        setScheduleModified(false);
+      }
+    } catch (err) {
+      setCurrentSchedule(null);
+    } finally { setScheduleLoading(false); }
+  }, []);
+
+  // When scene changes, normalize initial data and load schedule
+  useEffect(() => {
+    setFormData(normalizeScene(scene));
+    if (scene?.id) loadSceneSchedule(scene.id);
+  }, [scene, loadSceneSchedule]);
+
+  const loadCapabilities = useCallback(async () => {
+    if (!channels.length) return;
+    setLoadingSubChannels(true);
+    const supportInfo = {}; const requirementsInfo = {}; const subData = {}; const pushCaps = {};
+    for (const channel of channels) {
+      try {
+        const manifestResp = await api.getChannelManifest(channel.id);
+        const manifest = manifestResp.data || {};
+        const hasGalleries = manifest.galleries && Array.isArray(manifest.galleries) && manifest.galleries.length > 0;
+        const hasSubchannels = manifest.subchannels && Array.isArray(manifest.subchannels) && manifest.subchannels.length > 0;
+        const supportsSubchannels = hasGalleries || hasSubchannels;
+        supportInfo[channel.id] = supportsSubchannels;
+        requirementsInfo[channel.id] = { requires_subchannel_selection: false };
+        if (hasGalleries) {
+          subData[channel.id] = manifest.galleries.map(g => ({ id: g.id, name: g.name, image_count: g.image_count, type: 'gallery' }));
+        } else if (hasSubchannels) {
+          subData[channel.id] = manifest.subchannels.map(sc => ({ id: sc.id, name: sc.name, type: 'subchannel' }));
+        } else {
+          subData[channel.id] = [];
+        }
+        let supportsPush = false; let preferredPush = false;
+        if (manifest.capabilities) {
+          if (Array.isArray(manifest.capabilities.update_modes)) supportsPush = manifest.capabilities.update_modes.includes('push');
+          if (manifest.capabilities.preferred_mode === 'push') preferredPush = true;
+        }
+        if (manifest.supports_push) supportsPush = true;
+        pushCaps[channel.id] = { supportsPush, preferredPush };
+      } catch (err) {
+        supportInfo[channel.id] = false;
+        requirementsInfo[channel.id] = { requires_subchannel_selection: false };
+        subData[channel.id] = [];
+        pushCaps[channel.id] = { supportsPush: false, preferredPush: false };
+      }
+    }
+    setSubChannelSupport(supportInfo);
+    setSubChannelRequirements(requirementsInfo);
+    setAvailableSubChannels(subData);
+    setChannelPushCapabilities(pushCaps);
+    setLoadingSubChannels(false);
+    evaluatePushSelectable(formData.channels, pushCaps);
+  }, [channels, formData.channels, evaluatePushSelectable]);
+
+  useEffect(() => { loadCapabilities(); }, [loadCapabilities]);
+  useEffect(() => { evaluatePushSelectable(formData.channels, channelPushCapabilities); }, [formData.channels, channelPushCapabilities, evaluatePushSelectable]);
+
+
+  const handleScheduleChange = (field, value) => {
+    setScheduleData(prev => ({
+      ...prev,
+      [field]: field === 'freq_value' ? Math.max(1, parseInt(value) || 1) : value
+    }));
+    setScheduleModified(true);
+  };
+
+  const createSchedule = async () => {
+    if (!scene?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
+    try {
+      setScheduleLoading(true);
+      const jobData = {
+        name: `Auto-refresh ${formData.name || scene.name}`,
+        description: `Automatically refresh scene every ${scheduleData.freq_value} ${scheduleData.freq_unit}(s)`,
+        enabled: scheduleData.enabled,
+        freq_unit: scheduleData.freq_unit,
+        freq_value: parseInt(scheduleData.freq_value),
+        action_type: 'refresh_scene',
+        scene_ids: [scene.id],
+        refresh_method: 'content_refresh'
+      };
+      const resp = await api.createSchedulerJob(jobData);
+      setCurrentSchedule(resp.data);
+    } finally { setScheduleLoading(false); }
+  };
+
+  const updateSchedule = async () => {
+    if (!currentSchedule?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
+    try {
+      setScheduleLoading(true);
+      const updates = { freq_unit: scheduleData.freq_unit, freq_value: parseInt(scheduleData.freq_value), enabled: scheduleData.enabled };
+      const resp = await api.updateSchedulerJob(currentSchedule.id, updates);
+      const updated = resp.data;
+      setCurrentSchedule(updated);
+      setScheduleData({ freq_unit: updated.freq_unit, freq_value: updated.freq_value, enabled: updated.enabled });
+      setScheduleModified(false);
+    } catch (err) {
+      if (currentSchedule) {
+        setScheduleData({ freq_unit: currentSchedule.freq_unit, freq_value: currentSchedule.freq_value, enabled: currentSchedule.enabled });
+      }
+    } finally { setScheduleLoading(false); }
+  };
+
+  const deleteSchedule = async () => {
+    if (!currentSchedule?.id) return;
+    try {
+      setScheduleLoading(true);
+      await api.deleteSchedulerJob(currentSchedule.id);
+      setCurrentSchedule(null);
+      setScheduleData({ freq_unit: 'hour', freq_value: 1, enabled: true });
+      setScheduleModified(false);
+    } finally { setScheduleLoading(false); }
+  };
+
+  // Form validation
+  const runValidation = useCallback(() => {
+    const errs = validateForm(formData, subChannelRequirements, availableSubChannels, channels);
+    setValidationErrors(errs);
+    return errs;
+  }, [formData, subChannelRequirements, availableSubChannels, channels]);
+
+  const isFormValid = () => runValidation().length === 0;
+
+  // Submit logic
+  const save = async () => {
+    setLoading(true);
+    setValidationErrors([]);
+    const errs = runValidation();
+    if (errs.length > 0) { setLoading(false); return; }
+    try {
+      const payload = buildPayload(formData);
+      if (scene) await api.updateScene(scene.id, payload); else await api.createScene(payload);
+      onClose && onClose();
+    } catch (error) {
+      if (error.response?.data?.detail) {
+        if (Array.isArray(error.response.data.detail)) setValidationErrors(error.response.data.detail);
+        else setValidationErrors([error.response.data.detail]);
+      } else setValidationErrors(['An error occurred while saving the scene']);
+    } finally { setLoading(false); }
+  };
+
+  return {
+    formData,
+    setFormData,
+    validationErrors,
+    loading,
+    subChannelSupport,
+    subChannelRequirements,
+    availableSubChannels,
+    channelPushCapabilities,
+    loadingSubChannels,
+    pushSelectable,
+    scheduleData,
+    currentSchedule,
+    scheduleLoading,
+    scheduleModified,
+    handleScheduleChange,
+    createSchedule,
+    updateSchedule,
+    deleteSchedule,
+    isFormValid,
+    save,
+    setValidationErrors
+  };
+}
