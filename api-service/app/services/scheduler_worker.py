@@ -34,6 +34,7 @@ from ..config import settings
 from ..services.display_last_image import display_last_image_store
 from ..db.base import SessionLocal as _PersistenceSessionLocal
 from ..services.display_image_persistence import DisplayImagePersistenceService
+from ..services.scene_refresh_service import scene_refresh_service, SceneRefreshResult
 
 logger = logging.getLogger(__name__)
 
@@ -556,184 +557,28 @@ class SchedulerWorker:
             }
     
     async def _refresh_single_scene(self, assignment: SchedulerJobSceneAssignment) -> Dict[str, Any]:
-        """Refresh a single scene by requesting new content and distributing to displays"""
-        try:
-            # Get the scene
-            with SessionLocal() as db:
-                scene = db.query(Scene).filter(Scene.id == assignment.scene_id).first()
-                if not scene:
-                    return {
-                        "scene_id": assignment.scene_id,
-                        "success": False,
-                        "error": "Scene not found"
-                    }
-                
-                # Extract channel configuration from scene
-                if not scene.channels:
-                    return {
-                        "scene_id": assignment.scene_id,
-                        "success": False,
-                        "error": "Scene has no channel configuration"
-                    }
-                
-                # Assuming single channel model for now
-                channel_config = scene.channels[0] if isinstance(scene.channels, list) else scene.channels
-                channel_id = channel_config.get("channel_id")
-                subchannel_id = channel_config.get("subchannel_id")
-                
-                if not channel_id:
-                    return {
-                        "scene_id": assignment.scene_id,
-                        "success": False,
-                        "error": "No channel_id in scene configuration"
-                    }
-                
-                # Collect assigned displays with resolution/orientation info
-                assigned_displays = self._collect_assigned_displays(scene)
-                if not assigned_displays:
-                    return {
-                        "scene_id": assignment.scene_id,
-                        "success": False,
-                        "error": "No displays assigned to scene"
-                    }
+        """Refresh a single scene delegating to SceneRefreshService.
 
-                # Group displays by (resolution, orientation)
-                groups: Dict[Tuple[int, int, str], List[Dict[str, Any]]] = {}
-                for d in assigned_displays:
-                    key = (d["width"], d["height"], d["orientation"])
-                    groups.setdefault(key, []).append(d)
-
-                logger.info(
-                    "scene.refresh.grouping scene_id=%s groups=%d", scene.id, len(groups)
-                )
-
-                total_displays_updated = 0
-                all_errors: List[str] = []
-                image_info_samples: List[Dict[str, Any]] = []
-
-                # For each group request an appropriately sized image once
-                for (w, h, orientation), display_group in groups.items():
-                    try:
-                        image_response = await self._request_channel_image(
-                            channel_id,
-                            subchannel_id,
-                            assignment.refresh_method,
-                            resolution=[w, h],
-                            orientation=orientation,
-                        )
-                    except ChannelRequestError as e:
-                        err = f"Channel image request failed for group {w}x{h}/{orientation}: {e}"
-                        logger.error(err)
-                        all_errors.append(err)
-                        continue
-
-                    if not image_response.get("success"):
-                        err = f"Channel group request unsuccessful {w}x{h}/{orientation}: {image_response.get('error')}"
-                        all_errors.append(err)
-                        continue
-
-                    image_info = image_response.get("image", {})
-                    image_info_samples.append(image_info)
-
-                    # Convert image to accessible URL
-                    image_url = _convert_image_to_url(image_info)
-                    if not image_url:
-                        all_errors.append(
-                            f"Unable to convert image to URL for group {w}x{h}/{orientation}"
-                        )
-                        continue
-
-                    distribution_mode = image_info.get("distribution_mode")
-                    # For simplicity we always distribute new/cached/existing here; policy refinement can be added later
-                    for display in display_group:
-                        device_id = display["device_id"]
-                        try:
-                            if mqtt_scene_service.is_connected():
-                                assignment_id = f"display-{uuid.uuid4().hex[:8]}"
-                                success = await mqtt_scene_service.send_display_image(
-                                    device_id=device_id,
-                                    image_url=image_url,
-                                    assignment_id=assignment_id,
-                                )
-                                if success:
-                                    total_displays_updated += 1
-                                    display_last_image_store.update(
-                                        device_id=device_id,
-                                        assignment_id=assignment_id,
-                                        image_url=image_url,
-                                        image_width=w,
-                                        image_height=h,
-                                        image_format=None,
-                                        scene_id=str(scene.id),
-                                        subchannel_id=subchannel_id,
-                                    )
-                                    # Persist record (best effort)
-                                    try:
-                                        logger.debug(
-                                            "persist.image.attempt device=%s scene=%s subchannel=%s assignment=%s url=%s",
-                                            device_id,
-                                            scene.id,
-                                            subchannel_id,
-                                            assignment_id,
-                                            image_url,
-                                        )
-                                        with _PersistenceSessionLocal() as p_db:
-                                            persistence = DisplayImagePersistenceService(p_db)
-                                            rec = persistence.store_distribution_image(
-                                                display_id=device_id,
-                                                scene_id=str(scene.id),
-                                                subchannel_id=subchannel_id,
-                                                assignment_id=assignment_id,
-                                                image_url=image_url,
-                                                width=w,
-                                                height=h,
-                                                image_format=None,
-                                                source="distribution",
-                                                retain_history=True,
-                                            )
-                                            logger.info(
-                                                "persist.image stored device=%s scene=%s id=%s thumb=%s read_only=%s",
-                                                device_id,
-                                                scene.id,
-                                                getattr(rec, 'id', None),
-                                                getattr(rec, 'thumbnail_path', None),
-                                                getattr(persistence, 'read_only_mode', None),
-                                            )
-                                    except Exception as perr:  # noqa: BLE001
-                                        logger.warning("persist.image failure device=%s err=%s", device_id, perr)
-                                else:
-                                    all_errors.append(
-                                        f"MQTT send failed device={device_id} group={w}x{h}/{orientation}"
-                                    )
-                            else:
-                                all_errors.append("MQTT not connected")
-                        except Exception as e:  # noqa: BLE001
-                            all_errors.append(f"Error sending to device {device_id}: {e}")
-
-                return {
-                    "scene_id": assignment.scene_id,
-                    "success": total_displays_updated > 0,
-                    "channel_id": channel_id,
-                    "subchannel_id": subchannel_id,
-                    "image_samples": image_info_samples[:3],  # include a few samples for inspection
-                    "displays_updated": total_displays_updated,
-                    "distribution_errors": all_errors,
-                }
-                
-        except (ChannelRequestError, ImageConversionError, DistributionError) as e:
-            logger.error("scene.refresh.domain_error scene_id=%s error=%s", assignment.scene_id, e)
-            return {
-                "scene_id": assignment.scene_id,
-                "success": False,
-                "error": str(e)
-            }
-        except Exception as e:  # noqa: BLE001
-            logger.exception("scene.refresh.unexpected scene_id=%s error=%s", assignment.scene_id, e)
-            return {
-                "scene_id": assignment.scene_id,
-                "success": False,
-                "error": str(e)
-            }
+        Returns legacy dict structure for backward compatibility with existing
+        scheduler execution aggregation logic.
+        """
+        result: SceneRefreshResult = await scene_refresh_service.refresh_scene(
+            assignment.scene_id,
+            trigger_reason="scheduler",
+            force=False,
+        )
+        # Map to legacy shape expected by caller
+        return {
+            "scene_id": result.scene_id,
+            "success": result.status == "ok",
+            "channel_id": result.channel_id,
+            "subchannel_id": result.subchannel_id,
+            "displays_updated": result.displays_updated,
+            "errors": result.errors,
+            "skipped_reason": result.skipped_reason,
+            "image_url": result.image_url,
+            "status": result.status,
+        }
     
     async def _request_channel_image(
         self,

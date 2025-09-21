@@ -177,6 +177,23 @@ class Settings(BaseSettings):
     mqtt_password: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_PASSWORD", "MQTT_PASS"))
     mqtt_client_id_prefix: str = Field("mimir", validation_alias=AliasChoices("MQTT_CLIENT_ID_PREFIX",))
 
+    # --- Push / Scene Refresh Tunables ---
+    push_debounce_seconds: float = Field(
+        5.0,
+        validation_alias=AliasChoices("PUSH_DEBOUNCE_SECONDS", "CHANNEL_PUSH_DEBOUNCE_SECONDS"),
+        description="Minimum seconds between successive refreshes of the same scene triggered by push events.",
+    )
+    push_channel_scene_cache_ttl: float = Field(
+        30.0,
+        validation_alias=AliasChoices("PUSH_CHANNEL_SCENE_CACHE_TTL", "CHANNEL_SCENE_CACHE_TTL_SECONDS"),
+        description="TTL (seconds) for channel->scene mapping cache in push consumer.",
+    )
+    push_fallback_stale_check_interval: float = Field(
+        60.0,
+        validation_alias=AliasChoices("PUSH_FALLBACK_STALE_CHECK_INTERVAL", "PUSH_STALE_CHECK_INTERVAL_SECONDS"),
+        description="Interval (seconds) for background task that triggers fallback refreshes when push scenes go stale.",
+    )
+
     @property
     def redis_dsn(self) -> str | None:
         """Build a Redis URL when REDIS_URL isn't provided."""
