@@ -170,12 +170,22 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
 
   // Form validation
   const runValidation = useCallback(() => {
-    const errs = validateForm(formData, subChannelRequirements, availableSubChannels, channels);
-    setValidationErrors(errs);
-    return errs;
+    // Purely compute; caller responsible for setting state
+    return validateForm(formData, subChannelRequirements, availableSubChannels, channels);
   }, [formData, subChannelRequirements, availableSubChannels, channels]);
 
-  const isFormValid = () => runValidation().length === 0;
+  // Maintain validationErrors via effect so we don't trigger setState during render
+  useEffect(() => {
+    const errs = runValidation();
+    // Only update state if changed to prevent unnecessary renders
+    setValidationErrors(prev => {
+      const changed = prev.length !== errs.length || prev.some((e,i)=> e !== errs[i]);
+      return changed ? errs : prev;
+    });
+  }, [runValidation]);
+
+  // Pure validity check (no side effects)
+  const isFormValid = () => validationErrors.length === 0;
 
   // Submit logic
   const save = async () => {
@@ -184,8 +194,11 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
     const errs = runValidation();
     if (errs.length > 0) { setLoading(false); return; }
     try {
-      const payload = buildPayload(formData);
-      if (scene) await api.updateScene(scene.id, payload); else await api.createScene(payload);
+  // Ensure latest validation before save
+  const currentErrs = runValidation();
+  if (currentErrs.length) { setValidationErrors(currentErrs); setLoading(false); return; }
+  const payload = buildPayload(formData);
+  if (scene) await api.updateScene(scene.id, payload); else await api.createScene(payload);
       onClose && onClose();
     } catch (error) {
       if (error.response?.data?.detail) {

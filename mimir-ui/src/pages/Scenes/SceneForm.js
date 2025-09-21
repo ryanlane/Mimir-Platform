@@ -11,6 +11,12 @@ import ScheduleEditor from './components/ScheduleEditor.jsx';
 import { useSceneFormLogic } from './useSceneFormLogic';
 
 const SceneForm = ({ scene, channels, onClose }) => {
+  // Debug render counter
+  if (typeof window !== 'undefined') {
+    window.__sceneFormRenders = (window.__sceneFormRenders || 0) + 1;
+    // eslint-disable-next-line no-console
+    console.log(`[SceneForm] Render count: ${window.__sceneFormRenders}`);
+  }
   const {
     formData,
     setFormData,
@@ -237,10 +243,11 @@ const SceneForm = ({ scene, channels, onClose }) => {
             <button type="button" className="btn" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading || !isFormValid()}>
+            {(() => { const valid = isFormValid(); return (
+            <button type="submit" className="btn btn-primary" disabled={loading || !valid}>
               <Save size={16} />
               {loading ? 'Saving...' : 'Save Scene'}
-            </button>
+            </button>); })()}
           </div>
         </form>
       </div>
