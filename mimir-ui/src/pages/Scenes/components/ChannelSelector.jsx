@@ -106,7 +106,12 @@ ChannelSelector.propTypes = {
   })).isRequired,
   assignments: PropTypes.arrayOf(PropTypes.shape({
     channel_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-    subchannel_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.null])
+    // Allow string, number, or null explicitly. PropTypes.null does not exist.
+    subchannel_id: PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.number,
+      PropTypes.oneOf([null])
+    ])
   })).isRequired,
   subChannelSupport: PropTypes.object.isRequired,
   availableSubChannels: PropTypes.object.isRequired,

@@ -2,11 +2,12 @@ import React from 'react';
 import { X, Save } from 'lucide-react';
 import './SceneForm.css';
 // Extracted presentational components
-import ValidationErrors from './components/ValidationErrors';
-import DistributionModeSelector from './components/DistributionModeSelector';
-import UpdateStrategySelector from './components/UpdateStrategySelector';
-import ChannelSelector from './components/ChannelSelector';
-import ScheduleEditor from './components/ScheduleEditor';
+// Explicit .jsx extensions to avoid potential bundler resolution ambiguity
+import ValidationErrors from './components/ValidationErrors.jsx';
+import DistributionModeSelector from './components/DistributionModeSelector.jsx';
+import UpdateStrategySelector from './components/UpdateStrategySelector.jsx';
+import ChannelSelector from './components/ChannelSelector.jsx';
+import ScheduleEditor from './components/ScheduleEditor.jsx';
 import { useSceneFormLogic } from './useSceneFormLogic';
 
 const SceneForm = ({ scene, channels, onClose }) => {
@@ -48,6 +49,30 @@ const SceneForm = ({ scene, channels, onClose }) => {
     setFormData(prev => ({ ...prev, schedule: null }));
   };
   */
+
+  // Runtime sanity checks – if any imported component failed to load it would cause React 301.
+  if (!ValidationErrors || !ChannelSelector || !DistributionModeSelector || !UpdateStrategySelector || !ScheduleEditor) {
+    console.error('[SceneForm] One or more sub components failed to import:', {
+      ValidationErrors: !!ValidationErrors,
+      ChannelSelector: !!ChannelSelector,
+      DistributionModeSelector: !!DistributionModeSelector,
+      UpdateStrategySelector: !!UpdateStrategySelector,
+      ScheduleEditor: !!ScheduleEditor
+    });
+    return (
+      <div className="scene-form-overlay">
+        <div className="scene-form">
+          <div className="scene-form-header">
+            <h2>Scene Form Load Error</h2>
+            <button className="btn btn-sm" onClick={onClose}>×</button>
+          </div>
+          <div className="scene-form-body">
+            <p>Required components failed to load. Check console for details.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="scene-form-overlay">
