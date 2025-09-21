@@ -2,23 +2,14 @@
 Scene API Routes
 FastAPI router for scene-related endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Dict, Any, Optional
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Dict, Any
 from datetime import datetime
 from app.dependencies import get_scene_service
 from app.core.services.scene_service import SceneService
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient
-from app.schemas.scenes import (
-    SceneResponse,
-    SceneCreate,
-    SceneUpdate,
-    SceneListResponse,
-    SceneActivation,
-    ChannelAssignment,
-    ScheduleConfig
-)
+from app.schemas.scenes import SceneListResponse, SceneResponse
 
 
 router = APIRouter(prefix="/scenes", tags=["scenes"])
@@ -51,7 +42,9 @@ async def get_scene(
         "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
         "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
         "distribution_mode": scene.distribution_mode,  # New field
-        "is_active": scene.is_active
+        "is_active": scene.is_active,
+        "update_strategy": scene.update_strategy,
+        "push_fallback_poll_seconds": scene.push_fallback_poll_seconds
     }
 
 
@@ -69,7 +62,9 @@ async def create_scene(
         "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
         "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
         "distribution_mode": scene.distribution_mode,  # New field
-        "is_active": scene.is_active
+        "is_active": scene.is_active,
+        "update_strategy": scene.update_strategy,
+        "push_fallback_poll_seconds": scene.push_fallback_poll_seconds
     }
 
 
@@ -91,7 +86,9 @@ async def update_scene(
         "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
         "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
         "distribution_mode": scene.distribution_mode,  # New field
-        "is_active": scene.is_active
+        "is_active": scene.is_active,
+        "update_strategy": scene.update_strategy,
+        "push_fallback_poll_seconds": scene.push_fallback_poll_seconds
     }
 
 
@@ -188,7 +185,6 @@ async def refresh_scene_content(
         # Import here to avoid circular imports
         from app.services.scheduler_worker import SchedulerWorker
         from app.services.scheduler_service import SchedulerService
-        from app.db.base import SessionLocal
         
         # Create a temporary worker instance for manual execution
         worker = SchedulerWorker()
@@ -196,7 +192,7 @@ async def refresh_scene_content(
         # Create a database session for the scheduler service
         db = SessionLocal()
         try:
-            scheduler_service = SchedulerService(db)
+            scheduler_service = SchedulerService(db)  # noqa: F841 retained for potential future use
             
             # Create a mock assignment for the scene refresh
             from app.db.models import SchedulerJobSceneAssignment
@@ -209,7 +205,8 @@ async def refresh_scene_content(
             )
             
             # Execute the scene refresh
-            result = await worker._refresh_single_scene(mock_assignment)
+            # Protected member used intentionally; consider refactor to public method in future
+            result = await worker._refresh_single_scene(mock_assignment)  # noqa: SLF001
             
             return {
                 "message": f"Content refresh triggered for scene {scene_id}",

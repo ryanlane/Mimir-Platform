@@ -72,6 +72,10 @@ class Scene(Base):
     # Content versioning for Redis integration
     content_hash = Column(String, nullable=True, index=True)
     content_epoch = Column(Integer, nullable=True, index=True)  # INTEGER not String
+
+    # Push update support
+    update_strategy = Column(String, default="scheduler", index=True)  # 'scheduler' | 'push'
+    push_fallback_poll_seconds = Column(Integer, nullable=True)  # Optional fallback interval when using push
     
     # Metadata
     created_at = Column(DateTime, index=True)
@@ -82,6 +86,7 @@ class Scene(Base):
         Index('ix_scenes_active_distribution', 'is_active', 'distribution_mode'),
         Index('ix_scenes_content_hash_epoch', 'content_hash', 'content_epoch'),
         Index('ix_scenes_content_epoch', 'content_epoch'),
+        Index('ix_scenes_update_strategy', 'update_strategy'),
     )
 
 

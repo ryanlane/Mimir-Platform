@@ -32,6 +32,8 @@ class SceneService:
                 "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
                 "distribution_mode": scene.distribution_mode,  # New field
                 "is_active": scene.is_active,
+                "update_strategy": scene.update_strategy,
+                "push_fallback_poll_seconds": scene.push_fallback_poll_seconds,
                 "created_at": scene.created_at,
                 "updated_at": scene.updated_at
             })
@@ -59,7 +61,9 @@ class SceneService:
             overlays=scene_data.get("overlay"),  # Map 'overlay' to 'overlays' column
             timing_config=scene_data.get("schedule"),  # Map 'schedule' to 'timing_config' column
             distribution_mode=scene_data.get("distribution_mode", "MIRROR"),  # New field
-            is_active=scene_data.get("is_active", False)
+            is_active=scene_data.get("is_active", False),
+            update_strategy=scene_data.get("update_strategy", "scheduler"),
+            push_fallback_poll_seconds=scene_data.get("push_fallback_poll_seconds")
         )
         
         self.db.add(scene)
@@ -86,6 +90,10 @@ class SceneService:
             scene.distribution_mode = scene_data["distribution_mode"]  # New field
         if "is_active" in scene_data:
             scene.is_active = scene_data["is_active"]
+        if "update_strategy" in scene_data:
+            scene.update_strategy = scene_data["update_strategy"]
+        if "push_fallback_poll_seconds" in scene_data:
+            scene.push_fallback_poll_seconds = scene_data["push_fallback_poll_seconds"]
         
         self.db.commit()
         self.db.refresh(scene)
