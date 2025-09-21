@@ -5,6 +5,7 @@ import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
 import DistributionManager from '../../components/DistributionManager/DistributionManager';
 import './Scenes.css';
+import SceneLiveStatus from './components/SceneLiveStatus';
 
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
@@ -356,6 +357,12 @@ const Scenes = () => {
             Create Scene
           </button>
         </div>
+      </div>
+      <div style={{ marginTop: '12px', marginBottom: '16px' }}>
+        <SceneLiveStatus
+          initialSceneId={displayStatus?.currentScene || displayStatus?.current_scene}
+          initialSceneName={displayStatus?.currentSceneName || displayStatus?.current_scene_name}
+        />
       </div>
 
       {scenes.length > 0 ? (
