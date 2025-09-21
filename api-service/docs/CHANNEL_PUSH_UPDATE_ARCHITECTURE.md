@@ -254,18 +254,69 @@ This design introduces an optional push-driven update path for channels while pr
 *Document version: 1.0 (initial proposal)*
 
 ---
-## Implementation Snapshot (Current Status)
+## Implementation Snapshot (Status – 2025-09)
 
-Implemented components:
-- `app/services/channel_events.py` providing `ChannelUpdateEvent` + `channel_event_dispatcher`.
-- Spotify channel (`spotify-status` repo) now exposes `supports_push` and emits events internally.
-- Plugin discovery auto-registers push listeners and bridges events into dispatcher.
-- Basic consumer placeholder: `app/services/channel_event_consumer.py` (logs events; next step is scene mapping + distribution).
+Built (implemented in codebase):
+1. Event Model & Dispatcher
+  - `app/services/channel_events.py` defines `ChannelUpdateEvent` and a singleton in-memory dispatcher.
+  - Basic per-channel last-event awareness (lightweight); full token-bucket throttling not added yet.
+2. Push-Capable Plugin (Spotify)
+  - Spotify channel in separate repo emits push events and declares `supports_push`.
+  - Plugin discovery (`plugin_discovery_service`) registers dispatcher callbacks automatically.
+3. Channel Event Consumer
+  - `app/services/channel_event_consumer.py` maps channel events to active scenes with `update_strategy=push`.
+  - Debounce per scene using `settings.push_debounce_seconds`.
+  - Maintains channel→scene mapping cache with TTL (`settings.push_channel_scene_cache_ttl`).
+  - Fallback stale poll loop triggers refresh when a push scene is silent beyond its `push_fallback_poll_seconds`.
+4. Scene Refresh Service
+  - `SceneRefreshService` unifies scheduler and push-triggered refresh paths.
+  - Iterates all configured channels in a scene (multi-channel support) instead of first-only.
+  - Computes content hash (SHA256) + increments `content_epoch` only on change to reduce unnecessary downstream work.
+5. Scene Model & API Fields
+  - Added `update_strategy` and `push_fallback_poll_seconds` (migration exists; must be applied in deployed DB).
+6. Configuration Tunables (in `config.py`)
+  - `PUSH_DEBOUNCE_SECONDS`
+  - `PUSH_CHANNEL_SCENE_CACHE_TTL` / `CHANNEL_SCENE_CACHE_TTL_SECONDS`
+  - `PUSH_FALLBACK_STALE_CHECK_INTERVAL` / `PUSH_STALE_CHECK_INTERVAL_SECONDS`
+7. Reliability Enhancements
+  - Fallback stale poller (background task) to guarantee eventual refresh.
+  - Lazy import inside `scene_refresh_service` to break circular dependency with plugin discovery.
+8. Minimal Metrics Placeholders
+  - Counters scaffolded (actual rich metrics/export pending).
 
-Next incremental tasks:
-1. Map channel events to active scenes with `update_strategy=push`.
-2. Invoke existing image generation + distribution pipeline (`request_image` then `distribution_service`).
-3. Add scene model field and migration for `update_strategy`.
-4. Extend channels and scenes API endpoints to surface/update strategy choice.
+Partially implemented or deviated from original proposal:
+1. Throttling & Dedupe
+  - Proposal: token bucket + dispatcher-level dedupe by hash.
+  - Current: scene-level debounce; hashing used post-refresh to detect changed output; dispatcher does not yet perform full hash-based event drop.
+2. Unified Distribution Entry Function
+  - Proposal: single `apply_channel_update` entrypoint.
+  - Current: Logic embodied in `SceneRefreshService.refresh_scene`; not a separately named public function yet.
+3. Metrics Depth
+  - Proposal: detailed counters + histograms (latency, drops, fallback counts).
+  - Current: Minimal placeholders only (no labeled telemetry surfaced).
+4. External Broadcast (MQTT/Redis for channel events)
+  - Not implemented; only internal in-memory dispatch used.
+5. Per-Event-Type Subscription
+  - Deferred (all push scenes receive any event for their channel).
 
-This keeps changes isolated and low-risk while enabling end-to-end event flow for early validation.
+Known gaps / next steps (updated):
+1. Apply Alembic migration in all environments (resolve "no such column: scenes.update_strategy").
+2. Add rich metrics: event counts (accepted/dropped), refresh durations, fallback invocations.
+3. Dispatcher-level dedupe + optional token-bucket throttling.
+4. Optimize distribution: skip publish when content hash unchanged (already have hash to support this).
+5. Graceful shutdown coordination: cancel stale poller tasks explicitly.
+6. UI exposure for selecting `update_strategy` and configuring fallback interval.
+7. Optional external event fan-out (e.g. MQTT topic `mimir/channel/<channel_id>/updates`).
+8. Structured error taxonomy and tighter exception granularity in refresh path (currently pragmatic broad catch at boundary).
+9. Per-event-type selective subscription (only if needed for high-volume plugins).
+10. Retry / backoff supervision for plugin push streams if future channels use long-lived connections.
+
+Deviation summary (why acceptable now):
+- Scaling requirements are modest; in-memory dispatcher + debounce is enough for single-node deployment.
+- Implementing hashing earlier enabled future optimization without premature complexity.
+- Postponing external broadcast and full metrics reduced initial risk and sped up validation.
+
+Operational note:
+- If you encounter the missing column error, run the latest migrations (e.g. `alembic upgrade head`) before enabling push scenes in production.
+
+Document version: 1.1 (reflects implemented state and deviations)
