@@ -112,12 +112,25 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
           subData[channel.id] = [];
         }
         let supportsPush = false; let preferredPush = false;
+        // Detection sources (descending priority)
         if (manifest.capabilities) {
-          if (Array.isArray(manifest.capabilities.update_modes)) supportsPush = manifest.capabilities.update_modes.includes('push');
-          if (manifest.capabilities.preferred_mode === 'push') preferredPush = true;
+          const caps = manifest.capabilities;
+            if (Array.isArray(caps.update_modes) && caps.update_modes.includes('push')) supportsPush = true;
+            if (caps.preferred_mode === 'push') preferredPush = true;
+            if (caps.push_supported === true) supportsPush = true;
+            if (caps.supports_push === true) supportsPush = true;
         }
-        if (manifest.supports_push) supportsPush = true;
-        pushCaps[channel.id] = { supportsPush, preferredPush };
+        if (manifest.push && typeof manifest.push === 'object') {
+          if (manifest.push.supports_push === true) supportsPush = true;
+          if (manifest.push.active === true) supportsPush = true; // active push thread implies capability
+        }
+        if (manifest.supports_push === true) supportsPush = true; // top-level flag
+        const rawFlag = manifest.supports_push || manifest.capabilities?.supports_push || manifest.capabilities?.push_supported;
+        pushCaps[channel.id] = { supportsPush, preferredPush, rawFlag: !!rawFlag };
+        if (typeof window !== 'undefined') {
+          window.__mimirPushDebug = window.__mimirPushDebug || { manifests: {}, eval: [] };
+          window.__mimirPushDebug.manifests[channel.id] = manifest;
+        }
       } catch (err) {
         supportInfo[channel.id] = false;
         requirementsInfo[channel.id] = { requires_subchannel_selection: false };
@@ -132,10 +145,22 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
     setLoadingSubChannels(false);
     setCapabilitiesLoaded(true);
     evaluatePushSelectable(formData.channels, pushCaps, true);
+    if (typeof window !== 'undefined') {
+      window.__mimirPushDebug = window.__mimirPushDebug || { manifests: {}, eval: [] };
+      window.__mimirPushDebug.capabilityMap = pushCaps;
+      // eslint-disable-next-line no-console
+      console.log('[SceneForm] Capability map:', pushCaps);
+    }
   }, [channels, formData.channels, evaluatePushSelectable]);
 
   useEffect(() => { loadCapabilities(); }, [loadCapabilities]);
-  useEffect(() => { evaluatePushSelectable(formData.channels, channelPushCapabilities, capabilitiesLoaded); }, [formData.channels, channelPushCapabilities, capabilitiesLoaded, evaluatePushSelectable]);
+  useEffect(() => { 
+    evaluatePushSelectable(formData.channels, channelPushCapabilities, capabilitiesLoaded); 
+    if (typeof window !== 'undefined') {
+      window.__mimirPushDebug = window.__mimirPushDebug || { manifests: {}, eval: [] };
+      window.__mimirPushDebug.eval.push({ ts: Date.now(), assignments: formData.channels, caps: channelPushCapabilities, loaded: capabilitiesLoaded });
+    }
+  }, [formData.channels, channelPushCapabilities, capabilitiesLoaded, evaluatePushSelectable]);
 
 
   const handleScheduleChange = (field, value) => {
