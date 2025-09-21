@@ -22,11 +22,100 @@ from app.db.base import SessionLocal
 from app.db.models import DisplaySceneImage
 from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.services.mqtt.presence import mqtt_presence_service
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
 health_router = APIRouter(tags=["health"])
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Sensitive key substrings to redact
+SENSITIVE_SUBSTRINGS = [
+    'SECRET', 'PASSWORD', 'TOKEN', 'KEY', 'PASS', 'API_KEY', 'AUTH', 'CLIENT_SECRET'
+]
+
+def _should_redact(key: str) -> bool:
+    upper = key.upper()
+    return any(part in upper for part in SENSITIVE_SUBSTRINGS)
+
+@lru_cache(maxsize=1)
+def _candidate_env_files() -> list[dict[str, Any]]:
+    """Return metadata about likely environment files for diagnostics."""
+    paths = [
+        '/etc/mimir/mimir-api.env',
+        '/etc/mimir/.env',
+        '/var/opt/mimir/mimir-api/.env',
+        '.env'
+    ]
+    result: list[dict[str, Any]] = []
+    for p in paths:
+        try:
+            exists = os.path.exists(p)
+            size = os.path.getsize(p) if exists else None
+            result.append({
+                'path': p,
+                'exists': exists,
+                'size_bytes': size
+            })
+        except Exception as e:  # noqa: BLE001
+            result.append({'path': p, 'exists': False, 'error': str(e)})
+    return result
+
+@admin_router.get('/config/env', summary='Inspect effective environment & settings')
+async def get_environment_config(include_values: bool = True, expose_secrets: bool = False):
+    """Diagnostic endpoint: Show effective application settings & environment variables.
+
+    WARNING: This endpoint is intended for administrative debugging. By default
+    sensitive values (passwords, tokens, secrets) are redacted. To attempt to
+    expose full values (NOT RECOMMENDED in production), pass `expose_secrets=true`.
+
+    Query Params:
+      - include_values: bool (default True) include setting/env values (redacted as needed)
+      - expose_secrets: bool (default False) if True AND settings.debug=True, secrets will be shown.
+        If debug is False this flag is ignored for safety.
+    """
+    # Build settings dump via pydantic model export
+    try:
+        settings_dict = settings.model_dump()
+    except Exception:  # Fallback if model_dump unavailable
+        settings_dict = settings.__dict__
+
+    debug_mode = getattr(settings, 'debug', False)
+    allow_full = bool(expose_secrets and debug_mode)
+
+    def redact_value(k: str, v: Any):
+        if v is None:
+            return None
+        if not include_values:
+            return 'hidden'
+        if allow_full:
+            return v
+        if _should_redact(k):
+            # Preserve length for debugging
+            s = str(v)
+            if len(s) <= 4:
+                return '****'
+            return s[:2] + '****' + s[-2:]
+        return v
+
+    redacted_settings = {k: redact_value(k, v) for k, v in settings_dict.items()}
+
+    env_items = {}
+    for k, v in os.environ.items():
+        env_items[k] = redact_value(k, v)
+
+    response = {
+        'debug': debug_mode,
+        'secrets_exposed': allow_full,
+        'settings': redacted_settings,
+        'environment': env_items,
+        'candidate_env_files': _candidate_env_files(),
+        'redaction_policy': {
+            'sensitive_substrings': SENSITIVE_SUBSTRINGS,
+            'applied': not allow_full,
+        }
+    }
+    return response
 
 
 def get_db():
