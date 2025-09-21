@@ -240,10 +240,10 @@ const Scenes = () => {
     }
   };
 
-  const handleManageDistribution = (scene) => {
-    setSelectedSceneForDistribution(scene);
-    setShowDistributionManager(true);
-  };
+  // const handleManageDistribution = (scene) => {
+  //   setSelectedSceneForDistribution(scene);
+  //   setShowDistributionManager(true);
+  // };
 
   const handleCloseDistributionManager = () => {
     setShowDistributionManager(false);
@@ -364,7 +364,22 @@ const Scenes = () => {
             return (
               <div key={scene.id} className="scene-card">
                 <div className="scene-card-header">
-                  <h3>{scene.name}</h3>
+                  <h3>{scene.name} {' '}
+                    {(() => {
+                      // Determine strategy badge (prefer new field names)
+                      const strategy = scene.update_strategy || scene.updateStrategy || 'scheduler';
+                      const isPush = strategy === 'push';
+                      const badgeClass = isPush ? 'strategy-badge push' : 'strategy-badge scheduler';
+                      // If push but fallback poll not present, still fine. If scheduler but scene has push_fallback_poll_seconds it implies downgrade.
+                      const downgraded = !isPush && (scene.push_fallback_poll_seconds || scene.pushFallbackPollSeconds);
+                      return (
+                        <span className={badgeClass} title={downgraded ? 'Originally configured for push but downgraded due to channel capability change' : (isPush ? 'Push update strategy (websocket events trigger refresh)' : 'Scheduler update strategy (periodic refresh)')}>
+                          {isPush ? 'Push' : 'Scheduled'}
+                          {downgraded && <span className="downgrade-indicator" aria-label="Downgraded to scheduler">⚠</span>}
+                        </span>
+                      );
+                    })()}
+                  </h3>
                 </div>
 
                 <div className="scene-card-body">                  
