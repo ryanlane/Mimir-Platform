@@ -28,16 +28,20 @@ from app.db.models import Scene, DisplayClient
 from app.services.mqtt.publisher import mqtt_scene_service
 from app.services.display_last_image import display_last_image_store
 from app.services.display_image_persistence import DisplayImagePersistenceService
-from app.db.base import SessionLocal as _PersistenceSessionLocal
 from app.config import settings
 from app.services.mdns_discovery import mdns_discovery_service
 
 logger = logging.getLogger(__name__)
 
-try:  # metrics optional; degrade gracefully
+_METRICS = False
+refresh_counter = None  # type: ignore[assignment]
+refresh_duration_counter = None  # type: ignore[assignment]
+try:  # metrics optional; keep minimal to avoid circulars
     from app.core.metrics import metrics  # type: ignore
-    _METRICS = True
-except Exception:  # noqa: BLE001
+    refresh_counter = getattr(metrics, 'scene_refresh_total', None)  # pre-defined elsewhere ideally
+    refresh_duration_counter = getattr(metrics, 'scene_refresh_duration_ms', None)
+    _METRICS = any([refresh_counter, refresh_duration_counter])
+except ImportError:  # pragma: no cover
     _METRICS = False
 
 # Result dataclass for clarity
@@ -183,8 +187,8 @@ class SceneRefreshService:
                                 request_data["settings"]["subChannelId"] = sc_id
                             try:
                                 image_response = await plugin.instance.request_image(request_data)
-                            except Exception as e:  # noqa: BLE001
-                                errors.append(f"channel_request_failed:{ch_id}:{e}")
+                            except (RuntimeError, ValueError, OSError) as e:  # plugin call safety
+                                errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
                                 continue
                             if not image_response or not image_response.get("success"):
                                 errors.append(f"channel_response_unsuccessful:{ch_id}")
@@ -222,10 +226,10 @@ class SceneRefreshService:
                                             scene_id=str(scene.id),
                                             subchannel_id=sc_id,
                                         )
+                                        # Persistence best-effort; isolate errors
                                         try:
-                                            with _PersistenceSessionLocal() as p_db:
-                                                persistence = DisplayImagePersistenceService(p_db)
-                                                persistence.store_distribution_image(
+                                            with SessionLocal() as p_db:
+                                                DisplayImagePersistenceService(p_db).store_distribution_image(
                                                     display_id=device_id,
                                                     scene_id=str(scene.id),
                                                     subchannel_id=sc_id,
@@ -237,12 +241,12 @@ class SceneRefreshService:
                                                     source="distribution",
                                                     retain_history=True,
                                                 )
-                                        except Exception as perr:  # noqa: BLE001
-                                            logger.debug("persist_failure device=%s err=%s", device_id, perr)
+                                        except (RuntimeError, ValueError, OSError) as perr:  # persistence non-critical
+                                            logger.debug("persist_failure device=%s err=%s", device_id, type(perr).__name__)
                                     else:
                                         errors.append(f"mqtt_send_failed:{device_id}")
-                                except Exception as send_err:  # noqa: BLE001
-                                    errors.append(f"send_exception:{device_id}:{send_err}")
+                                except (ConnectionError, RuntimeError, OSError) as send_err:  # network/mqtt isolation
+                                    errors.append(f"send_exception:{device_id}:{type(send_err).__name__}")
 
                     status = "ok" if total_updated > 0 else ("skipped" if not errors else "error")
                     skipped_reason = None
@@ -264,24 +268,28 @@ class SceneRefreshService:
                         skipped_reason=skipped_reason,
                         image_url=sample_url,
                     )
-            except Exception as e:  # noqa: BLE001
-                logger.exception("scene.refresh.unexpected scene=%s err=%s", scene_id, e)
+            except (RuntimeError, ValueError, OSError) as e:  # top-level safety
+                logger.exception("scene.refresh.unexpected scene=%s err=%s", scene_id, type(e).__name__)
                 return SceneRefreshResult(
                     scene_id=scene_id,
                     status="error",
                     reason=trigger_reason,
-                    errors=[str(e)],
+                    errors=[type(e).__name__],
                     duration_ms=int((time.perf_counter()-start)*1000),
                 )
             finally:
                 if _METRICS:
-                    try:
-                        # Reuse existing distribution metric semantics for now
-                        metrics.distribution_content_assigned(
-                            channel_id or "unknown", trigger_reason, ""  # type: ignore[name-defined]
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
+                    # Attempt counter increments only if objects exist; ignore failures
+                    if refresh_counter:  # type: ignore[truthy-function]
+                        try:  # pragma: no cover
+                            refresh_counter.add(1)
+                        except Exception:  # pragma: no cover
+                            pass
+                    if refresh_duration_counter:
+                        try:  # pragma: no cover
+                            refresh_duration_counter.add(int((time.perf_counter()-start)*1000))
+                        except Exception:  # pragma: no cover
+                            pass
                 # Persist content hash if new sample_url was produced
                 if 'sample_url' in locals() and sample_url:
                     try:
@@ -297,8 +305,8 @@ class SceneRefreshService:
                                     logger.debug(
                                         "scene.content_hash.updated scene=%s epoch=%s hash=%s", scene_id, scene_db.content_epoch, new_hash
                                     )
-                    except Exception as hash_err:  # noqa: BLE001
-                        logger.debug("scene.content_hash.update_failed scene=%s err=%s", scene_id, hash_err)
+                    except (RuntimeError, ValueError, OSError) as hash_err:  # hash persistence non-critical
+                        logger.debug("scene.content_hash.update_failed scene=%s err=%s", scene_id, type(hash_err).__name__)
 
     # --- Helpers (duplicated conceptually from scheduler worker; refactor later) ---
     def _collect_assigned_displays(self, scene: Scene) -> List[Dict[str, Any]]:
@@ -315,8 +323,8 @@ class SceneRefreshService:
                             "height": h,
                             "orientation": d.properties.get("orientation", "landscape"),
                         }
-            except Exception as e:  # noqa: BLE001
-                logger.debug("collect_discovered.error scene=%s err=%s", scene.id, e)
+            except (RuntimeError, ValueError, OSError) as e:  # discovery iteration resilience
+                logger.debug("collect_discovered.error scene=%s err=%s", scene.id, type(e).__name__)
         with SessionLocal() as db:
             db_displays = db.query(DisplayClient).filter(
                 DisplayClient.assigned_scene_id == scene.id
