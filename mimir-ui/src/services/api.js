@@ -303,10 +303,16 @@ export const api = {
   // v2.1 Channel System (Updated for embedded plugin architecture)
   // Note: /channels/manifest endpoint doesn't exist - use individual channel manifests
   // Unsupported / legacy channel endpoints retained as safe warnings
-  testChannel: (channelId) => {
-    console.warn('testChannel endpoint not implemented for embedded plugins');
-    return Promise.resolve({ data: { message: 'testChannel not implemented' } });
-  },
+  testChannel: (() => {
+    let warned = false;
+    return (channelId) => {
+      if (!warned) {
+        console.warn('testChannel endpoint not implemented for embedded plugins (suppressing further warnings)');
+        warned = true;
+      }
+      return Promise.resolve({ data: { message: 'testChannel not implemented' } });
+    };
+  })(),
   getChannelHealth: (channelId) => apiClient.get(`/channels/${channelId}/health`),
   getChannelToken: (channelId) => {
     console.warn('getChannelToken endpoint not implemented');
@@ -338,7 +344,22 @@ export const api = {
   // v2.1 Channel Static Assets
   getChannelUIAsset: (channelId, assetPath) => `${getApiBaseUrl()}/channels/${channelId}/ui/${assetPath}`,
   getChannelAsset: (channelId, assetPath) => `${getApiBaseUrl()}/channels/${channelId}/assets/${assetPath}`,
-  getChannelImageUrl: (channelId, imagePath = 'image') => `${getApiBaseUrl()}/channels/${channelId}/${imagePath}?t=${Date.now()}`,
+  getChannelImageUrl: (channelId, imagePath = 'image') => {
+    // If caller accidentally passes raw base64 (or data URI), convert to a usable data URL instead of generating a gigantic path.
+    if (typeof imagePath === 'string') {
+      const trimmed = imagePath.trim();
+      const looksBase64 = /^[A-Za-z0-9+/]+=*$/.test(trimmed.slice(0, 120)) && trimmed.length > 200; // heuristic
+      const isDataUri = trimmed.startsWith('data:image');
+      if (isDataUri) {
+        return trimmed; // already data URI
+      }
+      if (looksBase64) {
+        // Assume JPEG if we cannot sniff. Provide data URL.
+        return `data:image/jpeg;base64,${trimmed}`;
+      }
+    }
+    return `${getApiBaseUrl()}/channels/${channelId}/${imagePath}?t=${Date.now()}`;
+  },
   
   // Helper function to get API base URL (useful for components)
   getApiBaseUrl: () => getApiBaseUrl(),
