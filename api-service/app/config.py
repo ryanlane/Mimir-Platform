@@ -77,6 +77,22 @@ class Settings(BaseSettings):
         ),
         description="Interval between retention prune passes (seconds).",
     )
+    # --- Swap (ephemeral per-display image) controls ---
+    display_swap_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices("DISPLAY_SWAP_ENABLED", "IMAGE_SWAP_ENABLED"),
+        description="Enable per-display swap file writing for distributed images.",
+    )
+    display_swap_max_files_per_display: int = Field(
+        25,
+        validation_alias=AliasChoices("DISPLAY_SWAP_MAX_FILES_PER_DISPLAY", "IMAGE_SWAP_MAX_PER_DISPLAY"),
+        description="Retention cap for swap images per (scene,display) pair.",
+    )
+    display_swap_prune_on_cleanup: bool = Field(
+        True,
+        validation_alias=AliasChoices("DISPLAY_SWAP_PRUNE_ON_CLEANUP", "IMAGE_SWAP_PRUNE_ON_CLEANUP"),
+        description="Run swap prune during scheduler temp cleanup cycles.",
+    )
     api_prefix: str = Field("/api", validation_alias="API_PREFIX")
     api_host: str = Field("0.0.0.0", validation_alias="API_HOST")
     api_port: int = Field(5000, validation_alias="API_PORT")

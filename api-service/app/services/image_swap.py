@@ -156,3 +156,85 @@ def prune_swap(*, max_files_per_display: int = 20, max_total_per_scene: Optional
     if deleted:
         logger.info("image.swap.prune deleted=%d", deleted)
     return deleted
+
+
+def swap_summary() -> dict:
+    """Return aggregate statistics about swap storage.
+
+    Structure:
+        {
+          'scenes': <count>, 'displays': <count>, 'files': <count>,
+          'total_bytes': <int>, 'per_scene': { scene_id: { 'displays': int, 'files': int, 'bytes': int } }
+        }
+    """
+    root = _resolve_media_root() / SWAP_DIR_NAME
+    if not root.exists():
+        return {"scenes": 0, "displays": 0, "files": 0, "total_bytes": 0, "per_scene": {}}
+    per_scene: dict[str, dict] = {}
+    total_files = 0
+    total_bytes = 0
+    display_ids: set[str] = set()
+    for scene_dir in root.iterdir():
+        if not scene_dir.is_dir():
+            continue
+        scene_id = scene_dir.name
+        sc_files = 0
+        sc_bytes = 0
+        sc_display_ids: set[str] = set()
+        for display_dir in scene_dir.iterdir():
+            if not display_dir.is_dir():
+                continue
+            disp_id = display_dir.name
+            sc_display_ids.add(disp_id)
+            display_ids.add(disp_id)
+            for f in display_dir.iterdir():
+                if f.is_file():
+                    sc_files += 1
+                    total_files += 1
+                    try:
+                        size = f.stat().st_size
+                    except OSError:
+                        size = 0
+                    sc_bytes += size
+                    total_bytes += size
+        per_scene[scene_id] = {
+            "displays": len(sc_display_ids),
+            "files": sc_files,
+            "bytes": sc_bytes,
+        }
+    return {
+        "scenes": len(per_scene),
+        "displays": len(display_ids),
+        "files": total_files,
+        "total_bytes": total_bytes,
+        "per_scene": per_scene,
+    }
+
+
+def list_scene_swap(scene_id: str) -> dict:
+    """List swap files for a specific scene grouped by display."""
+    root = _resolve_media_root() / SWAP_DIR_NAME / scene_id
+    if not root.exists() or not root.is_dir():
+        return {"scene_id": scene_id, "displays": {}, "files": 0}
+    result: dict[str, list] = {}
+    total = 0
+    for display_dir in root.iterdir():
+        if not display_dir.is_dir():
+            continue
+        files_list = []
+        for f in display_dir.iterdir():
+            if f.is_file():
+                try:
+                    stat = f.stat()
+                    files_list.append({
+                        "name": f.name,
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                        "url": f"{settings.public_base_url}/media/{SWAP_DIR_NAME}/{scene_id}/{display_dir.name}/{f.name}",
+                    })
+                    total += 1
+                except OSError:
+                    continue
+        files_list.sort(key=lambda x: x["mtime"], reverse=True)
+        result[display_dir.name] = files_list
+    return {"scene_id": scene_id, "displays": result, "files": total}

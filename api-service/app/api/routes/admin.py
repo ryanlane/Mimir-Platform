@@ -23,6 +23,7 @@ from app.db.models import DisplaySceneImage
 from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.services.mqtt.presence import mqtt_presence_service
 from functools import lru_cache
+from app.services.image_swap import swap_summary, list_scene_swap, prune_swap
 
 logger = logging.getLogger(__name__)
 
@@ -822,3 +823,46 @@ async def debug_discovery_service():
         })
     
     return debug_data
+
+
+# ---------------------------------------------------------------------------
+# Image Swap (ephemeral per-display files) Administration
+# ---------------------------------------------------------------------------
+
+@admin_router.get("/swap/summary", summary="Swap storage summary")
+async def get_swap_summary():
+    if not getattr(settings, "display_swap_enabled", True):
+        return {"enabled": False, "message": "Swap storage disabled"}
+    data = swap_summary()
+    data.update({
+        "enabled": True,
+        "max_files_per_display": getattr(settings, "display_swap_max_files_per_display", None),
+    })
+    return data
+
+
+@admin_router.get("/swap/scene/{scene_id}", summary="List swap files for scene")
+async def get_swap_scene(scene_id: str):
+    if not getattr(settings, "display_swap_enabled", True):
+        raise HTTPException(status_code=400, detail="Swap storage disabled")
+    return list_scene_swap(scene_id)
+
+
+@admin_router.post("/swap/prune", summary="Force prune swap storage")
+async def prune_swap_now(max_files_per_display: Optional[int] = None):
+    if not getattr(settings, "display_swap_enabled", True):
+        raise HTTPException(status_code=400, detail="Swap storage disabled")
+    cap = max_files_per_display or getattr(settings, "display_swap_max_files_per_display", 25)
+    deleted = prune_swap(max_files_per_display=cap)
+    return {"deleted": deleted, "max_files_per_display": cap}
+
+
+@admin_router.get("/swap/config", summary="Swap configuration")
+async def get_swap_config():
+    return {
+        "enabled": getattr(settings, "display_swap_enabled", True),
+        "max_files_per_display": getattr(settings, "display_swap_max_files_per_display", 25),
+        "prune_on_cleanup": getattr(settings, "display_swap_prune_on_cleanup", True),
+        "media_mount": "/media",
+        "notes": "Swap files live under /media/swap/<scene>/<display>/.",
+    }

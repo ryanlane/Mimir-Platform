@@ -907,10 +907,17 @@ class SchedulerWorker:
                     logger.error(error_msg)
             
             # After distribution, optionally prune swap directory (best-effort)
-            try:
-                prune_swap(max_files_per_display=25)  # configurable later
-            except Exception:  # noqa: BLE001
-                pass
+            if getattr(settings, "display_swap_enabled", True):
+                try:
+                    prune_swap(
+                        max_files_per_display=getattr(
+                            settings,
+                            "display_swap_max_files_per_display",
+                            25,
+                        )
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
 
             return {
                 "displays_updated": displays_updated,
