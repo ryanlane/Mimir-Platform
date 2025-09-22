@@ -12,7 +12,8 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
   const [persisted, setPersisted] = useState({ loading: false, error: null, thumb: null, image: null });
   // Scheduler-related state for manual update button
   const [sceneInfo, setSceneInfo] = useState(null); // scene details
-  const [sceneJob, setSceneJob] = useState(null); // associated scheduler job (if any)
+  const [sceneAssignment, setSceneAssignment] = useState(null); // first scene assignment (contains job_id)
+  const [jobDetails, setJobDetails] = useState(null); // fetched scheduler job details (freq / enabled)
   const [manualUpdateLoading, setManualUpdateLoading] = useState(false);
   const [manualUpdateError, setManualUpdateError] = useState(null);
   const [manualUpdateSuccess, setManualUpdateSuccess] = useState(false);
@@ -67,7 +68,8 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
       : display.assigned_scene_id;
     if (!assignedSceneId) {
       setSceneInfo(null);
-      setSceneJob(null);
+      setSceneAssignment(null);
+      setJobDetails(null);
       return () => { cancelled = true; };
     }
 
@@ -90,45 +92,70 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
 
     // If cache fresh and job list for this scene already resolved, reuse
     if (cacheFresh && cache.jobsByScene[assignedSceneId]) {
-      setSceneJob(cache.jobsByScene[assignedSceneId]);
+      const cached = cache.jobsByScene[assignedSceneId];
+      setSceneAssignment(cached.assignment || null);
+      setJobDetails(cached.jobDetails || null);
       return () => { cancelled = true; };
     }
 
-    // Fetch scheduler jobs for this scene
+    // Fetch scene assignments (NOT full jobs)
     api.getSceneSchedules(assignedSceneId)
-      .then(resp => {
+      .then(async resp => {
         if (cancelled) return;
-        const jobs = resp?.data || [];
-        // Heuristic: choose first enabled job (or first) that targets this scene
-        const job = Array.isArray(jobs) ? jobs.find(j => j.enabled) || jobs[0] : null;
-        setSceneJob(job || null);
-        cache.jobsByScene[assignedSceneId] = job || null;
-        cache.ts = Date.now();
+        const assignments = resp?.data || [];
+        if (!Array.isArray(assignments) || assignments.length === 0) {
+          setSceneAssignment(null);
+          setJobDetails(null);
+          cache.jobsByScene[assignedSceneId] = { assignment: null, jobDetails: null };
+          cache.ts = Date.now();
+          return;
+        }
+        const firstAssignment = assignments[0];
+        setSceneAssignment(firstAssignment);
+        // Fetch job details so we can verify enabled & interval
+        try {
+          const jobResp = await api.getSchedulerJob(firstAssignment.job_id);
+          if (cancelled) return;
+            setJobDetails(jobResp?.data || null);
+            cache.jobsByScene[assignedSceneId] = { assignment: firstAssignment, jobDetails: jobResp?.data || null };
+            cache.ts = Date.now();
+        } catch (e) {
+          if (cancelled) return;
+          console.warn('Failed to fetch scheduler job details', e?.message);
+          setJobDetails(null);
+          cache.jobsByScene[assignedSceneId] = { assignment: firstAssignment, jobDetails: null };
+          cache.ts = Date.now();
+        }
       })
       .catch(err => {
         if (cancelled) return;
         console.warn('Failed to fetch scene schedules', err?.message);
-        setSceneJob(null);
+        setSceneAssignment(null);
+        setJobDetails(null);
       });
 
     return () => { cancelled = true; };
   }, [display.assigned_scene_id]);
 
   const canManualUpdate = (() => {
-    if (!sceneInfo || !sceneJob) return false;
-    // A scene is considered scheduled (not realtime) if it has a schedule property or update_strategy not equal to 'realtime'
+    if (!sceneInfo || !sceneAssignment) return false;
     const notRealtime = sceneInfo.update_strategy && sceneInfo.update_strategy !== 'realtime';
-    const hasSchedule = !!sceneInfo.schedule || !!sceneJob.cron || !!sceneJob.interval_seconds;
-    return notRealtime && hasSchedule;
+    // If jobDetails exist, prefer enabled flag; otherwise assume allowed
+    const enabled = jobDetails?.enabled !== false; // treat undefined as true
+    // Determine presence of schedule: job has freq_unit/freq_value or approx_interval_seconds, or scene schedule exists
+    const hasSchedule = !!sceneInfo.schedule || !!jobDetails?.freq_unit || !!jobDetails?.approx_interval_seconds;
+    return notRealtime && enabled && hasSchedule;
   })();
 
   const handleManualUpdate = async () => {
-    if (!sceneJob) return;
+    if (!sceneAssignment) return;
     setManualUpdateLoading(true);
     setManualUpdateError(null);
     setManualUpdateSuccess(false);
     try {
-      await api.triggerSchedulerJob(sceneJob.id, 'Manual display card update');
+      const jobId = sceneAssignment.job_id || jobDetails?.id;
+      if (!jobId) throw new Error('Missing job id for manual trigger');
+      await api.triggerSchedulerJob(jobId, 'Manual display card update');
       setManualUpdateSuccess(true);
       // After triggering the job, attempt a refresh of current image (slight delay may be needed externally)
       onRefresh && onRefresh();
