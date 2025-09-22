@@ -1,6 +1,6 @@
 // Display Card component for individual display clients
 import React, { useState, useEffect } from 'react';
-import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, Eye, RotateCcw, Image, Play } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, Eye, RotateCcw, Image, Play, Zap } from 'lucide-react';
 import { api } from '../../services/api';
 
 const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) => {
@@ -10,6 +10,19 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
   const [thumbLoading, setThumbLoading] = useState(false);
   const [thumbError, setThumbError] = useState(false);
   const [persisted, setPersisted] = useState({ loading: false, error: null, thumb: null, image: null });
+  // Scheduler-related state for manual update button
+  const [sceneInfo, setSceneInfo] = useState(null); // scene details
+  const [sceneJob, setSceneJob] = useState(null); // associated scheduler job (if any)
+  const [manualUpdateLoading, setManualUpdateLoading] = useState(false);
+  const [manualUpdateError, setManualUpdateError] = useState(null);
+  const [manualUpdateSuccess, setManualUpdateSuccess] = useState(false);
+
+  // Lightweight cache (module scoped via closure) - fallback if window-scoped not desired
+  if (!window.__sceneScheduleCache) {
+    window.__sceneScheduleCache = { jobsByScene: {}, ts: 0 };
+  }
+
+  const SCHEDULE_CACHE_TTL_MS = 30_000; // 30s
 
   // Fetch persisted last-image (per display+scene) if a scene is assigned
   useEffect(() => {
@@ -45,6 +58,88 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
       });
     return () => { cancelled = true; };
   }, [display.id, display.assigned_scene_id]);
+
+  // Fetch scene details & scheduler job mapping when assigned scene changes
+  useEffect(() => {
+    let cancelled = false;
+    const assignedSceneId = typeof display.assigned_scene_id === 'object' && display.assigned_scene_id?.id
+      ? display.assigned_scene_id.id
+      : display.assigned_scene_id;
+    if (!assignedSceneId) {
+      setSceneInfo(null);
+      setSceneJob(null);
+      return () => { cancelled = true; };
+    }
+
+    // Helper to decide if we should fetch schedule jobs again
+    const now = Date.now();
+    const cache = window.__sceneScheduleCache;
+    const cacheFresh = (now - cache.ts) < SCHEDULE_CACHE_TTL_MS;
+
+    // Fetch scene details first
+    api.getScene(assignedSceneId)
+      .then(resp => {
+        if (cancelled) return;
+        setSceneInfo(resp.data);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.warn('Failed to fetch scene info', err?.message);
+        setSceneInfo(null);
+      });
+
+    // If cache fresh and job list for this scene already resolved, reuse
+    if (cacheFresh && cache.jobsByScene[assignedSceneId]) {
+      setSceneJob(cache.jobsByScene[assignedSceneId]);
+      return () => { cancelled = true; };
+    }
+
+    // Fetch scheduler jobs for this scene
+    api.getSceneSchedules(assignedSceneId)
+      .then(resp => {
+        if (cancelled) return;
+        const jobs = resp?.data || [];
+        // Heuristic: choose first enabled job (or first) that targets this scene
+        const job = Array.isArray(jobs) ? jobs.find(j => j.enabled) || jobs[0] : null;
+        setSceneJob(job || null);
+        cache.jobsByScene[assignedSceneId] = job || null;
+        cache.ts = Date.now();
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.warn('Failed to fetch scene schedules', err?.message);
+        setSceneJob(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [display.assigned_scene_id]);
+
+  const canManualUpdate = (() => {
+    if (!sceneInfo || !sceneJob) return false;
+    // A scene is considered scheduled (not realtime) if it has a schedule property or update_strategy not equal to 'realtime'
+    const notRealtime = sceneInfo.update_strategy && sceneInfo.update_strategy !== 'realtime';
+    const hasSchedule = !!sceneInfo.schedule || !!sceneJob.cron || !!sceneJob.interval_seconds;
+    return notRealtime && hasSchedule;
+  })();
+
+  const handleManualUpdate = async () => {
+    if (!sceneJob) return;
+    setManualUpdateLoading(true);
+    setManualUpdateError(null);
+    setManualUpdateSuccess(false);
+    try {
+      await api.triggerSchedulerJob(sceneJob.id, 'Manual display card update');
+      setManualUpdateSuccess(true);
+      // After triggering the job, attempt a refresh of current image (slight delay may be needed externally)
+      onRefresh && onRefresh();
+      // Auto-hide success after short duration
+      setTimeout(() => setManualUpdateSuccess(false), 4000);
+    } catch (e) {
+      setManualUpdateError(e?.response?.data?.detail || e.message || 'Manual update failed');
+    } finally {
+      setManualUpdateLoading(false);
+    }
+  };
 
   const fallbackThumb = display.current_image_url
     ? `${api.getDisplayImageUrl(display.id)}?thumb=1&ts=${Date.now()}`
@@ -230,6 +325,18 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
               >
                 Change Scene
               </button>
+              {canManualUpdate && (
+                <button
+                  className="btn btn-sm btn-tertiary"
+                  onClick={handleManualUpdate}
+                  disabled={manualUpdateLoading}
+                  title={manualUpdateLoading ? 'Triggering update...' : 'Trigger scheduled scene now'}
+                  style={{ marginLeft: '0.5rem' }}
+                >
+                  <Zap size={14} className={manualUpdateLoading ? 'spinning' : ''} />
+                  {!manualUpdateLoading && 'Update Now'}
+                </button>
+              )}
             </div>
           ) : (
             <div className="scene-unassigned">
@@ -240,6 +347,16 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
               >
                 Assign Scene
               </button>
+            </div>
+          )}
+          {canManualUpdate && (manualUpdateError || manualUpdateSuccess) && (
+            <div style={{ marginTop: '0.35rem', fontSize: '0.7rem' }}>
+              {manualUpdateError && (
+                <span style={{ color: '#d9534f' }}>⚠ {manualUpdateError}</span>
+              )}
+              {manualUpdateSuccess && !manualUpdateError && (
+                <span style={{ color: '#28a745' }}>Triggered</span>
+              )}
             </div>
           )}
         </div>
