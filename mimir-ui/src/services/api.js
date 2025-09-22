@@ -162,7 +162,24 @@ export const api = {
   
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
-  requestChannelImage: (channelId, requestData) => apiClient.post(`/channels/${channelId}/request_image`, requestData || {}),
+  requestChannelImage: async (channelId, requestData = {}) => {
+    const resp = await apiClient.post(`/channels/${channelId}/request_image`, requestData || {});
+    // Normalize response so callers always have an imageUrl and optional dataUrl
+    const payload = resp.data || {};
+    const { imageUrl, imageId, contentType, legacyBase64 } = payload;
+    let dataUrl = null;
+    if (legacyBase64) {
+      // Provide a proper data URL for components that expect embeddable image
+      dataUrl = `data:${contentType || 'image/jpeg'};base64,${legacyBase64}`;
+    }
+    return {
+      raw: resp,
+      imageId,
+      imageUrl: imageUrl ? `${imageUrl}${imageUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : null,
+      contentType: contentType || 'image/jpeg',
+      dataUrl,
+    };
+  },
 
   // Sub-Channels (NEW) with Performance Caching
   getSubChannelConfig: async (channelId, includeSubchannels = false) => {
