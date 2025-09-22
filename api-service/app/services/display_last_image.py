@@ -22,6 +22,7 @@ class DisplayImageRecord:
     image_format: Optional[str] = None
     scene_id: Optional[str] = None
     subchannel_id: Optional[str] = None
+    image_path: Optional[str] = None  # local filesystem path if swap stored
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -36,7 +37,7 @@ class DisplayLastImageStore:
 
     def update(self, *, device_id: str, assignment_id: str, image_url: str,
                image_width: Optional[int], image_height: Optional[int], image_format: Optional[str],
-               scene_id: Optional[str], subchannel_id: Optional[str]) -> None:
+               scene_id: Optional[str], subchannel_id: Optional[str], image_path: Optional[str] = None) -> None:
         with self._lock:
             self._records[device_id] = DisplayImageRecord(
                 device_id=device_id,
@@ -48,6 +49,7 @@ class DisplayLastImageStore:
                 image_format=image_format,
                 scene_id=scene_id,
                 subchannel_id=subchannel_id,
+                image_path=image_path,
             )
 
     def get(self, device_id: str) -> Optional[DisplayImageRecord]:

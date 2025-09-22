@@ -35,6 +35,7 @@ from ..services.display_last_image import display_last_image_store
 from ..db.base import SessionLocal as _PersistenceSessionLocal
 from ..services.display_image_persistence import DisplayImagePersistenceService
 from ..services.scene_refresh_service import scene_refresh_service, SceneRefreshResult
+from ..services.image_swap import save_swap_image, prune_swap
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +470,11 @@ class SchedulerWorker:
                     "max_age_min": max_age_min,
                 },
             )
+        # Also prune swap directory (lightweight) every cleanup cycle
+        try:
+            prune_swap(max_files_per_display=25)
+        except Exception:  # noqa: BLE001
+            pass
     
     def _maybe_prune_persisted_images(self) -> None:
         """Prune persisted display scene images according to retention settings.
@@ -751,17 +757,33 @@ class SchedulerWorker:
             
             logger.info(f"Distributing to {len(assigned_displays)} displays for scene {scene.id}")
             
-            # Extract image information and convert to URL
+            # Extract image information; new pipeline may provide raw bytes directly under image_response["image"]["bytes"]
             image_info = image_response.get("image", {})
             distribution_mode = image_info.get("distribution_mode")
-            
-            # Convert image to publicly accessible URL
-            image_url = _convert_image_to_url(image_info)
-            if not image_url:
-                return {
-                    "displays_updated": 0,
-                    "errors": ["Unable to convert image to accessible URL"]
-                }
+
+            # Preferred: if bytes provided emit per-display swap files; else fallback to legacy URL conversion
+            raw_bytes = None
+            content_type = None
+            if isinstance(image_info, dict):
+                raw_bytes = image_info.get("bytes")
+                content_type = image_info.get("content_type") or image_info.get("mime_type")
+
+            # We will build a per-display mapping of URLs so each display has its own path (avoids overwrite collisions)
+            per_display_urls: Dict[str, str] = {}
+            base_seed_url: Optional[str] = None
+
+            if raw_bytes:
+                # We'll defer writing until after deciding distribution necessity; capture bytes length for logs
+                base_seed_url = "bytes://pending"  # marker for diagnostics
+            else:
+                # Legacy path: attempt URL conversion from string/image field
+                converted = _convert_image_to_url(image_info)
+                if not converted:
+                    return {
+                        "displays_updated": 0,
+                        "errors": ["Unable to convert image to accessible URL"]
+                    }
+                base_seed_url = converted
             
             # For new content, always distribute. For existing content, only if scene assignments need updates
             should_distribute = False
@@ -793,19 +815,36 @@ class SchedulerWorker:
                 logger.warning(f"Unknown distribution mode '{distribution_mode}', distributing to be safe")
             
             # Send display_image commands to each display via MQTT
-
-            # Send display_image commands to each display via MQTT
             for display in assigned_displays:
                 try:
                     if mqtt_scene_service.is_connected():
                         device_id = display["hostname"] or display["id"]
                         assignment_id = f"display-{uuid.uuid4().hex[:8]}"
-                        
-                        # Send display_image command directly - this is the correct architecture
-                        logger.debug(f"Sending display_image command to display {device_id}")
+                        # Determine or create per-display swap URL if raw bytes available
+                        if raw_bytes:
+                            swap_path, swap_url, _written = save_swap_image(
+                                scene_id=str(scene.id),
+                                display_id=device_id,
+                                image_bytes=raw_bytes,
+                                content_type=content_type,
+                            )
+                            if not swap_url:
+                                errors.append(f"swap_save_failed:{device_id}")
+                                continue
+                            per_display_urls[device_id] = swap_url
+                            use_url = swap_url
+                        else:
+                            use_url = base_seed_url  # identical for all displays legacy path
+
+                        logger.debug(
+                            "Sending display_image command to display %s url=%s raw_bytes=%s", 
+                            device_id,
+                            use_url,
+                            bool(raw_bytes),
+                        )
                         success = await mqtt_scene_service.send_display_image(
                             device_id=device_id,
-                            image_url=image_url,
+                            image_url=use_url,
                             assignment_id=assignment_id,
                         )
                         
@@ -816,12 +855,13 @@ class SchedulerWorker:
                             display_last_image_store.update(
                                 device_id=device_id,
                                 assignment_id=assignment_id,
-                                image_url=image_url,
-                                image_width=None,
-                                image_height=None,
-                                image_format=None,
+                                image_url=use_url,
+                                image_width=image_info.get("width") if isinstance(image_info, dict) else None,
+                                image_height=image_info.get("height") if isinstance(image_info, dict) else None,
+                                image_format=image_info.get("format") if isinstance(image_info, dict) else None,
                                 scene_id=str(scene.id),
                                 subchannel_id=scene.channels[0].get("subchannel_id") if scene.channels else None,
+                                image_path=str(swap_path) if raw_bytes and swap_path else None,
                             )
                             # Persist record
                             try:
@@ -830,7 +870,7 @@ class SchedulerWorker:
                                     device_id,
                                     scene.id,
                                     assignment_id,
-                                    image_url,
+                                    use_url,
                                 )
                                 with _PersistenceSessionLocal() as p_db:
                                     persistence = DisplayImagePersistenceService(p_db)
@@ -839,10 +879,10 @@ class SchedulerWorker:
                                         scene_id=str(scene.id),
                                         subchannel_id=scene.channels[0].get("subchannel_id") if scene.channels else None,
                                         assignment_id=assignment_id,
-                                        image_url=image_url,
-                                        width=None,
-                                        height=None,
-                                        image_format=None,
+                                        image_url=use_url,
+                                        width=image_info.get("width") if isinstance(image_info, dict) else None,
+                                        height=image_info.get("height") if isinstance(image_info, dict) else None,
+                                        image_format=image_info.get("format") if isinstance(image_info, dict) else None,
                                         source="distribution",
                                         retain_history=True,
                                     )
@@ -866,10 +906,17 @@ class SchedulerWorker:
                     errors.append(error_msg)
                     logger.error(error_msg)
             
+            # After distribution, optionally prune swap directory (best-effort)
+            try:
+                prune_swap(max_files_per_display=25)  # configurable later
+            except Exception:  # noqa: BLE001
+                pass
+
             return {
                 "displays_updated": displays_updated,
                 "errors": errors,
-                "image_url": image_url
+                "image_url": base_seed_url if not raw_bytes else None,
+                "swap_distributed": bool(raw_bytes),
             }
             
         except (ImageConversionError, ChannelRequestError) as e:

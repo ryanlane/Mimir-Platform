@@ -315,6 +315,25 @@ def create_app() -> FastAPI:
         if settings.debug:
             print(f"Warning: Could not mount channels directory: {e}")
     
+    # Mount media directory (display images + swap space) at /media
+    try:
+        from pathlib import Path
+        media_root_cfg = getattr(settings, "display_images_directory", "display_images")
+        media_root = Path(media_root_cfg)
+        if not media_root.is_absolute():
+            # Resolve relative media dir under upload_dir (consistent with persistence service)
+            from pathlib import Path as _P
+            try:
+                upload_base = _P(getattr(settings, "upload_dir", ".")).resolve()
+            except Exception:  # noqa: BLE001
+                upload_base = _P.cwd()
+            media_root = (upload_base / media_root).resolve()
+        media_root.mkdir(parents=True, exist_ok=True)
+        app.mount("/media", StaticFiles(directory=str(media_root)), name="media")
+        logger.info(f"📁 Media files mounted at /media root={media_root}")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to mount media directory: {e}")
+
     # Mount static files for general content (test images, etc.)
     try:
         import os

@@ -30,6 +30,7 @@ from app.services.display_last_image import display_last_image_store
 from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.config import settings
 from app.services.mdns_discovery import mdns_discovery_service
+from app.services.image_swap import save_swap_image, prune_swap
 
 logger = logging.getLogger(__name__)
 
@@ -194,14 +195,24 @@ class SceneRefreshService:
                                 errors.append(f"channel_response_unsuccessful:{ch_id}")
                                 continue
                             image_info = image_response
-                            image_url = self._convert_image_to_url(image_info)
-                            if not image_url:
-                                errors.append(f"image_url_conversion_failed:{ch_id}")
-                                continue
-                            if not sample_url:
-                                sample_url = image_url
-                                channel_id = ch_id
-                                subchannel_id = sc_id
+                            raw_bytes = None
+                            content_type = None
+                            if isinstance(image_info, dict):
+                                raw_bytes = image_info.get("bytes")
+                                content_type = image_info.get("content_type") or image_info.get("mime_type")
+                            image_url = None
+                            if raw_bytes:
+                                # Will generate per-display URL; sample_url recorded from first display
+                                pass
+                            else:
+                                image_url = self._convert_image_to_url(image_info)
+                                if not image_url:
+                                    errors.append(f"image_url_conversion_failed:{ch_id}")
+                                    continue
+                                if not sample_url:
+                                    sample_url = image_url
+                                    channel_id = ch_id
+                                    subchannel_id = sc_id
                             for disp in display_group:
                                 device_id = disp["device_id"]
                                 # Ensure the underlying publisher loop is running (best-effort)
@@ -227,12 +238,32 @@ class SceneRefreshService:
                                         device_id,
                                         ch_id,
                                         sc_id,
-                                        image_url,
+                                        image_url if image_url else ("swap-bytes" if raw_bytes else None),
                                         assignment_id,
                                     )
+                                    # If raw bytes present create swap file per display
+                                    per_display_url = image_url
+                                    swap_path_str: Optional[str] = None
+                                    if raw_bytes:
+                                        _path, per_display_url, _written = save_swap_image(
+                                            scene_id=str(scene_id),
+                                            display_id=device_id,
+                                            image_bytes=raw_bytes,
+                                            content_type=content_type,
+                                        )
+                                        if not per_display_url:
+                                            errors.append(f"swap_save_failed:{device_id}")
+                                            logger.debug("scene.refresh.swap_save_failed scene=%s device=%s", scene_id, device_id)
+                                            continue
+                                        if _path:
+                                            swap_path_str = str(_path)
+                                        if not sample_url:
+                                            sample_url = per_display_url
+                                            channel_id = ch_id
+                                            subchannel_id = sc_id
                                     success = await mqtt_scene_service.send_display_image(
                                         device_id=device_id,
-                                        image_url=image_url,
+                                        image_url=per_display_url,
                                         assignment_id=assignment_id,
                                     )
                                     if success:
@@ -246,12 +277,13 @@ class SceneRefreshService:
                                         display_last_image_store.update(
                                             device_id=device_id,
                                             assignment_id=assignment_id,
-                                            image_url=image_url,
+                                            image_url=per_display_url,
                                             image_width=w,
                                             image_height=h,
                                             image_format=None,
                                             scene_id=str(scene.id),
                                             subchannel_id=sc_id,
+                                            image_path=swap_path_str,
                                         )
                                         # Persistence best-effort; isolate errors
                                         try:
@@ -261,7 +293,7 @@ class SceneRefreshService:
                                                     scene_id=str(scene.id),
                                                     subchannel_id=sc_id,
                                                     assignment_id=assignment_id,
-                                                    image_url=image_url,
+                                                    image_url=per_display_url,
                                                     width=w,
                                                     height=h,
                                                     image_format=None,
