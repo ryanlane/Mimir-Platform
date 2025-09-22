@@ -220,6 +220,13 @@ class PluginDiscoveryService:
                             pass
                     inst.register_listener(_on_channel_event)
                     logger.info(f"Registered push listener for plugin {plugin.id}")
+                    # Ensure global consumer service is started (subscription & stale loop)
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            loop.create_task(channel_event_consumer.ensure_subscription())
+                    except RuntimeError:
+                        pass
                     # Register consumer subscription (async) after loop available
                     try:
                         loop = asyncio.get_event_loop()
