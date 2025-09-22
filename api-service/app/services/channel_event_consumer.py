@@ -29,6 +29,9 @@ class ChannelEventConsumerService:
         self._debounce_seconds = getattr(settings, "push_debounce_seconds", 5.0)
         self._stale_task: asyncio.Task | None = None
         self._running = False
+        # Track last processed event hash per (channel_id, scene_id) so we don't re-generate
+        # an identical image when only the playback progress advanced but track + play state unchanged.
+        self._scene_last_hash: Dict[tuple[str, str], str] = {}
 
     async def ensure_subscription(self) -> None:
         if self._subscribed:
@@ -53,6 +56,16 @@ class ChannelEventConsumerService:
                 return
             now = time.monotonic()
             for scene_id in scenes:
+                # Hash-based duplicate suppression (track id + play state stable)
+                if evt.hash:
+                    key = (evt.channel_id, scene_id)
+                    prev_hash = self._scene_last_hash.get(key)
+                    if prev_hash == evt.hash:
+                        logger.debug(
+                            "scene.refresh.skip_unchanged scene=%s channel=%s hash=%s", scene_id, evt.channel_id, evt.hash
+                        )
+                        continue
+                    self._scene_last_hash[key] = evt.hash
                 last = self._scene_last_refresh.get(scene_id, 0.0)
                 if now - last < self._debounce_seconds:
                     logger.debug(
