@@ -138,13 +138,34 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
   }, [display.assigned_scene_id]);
 
   const canManualUpdate = (() => {
-    if (!sceneInfo || !sceneAssignment) return false;
-    const notRealtime = sceneInfo.update_strategy && sceneInfo.update_strategy !== 'realtime';
-    // If jobDetails exist, prefer enabled flag; otherwise assume allowed
-    const enabled = jobDetails?.enabled !== false; // treat undefined as true
-    // Determine presence of schedule: job has freq_unit/freq_value or approx_interval_seconds, or scene schedule exists
-    const hasSchedule = !!sceneInfo.schedule || !!jobDetails?.freq_unit || !!jobDetails?.approx_interval_seconds;
-    return notRealtime && enabled && hasSchedule;
+    // Need at least an assigned scene
+    if (!sceneInfo) return false;
+    // We consider anything NOT explicitly 'realtime' as eligible
+    const notRealtime = sceneInfo.update_strategy !== 'realtime';
+    // If we have at least one assignment (thus a job_id) we can attempt manual trigger
+    const hasAssignment = !!sceneAssignment;
+    // If job details exist, ensure it's not disabled; if we don't have details, assume enabled (optimistic)
+    const enabled = jobDetails ? jobDetails.enabled !== false : true;
+    // Broader schedule detection: any of (scene.schedule present, job freq fields, approx_interval_seconds, or simply an assignment)
+    const hasSchedule = !!sceneInfo.schedule || !!jobDetails?.freq_unit || !!jobDetails?.approx_interval_seconds || hasAssignment;
+    const result = notRealtime && enabled && hasSchedule;
+    if (process.env.NODE_ENV !== 'production') {
+      // Helpful debug once per render group (can be noisy; guard on scene id)
+      try {
+        // eslint-disable-next-line no-console
+        console.debug('ManualUpdateCheck', {
+          sceneId: sceneInfo?.id,
+          update_strategy: sceneInfo?.update_strategy,
+          hasAssignment,
+          jobEnabled: jobDetails?.enabled,
+          freq_unit: jobDetails?.freq_unit,
+          approx_interval_seconds: jobDetails?.approx_interval_seconds,
+          hasSchedule,
+          result
+        });
+      } catch {}
+    }
+    return result;
   })();
 
   const handleManualUpdate = async () => {
