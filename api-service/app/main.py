@@ -3,7 +3,7 @@ Mimir API Application Factory
 Creates and configures the FastAPI application with all necessary components and middleware.
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
@@ -33,6 +33,8 @@ from app.api.routes.display_scene import router as display_scene_router
 from app.api.routes.websockets import router as websockets_router
 from app.api.routes.admin import health_router, admin_router
 from app.api.routes.scheduler import router as scheduler_router
+from fastapi.responses import JSONResponse
+import re
 
 
 @asynccontextmanager
@@ -202,6 +204,75 @@ def create_app() -> FastAPI:
 
     # Add metrics middleware for automatic HTTP request instrumentation
     app.middleware("http")(metrics_middleware)
+
+    # Middleware: Guard against accidental base64 image blobs used as URL paths
+    # Root cause: legacy/incorrect clients sometimes take a raw base64 image (e.g. JPEG starting with /9j/)
+    # and place it directly in an <img src="/..."> attribute, generating huge invalid GET paths like
+    #   /9j/4AAQSkZJRgABAQAAAQABAAD... (potentially thousands of chars) which previously produced 500s.
+    # We detect these patterns early and return a concise 400 with guidance, suppressing log spam.
+    base64_path_seen: dict[str, int] = {}
+
+    BASE64_SIGNATURE_PREFIXES = (
+        "9j/4AAQ",        # JPEG
+        "iVBORw0K",       # PNG
+        "R0lGOD",         # GIF (GIF87a/89a)
+        "PHN2Zy",         # <svg ("<svg" base64)
+    )
+
+    allowed_route_prefixes = ("/api/", "/static/", "/channels/", "/docs", "/redoc", "/metrics")
+    base64_chars_pattern = re.compile(r"^[A-Za-z0-9+/=%]{40,}$")  # long run of base64-ish chars
+
+    @app.middleware("http")
+    async def base64_path_guard(request: Request, call_next):  # type: ignore[override]
+        path = request.url.path
+        # Allow known prefixes fast
+        if path == "/" or path.startswith(allowed_route_prefixes):
+            return await call_next(request)
+
+        trimmed = path.lstrip('/')
+
+        # Strategy:
+        # 1. Combine early path segments (because raw base64 contains '/') until threshold length.
+        # 2. Remove '/' to evaluate continuous base64 signature.
+        # 3. Check signature + character set + length.
+        segments = [s for s in trimmed.split('/') if s]
+        if not segments:
+            return await call_next(request)
+
+        candidate_parts = []
+        total_len = 0
+        for seg in segments:
+            candidate_parts.append(seg)
+            total_len += len(seg)
+            if total_len >= 80 or len(candidate_parts) >= 6:
+                break
+        candidate_joined = ''.join(candidate_parts)
+
+        # Only proceed if overall path length large enough to be suspicious and candidate looks like start of base64 image
+        if total_len >= 60:
+            # Normalize for signature test
+            for sig in BASE64_SIGNATURE_PREFIXES:
+                if candidate_joined.startswith(sig):
+                    # Validate base64-ish char run (tolerate up to 10% non-base64 chars in first 200)
+                    sample = candidate_joined[:200]
+                    invalid = sum(1 for c in sample if c not in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+                    if invalid / max(1, len(sample)) <= 0.1 and base64_chars_pattern.match(sample):
+                        prefix_key = candidate_joined[:16]
+                        count = base64_path_seen.get(prefix_key, 0) + 1
+                        base64_path_seen[prefix_key] = count
+                        client_host = getattr(request.client, 'host', 'unknown') if request.client else 'unknown'
+                        if count <= 3:
+                            get_logger("app.security").warning(
+                                "Blocked probable misused multi-segment base64 path (count=%s, client=%s, prefix=%s...) total_len=%s segments=%s", count, client_host, prefix_key, total_len, len(candidate_parts)
+                            )
+                        return JSONResponse(status_code=400, content={
+                            "detail": "Probable misused base64 image requested as URL path. Use provided imageUrl or a data URI instead.",
+                            "error": "base64_path_misuse",
+                            "length": len(trimmed),
+                        })
+                    break  # signature matched even if failed deeper test
+
+        return await call_next(request)
     
     # Configure CORS
     app.add_middleware(
