@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 import time
+import traceback
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -58,34 +59,32 @@ class PluginDiscoveryService:
         for plugin_path in self.channels_dir.iterdir():
             if not plugin_path.is_dir():
                 continue
-                
             # Skip hidden directories and common non-plugin directories
-            if (plugin_path.name.startswith('.') or 
-                plugin_path.name.lower() in {'assets', 'data', 'static', 'uploads', 'cache', 'temp', 'logs'}):
+            if (plugin_path.name.startswith('.') or
+                    plugin_path.name.lower() in {'assets', 'data', 'static', 'uploads', 'cache', 'temp', 'logs'}):
                 continue
-            
-            # Look for plugin.json configuration file
             config_file = plugin_path / "plugin.json"
             if not config_file.exists():
-                logger.debug(f"No plugin.json found in {plugin_path.name}, trying config.json for backward compatibility")
-                # Fallback to config.json for backward compatibility
+                logger.debug("[plugins] %s: missing plugin.json, checking config.json", plugin_path.name)
                 config_file = plugin_path / "config.json"
                 if not config_file.exists():
-                    logger.debug(f"No plugin.json or config.json found in {plugin_path.name}, skipping")
+                    logger.debug("[plugins] %s: no config file present, skipping", plugin_path.name)
                     continue
-            
             try:
+                logger.debug("[plugins] Loading config for %s", plugin_path)
                 plugin = await self._load_plugin_config(config_file, plugin_path)
-                if plugin:
-                    # Load the plugin instance
-                    await self._load_plugin_instance(plugin, app)
-                    
-                    discovered_plugins.append(plugin)
-                    self.plugins[plugin.id] = plugin
-                    logger.info(f"Discovered plugin: {plugin.id} at {plugin.plugin_path}")
-                    
-            except Exception as e:
-                logger.error(f"Error loading plugin from {plugin_path}: {e}")
+                if not plugin:
+                    logger.debug("[plugins] %s: config load returned None", plugin_path.name)
+                    continue
+                logger.debug("[plugins] %s: config loaded (id=%s) – loading instance", plugin_path.name, plugin.id)
+                await self._load_plugin_instance(plugin, app)
+                discovered_plugins.append(plugin)
+                self.plugins[plugin.id] = plugin
+                logger.info("Discovered plugin: %s at %s (healthy=%s)", plugin.id, plugin.plugin_path, plugin.healthy)
+            except Exception as e:  # noqa: BLE001
+                logger.error("Error loading plugin from %s: %s", plugin_path, e)
+                if logger.isEnabledFor(10):
+                    logger.debug("Traceback loading %s:\n%s", plugin_path, traceback.format_exc(limit=10))
         
         logger.info(f"Plugin discovery complete. Found {len(discovered_plugins)} plugins")
         return discovered_plugins
@@ -95,18 +94,13 @@ class PluginDiscoveryService:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-            
-            # Handle both plugin.json and config.json formats
             if config_file.name == "plugin.json":
-                # New plugin.json format
-                required_fields = ['id', 'name', 'description']
-                missing_fields = [field for field in required_fields if field not in config]
-                
-                if missing_fields:
-                    logger.warning(f"Plugin {plugin_path.name} missing required fields: {missing_fields}")
+                required = ['id', 'name', 'description']
+                missing = [k for k in required if k not in config]
+                if missing:
+                    logger.warning("Plugin %s missing required fields: %s", plugin_path.name, missing)
                     return None
-                
-                plugin = ChannelPlugin(
+                return ChannelPlugin(
                     id=config['id'],
                     name=config['name'],
                     description=config['description'],
@@ -114,31 +108,23 @@ class PluginDiscoveryService:
                     config_path=config_file,
                     plugin_path=plugin_path
                 )
-            else:
-                # Legacy config.json format
-                required_fields = ['name', 'description']
-                missing_fields = [field for field in required_fields if field not in config]
-                
-                if missing_fields:
-                    logger.warning(f"Plugin {plugin_path.name} missing required fields: {missing_fields}")
-                    return None
-                
-                # Use directory name or config id
-                plugin_id = config.get('id', plugin_path.name)
-                
-                plugin = ChannelPlugin(
-                    id=plugin_id,
-                    name=config['name'],
-                    description=config['description'],
-                    icon=config.get('icon'),
-                    config_path=config_file,
-                    plugin_path=plugin_path
-                )
-            
-            return plugin
-            
+            # legacy config.json path
+            required = ['name', 'description']
+            missing = [k for k in required if k not in config]
+            if missing:
+                logger.warning("Legacy plugin %s missing required fields: %s", plugin_path.name, missing)
+                return None
+            plugin_id = config.get('id', plugin_path.name)
+            return ChannelPlugin(
+                id=plugin_id,
+                name=config['name'],
+                description=config['description'],
+                icon=config.get('icon'),
+                config_path=config_file,
+                plugin_path=plugin_path
+            )
         except json.JSONDecodeError as e:
-            logger.error(f"Error parsing {config_file.name} for {plugin_path.name}: {e}")
+            logger.error("Error parsing %s for %s: %s", config_file.name, plugin_path.name, e)
             return None
     
     async def _load_plugin_instance(self, plugin: ChannelPlugin, app: FastAPI):
@@ -150,6 +136,7 @@ class PluginDiscoveryService:
                 logger.warning(f"No channel.py found for plugin {plugin.id}")
                 plugin.healthy = False
                 return
+            logger.debug(f"[plugins] ({plugin.id}) Checking for channel.py at {channel_file}")
             
             # Import the channel module
             spec = importlib.util.spec_from_file_location(
@@ -161,9 +148,13 @@ class PluginDiscoveryService:
                 plugin.healthy = False
                 return
             
+            spec_name = f"plugin_{plugin.id.replace('.', '_')}"
+            logger.debug(f"[plugins] ({plugin.id}) Creating module spec name={spec_name}")
             module = importlib.util.module_from_spec(spec)
-            sys.modules[f"plugin_{plugin.id.replace('.', '_')}"] = module
-            spec.loader.exec_module(module)
+            sys.modules[spec_name] = module
+            logger.debug(f"[plugins] ({plugin.id}) Executing module spec")
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+            logger.debug(f"[plugins] ({plugin.id}) Module loaded; searching for channel class")
             
             # Find and instantiate the channel class
             channel_class = self._find_channel_class(module, plugin.id)
@@ -175,15 +166,32 @@ class PluginDiscoveryService:
             logger.info(f"Found channel class for {plugin.id}: {channel_class.__name__} from {channel_class.__module__}")
             
             # Instantiate the channel
-            plugin.instance = channel_class(str(plugin.plugin_path))
+            try:
+                logger.debug(f"[plugins] ({plugin.id}) Instantiating channel class {channel_class.__name__}")
+                plugin.instance = channel_class(str(plugin.plugin_path))
+            except Exception as inst_exc:
+                plugin.healthy = False
+                logger.error(f"Failed instantiating channel {plugin.id}: {inst_exc}")
+                if logger.isEnabledFor(10):
+                    logger.debug("Traceback: %s", traceback.format_exc(limit=12))
+                return
             
             # Mount plugin router if available
             if hasattr(plugin.instance, 'get_router'):
-                router = plugin.instance.get_router()
+                try:
+                    router = plugin.instance.get_router()
+                except Exception as r_exc:
+                    logger.error(f"Router construction failed for {plugin.id}: {r_exc}")
+                    if logger.isEnabledFor(10):
+                        logger.debug("Traceback: %s", traceback.format_exc(limit=12))
+                    plugin.healthy = False
+                    return
                 if router:
                     mount_path = f"/api/channels/{plugin.id}"
                     app.include_router(router, prefix=mount_path, tags=[f"plugin-{plugin.id}"])
                     logger.info(f"Mounted plugin router: {mount_path}")
+                else:
+                    logger.warning(f"get_router returned None for {plugin.id}")
             
             # Mount static assets
             self._mount_static_assets(app, plugin)
