@@ -1,6 +1,21 @@
 import asyncio
 import json
 import uuid
+"""Legacy MQTT scene assignment service (DEPRECATED).
+
+This module is retained temporarily for backward compatibility but should not
+be used for new code. The modern implementation lives in
+`app.services.mqtt.publisher` which provides a queued, resilient publisher and
+enhanced assignment service.
+
+Pending Removal Plan:
+1. Migrate any remaining imports of `services.mqtt.scenes` to
+    `services.mqtt.publisher`.
+2. Remove this file once no references remain.
+
+Prefer: from app.services.mqtt.publisher import mqtt_scene_service
+"""
+
 from typing import Dict, Optional
 from datetime import datetime, timezone
 

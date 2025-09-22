@@ -99,6 +99,13 @@ async def lifespan(app: FastAPI):
         # Also bring up the scene listener + publisher
         await setup_mqtt_scene_assignment()
         MQTTSceneAssignmentPublisher.initialize(client_id="mimir-scenes")
+        # Eagerly start the async publisher loop so the first refresh does not race the lazy start
+        try:  # defensive – publisher start should not block overall startup
+            publisher_instance = MQTTSceneAssignmentPublisher.get()
+            await publisher_instance.start()
+            logger.info("📡 MQTT Scene assignment publisher started (eager)")
+        except Exception as e:  # pragma: no cover – startup resilience
+            logger.warning("⚠️ Failed to eagerly start MQTT scene assignment publisher: %s", e)
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")

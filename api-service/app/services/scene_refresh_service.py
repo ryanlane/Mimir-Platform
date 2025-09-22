@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.db.base import SessionLocal
 from app.db.models import Scene, DisplayClient
-from app.services.mqtt.publisher import mqtt_scene_service
+from app.services.mqtt.publisher import mqtt_scene_service, MQTTSceneAssignmentPublisher
 from app.services.display_last_image import display_last_image_store
 from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.config import settings
@@ -204,11 +204,32 @@ class SceneRefreshService:
                                 subchannel_id = sc_id
                             for disp in display_group:
                                 device_id = disp["device_id"]
+                                # Ensure the underlying publisher loop is running (best-effort)
+                                if not mqtt_scene_service.is_connected():
+                                    try:
+                                        # Attempt to start singleton publisher if not already (lazy resilience)
+                                        pub = MQTTSceneAssignmentPublisher.get()
+                                        if not pub.is_connected():  # type: ignore[attr-defined]
+                                            await pub.start()
+                                    except Exception:  # pragma: no cover – resilience
+                                        pass
                                 if not mqtt_scene_service.is_connected():
                                     errors.append("mqtt_not_connected")
+                                    logger.debug(
+                                        "scene.refresh.mqtt_offline scene=%s device=%s", scene_id, device_id
+                                    )
                                     break
                                 assignment_id = f"display-{device_id[:6]}-{int(time.time())}"
                                 try:
+                                    logger.info(
+                                        "scene.refresh.publish_attempt scene=%s device=%s channel=%s subchannel=%s url=%s assignment=%s",
+                                        scene_id,
+                                        device_id,
+                                        ch_id,
+                                        sc_id,
+                                        image_url,
+                                        assignment_id,
+                                    )
                                     success = await mqtt_scene_service.send_display_image(
                                         device_id=device_id,
                                         image_url=image_url,
@@ -216,6 +237,12 @@ class SceneRefreshService:
                                     )
                                     if success:
                                         total_updated += 1
+                                        logger.info(
+                                            "scene.refresh.publish_ok scene=%s device=%s assignment=%s", 
+                                            scene_id,
+                                            device_id,
+                                            assignment_id,
+                                        )
                                         display_last_image_store.update(
                                             device_id=device_id,
                                             assignment_id=assignment_id,
@@ -245,8 +272,20 @@ class SceneRefreshService:
                                             logger.debug("persist_failure device=%s err=%s", device_id, type(perr).__name__)
                                     else:
                                         errors.append(f"mqtt_send_failed:{device_id}")
+                                        logger.warning(
+                                            "scene.refresh.publish_failed scene=%s device=%s assignment=%s",
+                                            scene_id,
+                                            device_id,
+                                            assignment_id,
+                                        )
                                 except (ConnectionError, RuntimeError, OSError) as send_err:  # network/mqtt isolation
                                     errors.append(f"send_exception:{device_id}:{type(send_err).__name__}")
+                                    logger.warning(
+                                        "scene.refresh.publish_error scene=%s device=%s err=%s", 
+                                        scene_id,
+                                        device_id,
+                                        type(send_err).__name__,
+                                    )
 
                     status = "ok" if total_updated > 0 else ("skipped" if not errors else "error")
                     skipped_reason = None
