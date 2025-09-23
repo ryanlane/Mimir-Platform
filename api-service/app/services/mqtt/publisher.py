@@ -1,7 +1,29 @@
+"""
+MQTT publisher utilities for scene assignment and display commands.
+
+Deduplication
+-------------
+This module de-duplicates identical commands per device/topic by hashing the
+payload with volatile fields removed (timestamp, assignment_id, sequence). If an
+identical payload for the same topic and command type was sent recently, we skip
+re-sending within a TTL window.
+
+Settings (from app.config.settings):
+- mqtt_dedup_enabled (bool, default True)
+- mqtt_dedup_ttl_seconds (int, default 60)
+- mqtt_dedup_max_entries (int, default 1000)
+
+Log markers:
+- "mqtt.publisher.dedup enabled ..." at startup
+- "MQTT dedup: skipping ..." when a publish is suppressed
+"""
+
 import asyncio
 import json
 import uuid
-from typing import Dict, Optional, Tuple
+import time
+import hashlib
+from typing import Dict, Optional, Tuple, Any
 from datetime import datetime, timezone
 
 try:
@@ -13,7 +35,7 @@ except ImportError:
 from app.config import settings
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
-from app.db.models import DisplayClient, Scene
+from app.db.models import DisplayClient
 
 logger = get_logger(__name__)
 
@@ -32,6 +54,19 @@ class MqttSceneAssignmentService:
         self.is_running = False
         self._queue: asyncio.Queue = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
+
+        # Deduplication cache (mirrors publisher behavior for this path)
+        self._dedup_enabled: bool = bool(getattr(settings, "mqtt_dedup_enabled", True))
+        self._dedup_ttl: int = int(getattr(settings, "mqtt_dedup_ttl_seconds", 60))
+        self._dedup_max: int = int(getattr(settings, "mqtt_dedup_max_entries", 1000))
+        # key -> (hash, ts)
+        self._last_sent: Dict[str, Tuple[str, float]] = {}
+        if self._dedup_enabled:
+            logger.info(
+                "mqtt.publisher.dedup enabled ttl=%ss max=%s (service path)",
+                self._dedup_ttl,
+                self._dedup_max,
+            )
         
         logger.info(f"MQTT Scene Assignment Service initialized - Broker: {self.broker_host}:{self.broker_port}")
     
@@ -191,6 +226,10 @@ class MqttSceneAssignmentService:
         await self.start()  # lazy start if needed
         topic = f"mimir/{target_id}/cmd"
         try:
+            # Deduplicate unchanged payloads (ignore volatile keys)
+            if self._dedup_enabled and not self._should_publish(topic, payload):
+                logger.debug("MQTT dedup (service): skipping unchanged payload for %s", topic)
+                return True
             # Encode once, so the worker just publishes bytes
             data = json.dumps(payload).encode("utf-8")
             await self._queue.put((topic, data, qos, retain))
@@ -199,6 +238,54 @@ class MqttSceneAssignmentService:
         except Exception as exc:
             logger.error(f"Failed to enqueue MQTT command for {topic}: {exc}")
             return False
+
+    @staticmethod
+    def _normalize_payload_for_hash(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a copy of payload with volatile fields removed for stable hashing.
+
+        Removes: timestamp, assignment_id, sequence. Applies recursively to lists/dicts.
+        """
+        volatile = {"timestamp", "assignment_id", "sequence"}
+
+        def _strip(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {k: _strip(v) for k, v in obj.items() if k not in volatile}
+            if isinstance(obj, list):
+                return [_strip(v) for v in obj]
+            return obj
+
+        return _strip(payload)
+
+    def _payload_hash(self, payload: Dict[str, Any]) -> str:
+        norm = self._normalize_payload_for_hash(payload)
+        data = json.dumps(norm, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(data).hexdigest()
+
+    def _should_publish(self, topic: str, payload: Dict[str, Any]) -> bool:
+        """Check dedup cache; record and return whether to publish now.
+
+        Keyed by (topic, type) to scope by device and command type.
+        """
+        now = time.monotonic()
+        # prune old entries
+        if self._last_sent and (len(self._last_sent) > self._dedup_max):
+            # drop oldest 10% when over limit
+            sorted_items = sorted(self._last_sent.items(), key=lambda kv: kv[1][1])
+            drop_n = max(1, len(self._last_sent) // 10)
+            for k, _ in sorted_items[:drop_n]:
+                self._last_sent.pop(k, None)
+
+        # deterministic key per device/topic and command type
+        cmd_type = str(payload.get("type", "?"))
+        key = f"{topic}|{cmd_type}"
+        h = self._payload_hash(payload)
+        prev = self._last_sent.get(key)
+        if prev:
+            prev_hash, prev_ts = prev
+            if prev_hash == h and (now - prev_ts) < self._dedup_ttl:
+                return False  # skip
+        self._last_sent[key] = (h, now)
+        return True
 
     async def assign_scene_to_device(
         self, 
@@ -403,6 +490,13 @@ class MQTTSceneAssignmentPublisher:
         self._stopping = False
         self._client: Optional[Client] = None
 
+        # Deduplication controls
+        self._dedup_enabled: bool = bool(getattr(settings, "mqtt_dedup_enabled", True))
+        self._dedup_ttl: int = int(getattr(settings, "mqtt_dedup_ttl_seconds", 60))
+        self._dedup_max: int = int(getattr(settings, "mqtt_dedup_max_entries", 1000))
+        # key -> (hash, ts)
+        self._last_sent: Dict[str, Tuple[str, float]] = {}
+
     # ---------- Singleton helpers ----------
     @classmethod
     def initialize(cls, client_id: Optional[str] = None) -> "MQTTSceneAssignmentPublisher":
@@ -426,6 +520,12 @@ class MQTTSceneAssignmentPublisher:
         self._stopping = False
         self._task = asyncio.create_task(self._run(), name="mqtt_publisher_loop")
         logger.info(f"MQTT publisher started for {self.broker_host}:{self.broker_port}")
+        if self._dedup_enabled:
+            logger.info(
+                "mqtt.publisher.dedup enabled ttl=%ss max=%s (singleton)",
+                self._dedup_ttl,
+                self._dedup_max,
+            )
 
     async def stop(self) -> None:
         """Stop the background loop and close the connection."""
@@ -449,6 +549,10 @@ class MQTTSceneAssignmentPublisher:
         await self.start()  # lazy start if needed
         topic = f"mimir/{target_id}/cmd"
         try:
+            # Deduplicate unchanged payloads (ignore volatile keys)
+            if self._dedup_enabled and not self._should_publish(topic, payload):
+                logger.debug("MQTT dedup: skipping unchanged payload for %s", topic)
+                return True
             # Encode once, so the worker just publishes bytes
             data = json.dumps(payload).encode("utf-8")
             await self._queue.put((topic, data, qos, retain))
@@ -590,6 +694,53 @@ class MQTTSceneAssignmentPublisher:
     # ---------- Diagnostics ----------
     def is_connected(self) -> bool:
         return self._connected_evt.is_set()
+
+    # ---------- Dedup helpers ----------
+    @staticmethod
+    def _normalize_payload_for_hash(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a copy of payload with volatile fields removed for stable hashing.
+
+        Removes: timestamp, assignment_id, sequence. Applies recursively to lists/dicts.
+        """
+        volatile = {"timestamp", "assignment_id", "sequence"}
+
+        def _strip(obj: Any) -> Any:
+            if isinstance(obj, dict):
+                return {k: _strip(v) for k, v in obj.items() if k not in volatile}
+            if isinstance(obj, list):
+                return [_strip(v) for v in obj]
+            return obj
+
+        return _strip(payload)
+
+    def _payload_hash(self, payload: Dict[str, Any]) -> str:
+        norm = self._normalize_payload_for_hash(payload)
+        data = json.dumps(norm, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(data).hexdigest()
+
+    def _should_publish(self, topic: str, payload: Dict[str, Any]) -> bool:
+        """Check dedup cache; record and return whether to publish now.
+
+        Keyed by (topic, type) to scope by device and command type.
+        """
+        now = time.monotonic()
+        # prune old entries if too large
+        if self._last_sent and (len(self._last_sent) > self._dedup_max):
+            sorted_items = sorted(self._last_sent.items(), key=lambda kv: kv[1][1])
+            drop_n = max(1, len(self._last_sent) // 10)
+            for k, _ in sorted_items[:drop_n]:
+                self._last_sent.pop(k, None)
+
+        cmd_type = str(payload.get("type", "?"))
+        key = f"{topic}|{cmd_type}"
+        h = self._payload_hash(payload)
+        prev = self._last_sent.get(key)
+        if prev:
+            prev_hash, prev_ts = prev
+            if prev_hash == h and (now - prev_ts) < self._dedup_ttl:
+                return False  # skip
+        self._last_sent[key] = (h, now)
+        return True
 
 # Global service instance
 mqtt_scene_service = MqttSceneAssignmentService()
