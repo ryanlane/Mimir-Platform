@@ -257,21 +257,15 @@ class SceneRefreshService:
                                     subchannel_id = sc_id
                             for disp in display_group:
                                 device_id = disp["device_id"]
-                                # Ensure the underlying publisher loop is running (best-effort)
-                                if not mqtt_scene_service.is_connected():
-                                    try:
-                                        # Attempt to start singleton publisher if not already (lazy resilience)
-                                        pub = MQTTSceneAssignmentPublisher.get()
-                                        if not pub.is_connected():  # type: ignore[attr-defined]
-                                            await pub.start()
-                                    except (RuntimeError, OSError):  # pragma: no cover – resilience
-                                        pass
-                                if not mqtt_scene_service.is_connected():
-                                    errors.append("mqtt_not_connected")
-                                    logger.debug(
-                                        "scene.refresh.mqtt_offline scene=%s device=%s", scene_id, device_id
-                                    )
-                                    break
+                                # Ensure the underlying publisher loop is running (best-effort).
+                                # Do not block refresh if not yet connected; the publisher will queue and send once online.
+                                try:
+                                    pub = MQTTSceneAssignmentPublisher.get()
+                                    if not pub.is_connected():  # type: ignore[attr-defined]
+                                        await pub.start()
+                                except (RuntimeError, OSError):  # pragma: no cover – resilience
+                                    # If singleton not initialized elsewhere, ignore; service path will lazy-start on publish
+                                    pass
                                 assignment_id = f"display-{device_id[:6]}-{int(time.time())}"
                                 try:
                                     logger.info(

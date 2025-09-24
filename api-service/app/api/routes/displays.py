@@ -583,7 +583,8 @@ async def unassign_scene_from_display(display_id: str):
         raise HTTPException(status_code=503, detail="MQTT publisher not connected")
 
     assignment_id = f"clr-{uuid.uuid4().hex[:8]}"
-    target_id = display.hostname or display.display_id
+    # Prefer the MQTT device id used by clients (display_id) over hostname for topics
+    target_id = getattr(display, "display_id", None) or getattr(display, "hostname", None) or display_id
     ok = await mqtt_scene_assignment.clear_scene(
         device_id=target_id
     )
@@ -627,7 +628,8 @@ async def assign_scene_to_display(display_id: str, body: AssignSceneBody):
         raise HTTPException(status_code=503, detail="MQTT publisher not connected")
 
     assignment_id = f"set-{uuid.uuid4().hex[:8]}"
-    target_id = display.hostname or display.display_id
+    # Prefer the MQTT device id used by clients (display_id) over hostname for topics
+    target_id = getattr(display, "display_id", None) or getattr(display, "hostname", None) or display_id
     
     # Update to include subchannel_id if the MQTT service supports it
     ok = await mqtt_scene_service.assign_scene_to_device(
