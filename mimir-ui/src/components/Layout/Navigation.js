@@ -11,7 +11,7 @@ const Navigation = () => {
     { path: '/scenes', label: 'Scenes', icon: Layers },
     { path: '/channels', label: 'Channels', icon: Tv },
     { path: '/displays', label: 'Displays', icon: MonitorSpeaker },
-    { path: '/distribution', label: 'Distribution', icon: Database },
+    // { path: '/distribution', label: 'Distribution', icon: Database },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];
 

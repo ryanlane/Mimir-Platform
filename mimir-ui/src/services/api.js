@@ -3,32 +3,36 @@ import { apiCache, CACHE_CONFIGS, invalidateCache } from './apiCache';
 
 // API base URL with intelligent defaults
 function getApiBaseUrl() {
-  // 1. Check for explicit configuration
+  // 1) Explicit configuration via global/window or localStorage
   const raw =
     (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
-    localStorage.getItem('mimir-api-base-url');
+    (typeof localStorage !== 'undefined' && localStorage.getItem('mimir-api-base-url'));
 
   if (raw) {
     return ensureApiSuffix(raw);
   }
 
-  // 2. Smart fallback based on current environment
-  if (typeof window !== 'undefined') {
-    const currentHost = window.location.hostname;
-    const currentProtocol = window.location.protocol;
-    
-    // If we're running on localhost (development), use localhost
-    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
-      return 'http://localhost:5000/api';
+  // 2) Smart fallback based on current environment
+  if (typeof window !== 'undefined' && window.location) {
+    const { hostname, origin, port } = window.location;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const devPorts = new Set(['3000', '5173', '8080']); // common dev servers
+
+    // Prefer same-origin /api for non-localhost to avoid CORS/mixed-content (esp. Safari iOS)
+    if (!isLocalhost && !devPorts.has(port)) {
+      return ensureApiSuffix(origin);
     }
-    
-    // If we're running on the same host as the UI, use the same host
-    if (currentHost && currentHost !== 'localhost') {
-      return `${currentProtocol}//${currentHost}:5000/api`;
+
+    // If on dev ports but not localhost (e.g., phone hitting http://<LAN-IP>:3000), use that host on :5000 (http)
+    if (!isLocalhost && devPorts.has(port)) {
+      return 'http://' + hostname + ':5000/api';
     }
+
+    // Localhost dev
+    return 'http://localhost:5000/api';
   }
 
-  // 3. Final fallback for specific deployment
+  // 3) Final static fallback (can be overridden in Settings)
   return 'http://172.31.79.107:5000/api';
 }
 

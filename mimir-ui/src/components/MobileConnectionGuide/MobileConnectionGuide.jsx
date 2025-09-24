@@ -13,28 +13,33 @@ const MobileConnectionGuide = () => {
 
   const getRecommendedApiUrl = () => {
     if (typeof window === 'undefined') return '';
-    const { hostname } = window.location;
-    
-    // If we're on localhost, keep localhost
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:5000';
+    const { hostname, origin, port } = window.location;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const devPorts = new Set(['3000', '5173', '8080']);
+
+    // Prefer same-origin for non-localhost to avoid CORS/mixed-content (iOS Safari)
+    if (!isLocalhost && !devPorts.has(port)) {
+      return origin.replace(/\/$/, '');
     }
-    
-    // Otherwise use the same hostname
-    return `http://${hostname}:5000`;
+
+    // Localhost/dev: explicit backend port
+    return 'http://localhost:5000';
   };
 
   const getRecommendedWsUrl = () => {
     if (typeof window === 'undefined') return '';
-    const { hostname } = window.location;
-    
-    // If we're on localhost, keep localhost
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'ws://localhost:5000';
+    const { hostname, protocol, origin, port } = window.location;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const devPorts = new Set(['3000', '5173', '8080']);
+    const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
+
+    if (!isLocalhost && !devPorts.has(port)) {
+      const url = new URL(origin);
+      url.protocol = wsProtocol;
+      return url.toString().replace(/\/$/, '');
     }
-    
-    // Otherwise use the same hostname
-    return `ws://${hostname}:5000`;
+
+    return 'ws://localhost:5000';
   };
 
   return (

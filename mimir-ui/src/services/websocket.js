@@ -24,20 +24,28 @@ class WebSocketService {
     }
 
     // 2. Generate based on current page location
-    if (typeof window !== 'undefined') {
-      const currentHost = window.location.hostname;
-      const isSecure = window.location.protocol === 'https:';
+    if (typeof window !== 'undefined' && window.location) {
+      const { hostname, protocol, origin, port } = window.location;
+      const isSecure = protocol === 'https:';
       const wsProtocol = isSecure ? 'wss:' : 'ws:';
-      
-      // If we're running on localhost (development), use localhost
-      if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
-        return 'ws://localhost:5000';
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+      const devPorts = new Set(['3000', '5173', '8080']);
+
+      // Prefer same-origin host for non-localhost to avoid mixed-content/CORS on mobile Safari
+      if (!isLocalhost && !devPorts.has(port)) {
+        // Replace http(s) with ws(s) but keep host/port
+        const url = new URL(origin);
+        url.protocol = wsProtocol;
+        return url.toString().replace(/\/$/, '');
       }
-      
-      // If we're running on the same host as the UI, use the same host
-      if (currentHost && currentHost !== 'localhost') {
-        return `${wsProtocol}//${currentHost}:5000`;
+
+      // If on dev ports but non-localhost (e.g., http://<LAN-IP>:3000), point to ws://<LAN-IP>:5000
+      if (!isLocalhost && devPorts.has(port)) {
+        return `ws://${hostname}:5000`;
       }
+
+      // Localhost/dev: default to backend port 5000
+      return 'ws://localhost:5000';
     }
 
     // 3. Final fallback for specific deployment
