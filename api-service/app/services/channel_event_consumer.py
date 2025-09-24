@@ -128,6 +128,12 @@ class ChannelEventConsumerService:
                     threshold = getattr(s, "push_fallback_poll_seconds", None)
                     if not threshold:
                         continue
+                    # Bootstrap-only fallback: once a scene has successfully displayed
+                    # content (content_epoch > 0), we rely solely on push events and do not
+                    # run periodic fallback refreshes anymore. This avoids polling loops for
+                    # long-lived content like music tracks.
+                    if (getattr(s, "content_epoch", None) or 0) > 0:
+                        continue
                     last = self._scene_last_refresh.get(s.id, 0.0)
                     if last == 0.0 or (now - last) > threshold:
                         logger.debug(
