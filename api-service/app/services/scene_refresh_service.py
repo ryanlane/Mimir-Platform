@@ -22,6 +22,7 @@ import time
 import hashlib
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 from app.db.base import SessionLocal
 from app.db.models import Scene, DisplayClient
@@ -242,6 +243,14 @@ class SceneRefreshService:
                                 if not image_url:
                                     errors.append(f"image_url_conversion_failed:{ch_id}")
                                     continue
+                                # Ensure downstream MQTT dedup does not suppress publishes when content changes
+                                # but the endpoint URL is stable by appending a cache-busting query param based on
+                                # the content fingerprint (fp). This also helps device-side HTTP caches.
+                                try:
+                                    if 'fp' in locals() and fp:
+                                        image_url = self._append_cache_buster(image_url, fp)
+                                except Exception:  # pragma: no cover – do not fail refresh on URL tweak issues
+                                    pass
                                 if not sample_url:
                                     sample_url = image_url
                                     channel_id = ch_id
@@ -288,6 +297,12 @@ class SceneRefreshService:
                                             errors.append(f"swap_save_failed:{device_id}")
                                             logger.debug("scene.refresh.swap_save_failed scene=%s device=%s", scene_id, device_id)
                                             continue
+                                        # Apply same cache-busting to per-display URL if fp available
+                                        try:
+                                            if 'fp' in locals() and fp:
+                                                per_display_url = self._append_cache_buster(per_display_url, fp)
+                                        except Exception:  # pragma: no cover
+                                            pass
                                         if _path:
                                             swap_path_str = str(_path)
                                         if not sample_url:
@@ -478,6 +493,29 @@ class SceneRefreshService:
         if filename:
             return f"{base_url}/channels/photo_frame/uploads/{filename}"
         return None
+
+    @staticmethod
+    def _append_cache_buster(url: str, value: str, param: str = "v") -> str:
+        """Append or replace a cache-busting query parameter on a URL.
+
+        Args:
+            url: The original URL
+            value: The cache-busting value (e.g., content fingerprint)
+            param: The query parameter name to use (default: "v")
+
+        Returns:
+            A URL with the cache-busting parameter applied.
+        """
+        try:
+            parts = urlparse(url)
+            query = dict(parse_qsl(parts.query, keep_blank_values=True))
+            query[param] = value
+            new_query = urlencode(query)
+            return urlunparse((parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment))
+        except Exception:
+            # If parsing fails (e.g., odd schemeless path), fall back to simple concatenation
+            sep = '&' if ('?' in url) else '?'
+            return f"{url}{sep}{param}={value}"
 
 
 # Global instance
