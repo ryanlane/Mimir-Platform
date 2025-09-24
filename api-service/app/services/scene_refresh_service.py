@@ -30,9 +30,14 @@ from app.services.display_last_image import display_last_image_store
 from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.config import settings
 from app.services.mdns_discovery import mdns_discovery_service
-from app.services.image_swap import save_swap_image, prune_swap
+from app.services.image_swap import save_swap_image
 
 logger = logging.getLogger(__name__)
+
+# Track last content fingerprint per scene/subchannel to avoid re-sending
+# identical content during push/fallback refreshes.
+# Key: f"{scene_id}:{subchannel_id or ''}"
+_last_scene_fingerprint: Dict[str, str] = {}
 
 _METRICS = False
 refresh_counter = None  # type: ignore[assignment]
@@ -175,10 +180,12 @@ class SceneRefreshService:
                         if not plugin or not plugin.instance:
                             errors.append(f"plugin_not_loaded:{ch_id}")
                             continue
+                        # We will evaluate content-gating once on the first group to avoid churn
+                        checked_gating = False
                         for (w,h,orientation), display_group in groups.items():
                             request_data: Dict[str, Any] = {
                                 "settings": {
-                                    "resolution": [w,h],
+                                    "resolution": [w, h],
                                     "orientation": orientation,
                                     "distribution": "new",
                                 }
@@ -195,6 +202,32 @@ class SceneRefreshService:
                                 errors.append(f"channel_response_unsuccessful:{ch_id}")
                                 continue
                             image_info = image_response
+                            # Gating: compute content fingerprint (stable across sizes) and distribution mode
+                            if not checked_gating:
+                                checked_gating = True
+                                scene_key = f"{scene_id}:{sc_id or ''}"
+                                fp = (
+                                    image_response.get("content_fingerprint")
+                                    or (image_response.get("image") or {}).get("content_fingerprint")
+                                )
+                                dist_mode = (
+                                    (image_response.get("image") or {}).get("distribution_mode")
+                                    or image_response.get("distribution_mode")
+                                )
+                                last_fp = _last_scene_fingerprint.get(scene_key)
+                                if fp and last_fp and fp == last_fp and not force:
+                                    logger.info(
+                                        "scene.refresh.skipped unchanged content scene=%s channel=%s sub=%s mode=%s",
+                                        scene_id, ch_id, sc_id, dist_mode,
+                                    )
+                                    return SceneRefreshResult(
+                                        scene_id=scene_id,
+                                        status="skipped",
+                                        reason=trigger_reason,
+                                        skipped_reason="unchanged_content",
+                                        errors=[],
+                                        duration_ms=int((time.perf_counter()-start)*1000),
+                                    )
                             raw_bytes = None
                             content_type = None
                             if isinstance(image_info, dict):
@@ -222,7 +255,7 @@ class SceneRefreshService:
                                         pub = MQTTSceneAssignmentPublisher.get()
                                         if not pub.is_connected():  # type: ignore[attr-defined]
                                             await pub.start()
-                                    except Exception:  # pragma: no cover – resilience
+                                    except (RuntimeError, OSError):  # pragma: no cover – resilience
                                         pass
                                 if not mqtt_scene_service.is_connected():
                                     errors.append("mqtt_not_connected")
@@ -327,6 +360,10 @@ class SceneRefreshService:
                         elif "mqtt_not_connected" in errors:
                             skipped_reason = "mqtt_offline"
 
+                    # Update last seen fingerprint (use the last computed one if available)
+                    if 'fp' in locals() and fp:
+                        _last_scene_fingerprint[f"{scene_id}:{subchannel_id or sc_id or ''}"] = fp
+
                     return SceneRefreshResult(
                         scene_id=scene_id,
                         status=status,
@@ -354,12 +391,12 @@ class SceneRefreshService:
                     if refresh_counter:  # type: ignore[truthy-function]
                         try:  # pragma: no cover
                             refresh_counter.add(1)
-                        except Exception:  # pragma: no cover
+                        except (RuntimeError, ValueError):  # pragma: no cover
                             pass
                     if refresh_duration_counter:
                         try:  # pragma: no cover
                             refresh_duration_counter.add(int((time.perf_counter()-start)*1000))
-                        except Exception:  # pragma: no cover
+                        except (RuntimeError, ValueError):  # pragma: no cover
                             pass
                 # Persist content hash if new sample_url was produced
                 if 'sample_url' in locals() and sample_url:

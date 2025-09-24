@@ -43,7 +43,7 @@ class SceneBase(BaseModel):
     distribution_mode: Optional[str] = Field("push", alias="distributionMode")
     is_active: Optional[bool] = Field(False, alias="isActive")
     update_strategy: Optional[str] = Field("scheduler", alias="updateStrategy", description="scheduler or push")
-    push_fallback_poll_seconds: Optional[int] = Field(None, alias="pushFallbackPollSeconds", ge=5, le=3600)
+    push_fallback_poll_seconds: Optional[int] = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
     
     class Config:
         populate_by_name = True
@@ -67,7 +67,7 @@ class SceneUpdate(BaseModel):
     overlay: Optional[SceneOverlay] = None
     schedule: Optional[SceneSchedule] = None
     update_strategy: Optional[str] = Field(None, alias="updateStrategy")
-    push_fallback_poll_seconds: Optional[int] = Field(None, alias="pushFallbackPollSeconds", ge=5, le=3600)
+    push_fallback_poll_seconds: Optional[int] = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
     
     class Config:
         populate_by_name = True

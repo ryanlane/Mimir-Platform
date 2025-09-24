@@ -13,6 +13,7 @@ Key responsibilities:
 import asyncio
 import uuid
 import logging
+from typing import Dict, Any, Optional
 import base64
 import os  # May be used elsewhere; keep if referenced
 import time
@@ -38,6 +39,11 @@ from ..services.scene_refresh_service import scene_refresh_service, SceneRefresh
 from ..services.image_swap import save_swap_image, prune_swap
 
 logger = logging.getLogger(__name__)
+
+# Track last content hash per scene/subchannel across runs to avoid re-sending
+# identical images when channel instances are re-created and report distribution_mode="new".
+# Key: f"{scene_id}:{subchannel_id or ''}"
+_last_scene_content_hash: Dict[str, str] = {}
 
 
 # -----------------------------------------------------
@@ -760,6 +766,15 @@ class SchedulerWorker:
             # Extract image information; new pipeline may provide raw bytes directly under image_response["image"]["bytes"]
             image_info = image_response.get("image", {})
             distribution_mode = image_info.get("distribution_mode")
+            # Prefer nested sha256; fall back to top-level if provided
+            candidate_hash: Optional[str] = None
+            try:
+                candidate_hash = (
+                    (image_info or {}).get("sha256")
+                    or image_response.get("sha256")
+                )
+            except Exception:  # noqa: BLE001
+                candidate_hash = None
 
             # Preferred: if bytes provided emit per-display swap files; else fallback to legacy URL conversion
             raw_bytes = None
@@ -787,11 +802,27 @@ class SchedulerWorker:
             
             # For new content, always distribute. For existing content, only if scene assignments need updates
             should_distribute = False
-            
+
+            # Hash-based gating: if hash unchanged, treat as existing even if channel reports 'new'
+            scene_key = f"{scene.id}:{scene.channels[0].get('subchannel_id') if scene.channels else ''}"
+            last_hash = _last_scene_content_hash.get(scene_key)
+            content_unchanged = bool(candidate_hash and last_hash and candidate_hash == last_hash)
+
             if distribution_mode == "new":
-                # New content available - always distribute
-                should_distribute = True
-                logger.info(f"New content available for scene {scene.id}, distributing to {len(assigned_displays)} displays")
+                if content_unchanged:
+                    logger.info(
+                        "distribution.skipped unchanged hash for scene %s (mode=new, displays=%d)",
+                        scene.id,
+                        len(assigned_displays),
+                    )
+                    # Defer to 'existing' path logic: only distribute if scene assignment mismatches
+                    distribution_mode = "existing"
+                else:
+                    # New content available - distribute
+                    should_distribute = True
+                    logger.info(
+                        f"New content available for scene {scene.id}, distributing to {len(assigned_displays)} displays"
+                    )
             elif distribution_mode in ["existing", "cached"]:
                 # No new content, check if any displays need scene assignment updates
                 for display in assigned_displays:
@@ -916,6 +947,15 @@ class SchedulerWorker:
                             25,
                         )
                     )
+                except Exception:  # noqa: BLE001
+                    pass
+
+            # Update last hash only if we actually distributed or if we have a candidate hash and
+            # there was no need to distribute but content remains the same (keeps baseline correct).
+            if candidate_hash:
+                try:
+                    if displays_updated > 0 or content_unchanged:
+                        _last_scene_content_hash[scene_key] = candidate_hash
                 except Exception:  # noqa: BLE001
                     pass
 
