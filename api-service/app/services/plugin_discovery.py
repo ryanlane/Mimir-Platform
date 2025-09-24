@@ -204,8 +204,15 @@ class PluginDiscoveryService:
                 inst = plugin.instance
                 if getattr(inst, "supports_push", False) and hasattr(inst, "register_listener"):
                     # Define listener callback bridging to central dispatcher
+                    # Capture the main event loop to allow cross-thread scheduling from PushManager thread
+                    try:
+                        main_loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        # Fallback for environments where get_running_loop isn't available here; best-effort
+                        main_loop = None  # type: ignore[assignment]
+
                     def _on_channel_event(raw_evt: dict):  # raw dict from plugin (thread context allowed)
-                        # We hop into asyncio loop for dispatcher publish.
+                        # Build event and publish it into the API's dispatcher from any thread.
                         try:
                             evt = ChannelUpdateEvent(
                                 channel_id=raw_evt.get("channel_id", plugin.id),
@@ -218,13 +225,19 @@ class PluginDiscoveryService:
                         except Exception as build_exc:  # noqa: BLE001
                             logger.warning(f"Failed constructing ChannelUpdateEvent for {plugin.id}: {build_exc}")
                             return
-                        # Schedule coroutine safely
+                        # Schedule coroutine safely using the captured loop (thread-safe)
                         try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_running():
-                                loop.create_task(channel_event_dispatcher.publish(evt))
-                        except RuntimeError:
-                            # No running loop (during startup) - ignore
+                            if main_loop and main_loop.is_running():
+                                asyncio.run_coroutine_threadsafe(
+                                    channel_event_dispatcher.publish(evt), main_loop
+                                )
+                            else:
+                                # As a last resort, try current thread's loop if present
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    loop.create_task(channel_event_dispatcher.publish(evt))
+                        except Exception:
+                            # Avoid crashing plugin thread on scheduling errors
                             pass
                     inst.register_listener(_on_channel_event)
                     logger.info(f"Registered push listener for plugin {plugin.id}")
