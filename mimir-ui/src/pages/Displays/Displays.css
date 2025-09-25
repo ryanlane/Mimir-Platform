@@ -1026,6 +1026,11 @@
   color: var(--color-success);
 }
 
+/* Hide the top Refresh button on mobile in favor of pull-to-refresh */
+@media (max-width: 640px) {
+  .desktop-only-refresh { display: none !important; }
+}
+
 .error-message {
   background: rgba(var(--color-error-rgb), 0.1);
   color: var(--color-error);

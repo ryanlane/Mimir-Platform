@@ -6,6 +6,7 @@ import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import featureDetection from '../../services/featureDetection';
 import DisplayCard from './DisplayCard';
+import PullToRefresh from '../../components/PullToRefresh/PullToRefresh';
 import SceneAssignment from './SceneAssignment';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Displays.css';
@@ -428,6 +429,7 @@ const Displays = () => {
   }
 
   return (
+    <PullToRefresh onRefresh={refreshDisplays}>
     <div className="page-container">
       <div className="page-header">
         <div className="page-title-section">
@@ -442,15 +444,15 @@ const Displays = () => {
         </div>
         
         <div className="page-actions">
+          {/* Desktop refresh button retained; hidden on mobile via CSS */}
           <button 
-            className="btn btn-secondary" 
+            className="btn btn-secondary desktop-only-refresh" 
             onClick={refreshDisplays}
             disabled={loading}
           >
             <RotateCcw size={18} />
             Refresh
           </button>
-
         </div>
       </div>
 
@@ -684,6 +686,7 @@ const Displays = () => {
       
       <DebugPanel />
     </div>
+    </PullToRefresh>
   );
 };
 
