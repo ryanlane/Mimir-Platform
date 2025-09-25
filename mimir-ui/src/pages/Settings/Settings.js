@@ -123,7 +123,8 @@ const Settings = () => {
     showWebSocketEvents: localStorage.getItem('mimir-show-websocket-events') !== 'false',
     showAPIRequests: localStorage.getItem('mimir-show-api-requests') !== 'false',
     showSceneEvents: localStorage.getItem('mimir-show-scene-events') !== 'false',
-    showDisplayEvents: localStorage.getItem('mimir-show-display-events') !== 'false'
+    showDisplayEvents: localStorage.getItem('mimir-show-display-events') !== 'false',
+    showDebugPanel: localStorage.getItem('mimir-show-debug-panel') !== 'false'
   });
 
   const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('mimir-api-base-url') || '');
@@ -162,6 +163,11 @@ const Settings = () => {
     
     // Apply console verbosity settings globally
     window.mimirConsoleSettings = newSettings;
+
+    // Notify listeners (e.g., DebugPanel) if debug panel visibility changes
+    if (setting === 'showDebugPanel') {
+      window.dispatchEvent(new CustomEvent('mimir:debug-visibility-changed', { detail: { enabled: value } }));
+    }
     
     console.log(`Console setting changed: ${setting} = ${value}`);
   };
@@ -546,6 +552,15 @@ const Settings = () => {
                     onChange={(e) => handleVerbosityChange('showDisplayEvents', e.target.checked)}
                   />
                   Display Events
+                </label>
+
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={consoleSettings.showDebugPanel}
+                    onChange={(e) => handleVerbosityChange('showDebugPanel', e.target.checked)}
+                  />
+                  Show Debug Panel
                 </label>
               </div>
             </div>

@@ -4,6 +4,8 @@ import { api } from '../../services/api';
 import './DebugPanel.css';
 
 const DebugPanel = () => {
+  const initialEnabled = localStorage.getItem('mimir-show-debug-panel') !== 'false';
+  const [debugEnabled, setDebugEnabled] = useState(initialEnabled);
   const [isVisible, setIsVisible] = useState(false);
   const [tests, setTests] = useState({});
   const [loading, setLoading] = useState(false);
@@ -126,6 +128,26 @@ const DebugPanel = () => {
     if (window.mimirDebug?.isMobile) {
       runTests();
     }
+    const handler = (e) => {
+      const enabled = e.detail?.enabled;
+      if (typeof enabled === 'boolean') {
+        setDebugEnabled(enabled);
+        if (!enabled) setIsVisible(false);
+      }
+    };
+    const storageHandler = (e) => {
+      if (e.key === 'mimir-show-debug-panel') {
+        const enabled = e.newValue !== 'false';
+        setDebugEnabled(enabled);
+        if (!enabled) setIsVisible(false);
+      }
+    };
+    window.addEventListener('mimir:debug-visibility-changed', handler);
+    window.addEventListener('storage', storageHandler);
+    return () => {
+      window.removeEventListener('mimir:debug-visibility-changed', handler);
+      window.removeEventListener('storage', storageHandler);
+    };
   }, []);
   
   const getStatusIcon = (status) => {
@@ -136,6 +158,10 @@ const DebugPanel = () => {
     }
   };
   
+  if (!debugEnabled) {
+    return null;
+  }
+
   if (!isVisible) {
     return (
       <div className="debug-panel-toggle">
