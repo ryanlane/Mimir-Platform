@@ -27,6 +27,30 @@ function AppContent() {
     }
   }, []);
 
+  // Listen for service worker update availability
+  React.useEffect(() => {
+    const handleUpdate = () => {
+      toast.info('New version available', 'info', {
+        duration: 20000,
+        actionLabel: 'Update',
+        onAction: () => {
+          window.dispatchEvent(new Event('mimir:sw-skip-waiting'));
+        },
+        dismissible: true
+      });
+    };
+    window.addEventListener('mimir:sw-update', handleUpdate);
+
+    // When the active service worker changes (after skipWaiting), reload to get fresh assets
+    navigator.serviceWorker?.addEventListener('controllerchange', () => {
+      // Avoid infinite loops: delay a tick before reload
+      setTimeout(() => window.location.reload(), 250);
+    });
+    return () => {
+      window.removeEventListener('mimir:sw-update', handleUpdate);
+    };
+  }, [toast]);
+
   return (
     <>
       <Router>

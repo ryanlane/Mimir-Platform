@@ -197,10 +197,29 @@ export const NetworkStatus = ({ onStatusChange = null }) => {
 export const useToast = () => {
   const [toasts, setToasts] = useState([]);
 
-  const addToast = (message, type = 'info', duration = 4000) => {
+  /**
+   * addToast - flexible signature supporting legacy (message, type, duration) or object options
+   * @param {string} message
+   * @param {string} type
+   * @param {number|object} third
+   */
+  const addToast = (message, type = 'info', third = 4000) => {
+    let options = {};
+    if (typeof third === 'number') {
+      options.duration = third;
+    } else if (typeof third === 'object' && third !== null) {
+      options = third;
+    }
+    const {
+      duration = 4000,
+      actionLabel = null,
+      onAction = null,
+      dismissible = true
+    } = options;
+
     const id = Date.now() + Math.random();
-    const toast = { id, message, type, duration };
-    
+    const toast = { id, message, type, duration, actionLabel, onAction, dismissible };
+
     setToasts(prev => [...prev, toast]);
 
     if (duration > 0) {
@@ -208,7 +227,6 @@ export const useToast = () => {
         removeToast(id);
       }, duration);
     }
-
     return id;
   };
 
@@ -280,17 +298,29 @@ export const Toast = ({ toast, onRemove }) => {
   return (
     <div 
       className={`toast toast-${toast.type} ${isVisible ? 'visible' : ''}`}
-      onClick={handleRemove}
     >
       <div className="toast-icon">
         {getIcon()}
       </div>
       <div className="toast-content">
         <div className="toast-message">{toast.message}</div>
+        {toast.actionLabel && (
+          <button
+            className="toast-action"
+            onClick={() => {
+              if (toast.onAction) toast.onAction();
+              handleRemove();
+            }}
+          >
+            {toast.actionLabel}
+          </button>
+        )}
       </div>
-      <button className="toast-close" onClick={handleRemove}>
-        ×
-      </button>
+      {toast.dismissible !== false && (
+        <button className="toast-close" onClick={handleRemove} aria-label="Dismiss notification">
+          ×
+        </button>
+      )}
     </div>
   );
 };
