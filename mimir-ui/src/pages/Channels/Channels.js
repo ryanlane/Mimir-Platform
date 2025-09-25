@@ -6,7 +6,6 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
 import ChannelSettings from './ChannelSettings';
-import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Channels.css';
 
 // Legacy in-memory cache removed; persistent IndexedDB cache now used.
@@ -347,7 +346,6 @@ const Channels = () => {
         />
       )}
       
-      <DebugPanel />
     </div>
   );
 };
