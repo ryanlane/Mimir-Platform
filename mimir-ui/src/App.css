@@ -346,6 +346,7 @@
   .network-status-container {
     top: 0.5rem;
     right: 0.5rem;
+    max-width: 10vw;
   }
   
   .virtual-scroll-container {
