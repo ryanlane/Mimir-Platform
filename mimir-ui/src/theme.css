@@ -1,0 +1,59 @@
+/* Global theme variables with automatic dark mode via prefers-color-scheme */
+/* Light theme (default) */
+:root {
+  color-scheme: light dark; /* Allow UA form controls to adapt */
+  --color-primary: #000000;
+  --color-secondary: #333333;
+  --color-tertiary: #666666;
+  --color-background: #ffffff;
+  --color-background-alt: #f5f5f5;
+  --color-surface: #f8f8f8;
+  --color-border: #e0e0e0;
+  --color-accent: #0066cc;
+  --color-accent-hover: #0052a3;
+  --color-success: #4caf50;
+  --color-warning: #ff9800;
+  --color-error: #f44336;
+  --color-focus-ring: #2684ff;
+  --elevation-1: 0 1px 3px rgba(0 0 0 / 10%);
+  --elevation-2: 0 4px 12px rgba(0 0 0 / 12%);
+  --gradient-accent: linear-gradient(135deg, #0066cc, #004c99);
+  --color-surface-hover: #efefef;
+}
+
+/* Dark theme overrides */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #f5f7fa;
+    --color-secondary: #d0d4db;
+    --color-tertiary: #9aa0ab;
+    --color-background: #0f1115;
+    --color-background-alt: #1b1f24;
+    --color-surface: #1f242b;
+    --color-border: #2c323a;
+    --color-accent: #3d82f6;
+    --color-accent-hover: #2563eb;
+    --color-success: #4ade80; /* Slightly brighter for dark */
+    --color-warning: #fbbf24;
+    --color-error: #f87171;
+    --color-focus-ring: #3d82f6;
+    --elevation-1: 0 1px 2px rgba(0 0 0 / 60%), 0 0 0 1px rgba(255 255 255 / 4%);
+    --elevation-2: 0 4px 16px -4px rgba(0 0 0 / 70%);
+    --gradient-accent: linear-gradient(135deg, #3d82f6, #1e3a8a);
+    --color-surface-hover: #272d35;
+  }
+
+  /* Scrollbar styling (WebKit + Firefox) */
+  html {
+    scrollbar-color: #2c323a #121417;
+  }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: #121417; }
+  ::-webkit-scrollbar-thumb { background: #2c323a; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a424d; }
+}
+
+/* Forced color mode opt out (for Windows High Contrast, keep accessible semantics) */
+@media (forced-colors: active) {
+  :root { color-scheme: light dark; }
+}

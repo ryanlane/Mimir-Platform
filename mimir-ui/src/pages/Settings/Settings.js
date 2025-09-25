@@ -9,6 +9,7 @@ import { persistentCache } from '../../services/persistentCache';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 import AdminOperations from '../../components/AdminOperations/AdminOperations';
+import { ThemeSelector } from '../../components/ThemeSelector/ThemeSelector';
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
@@ -414,6 +415,25 @@ const Settings = () => {
       </div>
 
       <div className="settings-grid">
+        {/* Theme Selection */}
+        <div className="settings-card">
+          <div className="card-header">
+            <div className="flex items-center gap-sm">
+              <SettingsIcon size={20} />
+              <h3 className="card-title">Appearance</h3>
+            </div>
+          </div>
+          <div className="card-body">
+            <p className="text-tertiary" style={{ marginTop: 0 }}>
+              Choose your preferred theme or follow the system setting.
+            </p>
+            <ThemeSelector />
+            <small className="form-help" style={{ marginTop: '0.75rem' }}>
+              Changing theme updates colors instantly. Components should use CSS variables (e.g., var(--color-background)).
+            </small>
+          </div>
+        </div>
+
         {/* Console Verbosity Settings */}
         <div className="settings-card">
           <div className="card-header">

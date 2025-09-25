@@ -10,12 +10,15 @@ import Displays from './pages/Displays/Displays';
 import Distribution from './pages/Distribution/Distribution';
 import { ErrorBoundary, useToast, ToastContainer, NetworkStatus } from './components/ErrorHandling/ErrorHandling';
 import CacheDebug from './utils/cacheDebug';
+import './theme.css';
 import './App.css';
 import { usePwaUpdates } from './hooks/usePwaUpdates';
+import { useSystemTheme } from './hooks/useSystemTheme';
 import './version';
 
 function AppContent() {
   const toast = useToast();
+  useSystemTheme();
 
   // Provide toast context to the whole app
   React.createContext(toast);
@@ -94,6 +97,7 @@ function AppContent() {
 
   return (
     <>
+      {/* current theme: {theme} */}
       <Router>
         <Layout>
           <Routes>
