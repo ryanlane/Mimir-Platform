@@ -104,11 +104,14 @@ const PullToRefresh = ({
     refreshing: 'Refreshing…'
   }[state];
 
+  const contentStyle = offset > 0 ? { transform: `translateY(${offset}px)` } : undefined;
+  const indicatorStyle = { height: maxPull, transform: `translateY(${offset - maxPull}px)` };
+
   return (
-    <div className={`ptr-wrapper ${className}`} ref={containerRef}>
+    <div className={`ptr-wrapper ${className}`} ref={containerRef} data-ptr-state={state}>
       <div
         className={`ptr-indicator state-${state}`}
-        style={{ height: maxPull, transform: `translateY(${offset - maxPull}px)` }}
+        style={indicatorStyle}
         aria-hidden={state === 'idle' ? 'true' : 'false'}
       >
         <div className="ptr-indicator-inner" role="status" aria-live="polite">
@@ -116,7 +119,7 @@ const PullToRefresh = ({
           <span className="ptr-text">{indicatorText}</span>
         </div>
       </div>
-      <div className="ptr-content" style={{ transform: `translateY(${offset}px)` }}>
+      <div className="ptr-content" style={contentStyle}>
         {children}
       </div>
     </div>
