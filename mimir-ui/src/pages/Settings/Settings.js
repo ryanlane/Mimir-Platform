@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings as SettingsIcon, Volume2, VolumeX, Wifi, Download, Database, Trash2, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, Volume2, VolumeX, Wifi, Download, Database, Trash2, RefreshCw, Send } from 'lucide-react';
 import { logger } from '../../utils/logger';
 import './Settings.css';
 import { useInstallPrompt } from '../../hooks/useInstallPrompt';
 import { idb } from '../../services/idb';
+import { outbox } from '../../services/outbox';
 import { persistentCache } from '../../services/persistentCache';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
@@ -18,6 +19,7 @@ const Settings = () => {
   // Cache management state
   const [idbStats, setIdbStats] = useState({ scenes: 0, channels: 0, distribution: 0 });
   const [swCacheStats, setSwCacheStats] = useState({ mipages: 0, api: 0, images: 0, static: 0, legacyApp: 0, runtime: 0 });
+  const [outboxCount, setOutboxCount] = useState(0);
   const [cacheLoading, setCacheLoading] = useState(false);
   const [forceUpdating, setForceUpdating] = useState(false);
 
@@ -50,12 +52,35 @@ const Settings = () => {
         else if (cn === 'mimir-runtime') statObj.runtime = requests.length;
       }));
       setSwCacheStats(statObj);
+      // Outbox count
+      try {
+        const queued = await outbox.list();
+        setOutboxCount(queued.filter(i => i.status === 'pending' || i.status === 'sending').length);
+      } catch {}
     } catch (e) {
       console.warn('Failed to load cache stats', e);
     } finally {
       setCacheLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      outbox.list().then(items => {
+        setOutboxCount(items.filter(i => i.status === 'pending' || i.status === 'sending').length);
+      });
+    };
+    window.addEventListener('mimir:outbox-updated', handler);
+    return () => window.removeEventListener('mimir:outbox-updated', handler);
+  }, []);
+
+  const retryOutbox = async () => {
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'OUTBOX_FLUSH' });
+    } else {
+      await outbox.forceFlush();
+    }
+  };
 
   useEffect(() => {
     loadCacheStats();
@@ -583,6 +608,10 @@ const Settings = () => {
                   <span>Legacy Shell</span>
                 </div>
               )}
+              <div className="cache-stat-box">
+                <strong>{outboxCount}</strong>
+                <span>Outbox Pending</span>
+              </div>
             </div>
             <div className="cache-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button type="button" className="btn btn-outline" disabled={cacheLoading} onClick={loadCacheStats}>
@@ -596,6 +625,9 @@ const Settings = () => {
               </button>
               <button type="button" className="btn btn-primary" disabled={forceUpdating} onClick={forceServiceWorkerUpdate}>
                 <RefreshCw size={14} /> {forceUpdating ? 'Updating...' : 'Force SW Update'}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={retryOutbox}>
+                <Send size={14} /> Retry Outbox
               </button>
             </div>
             <small className="form-help" style={{ display: 'block', marginTop: '0.75rem' }}>

@@ -2,12 +2,13 @@
 // Provides simple get/set/delete and store version upgrades.
 
 const DB_NAME = 'mimir-cache';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // bump for outbox store
 const STORES = {
   GENERIC: 'generic', // key-value JSON blobs
   SCENES: 'scenes',
   CHANNELS: 'channels',
-  DISTRIBUTION: 'distribution'
+  DISTRIBUTION: 'distribution',
+  OUTBOX: 'outbox'
 };
 
 let dbPromise = null;
@@ -20,7 +21,7 @@ function openDb() {
       const db = req.result;
       Object.values(STORES).forEach(store => {
         if (!db.objectStoreNames.contains(store)) {
-          db.createObjectStore(store);
+          db.createObjectStore(store, { keyPath: store === STORES.OUTBOX ? 'id' : undefined });
         }
       });
     };
@@ -58,6 +59,12 @@ export const idb = {
   },
   async clear(store) {
     return withStore(store, 'readwrite', s => s.clear());
+  },
+  async getAll(store) {
+    return withStore(store, 'readonly', s => s.getAll());
+  },
+  async add(store, value) {
+    return withStore(store, 'readwrite', s => s.add({ ...value, _ts: Date.now() }));
   }
 };
 

@@ -84,6 +84,107 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// --- Background Sync Outbox Handling ---
+// Lightweight outbox flush inside SW (separate from page-level helper). We store queued
+// mutations in IndexedDB 'outbox' store. SW cannot import page modules directly (no bundler here),
+// so we implement minimal IDB helpers again (duplicated intentionally to avoid coupling).
+
+async function openOutboxDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('mimir-cache', 2);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('outbox')) {
+        db.createObjectStore('outbox', { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function outboxTx(mode, fn) {
+  const db = await openOutboxDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('outbox', mode);
+    const store = tx.objectStore('outbox');
+    let result;
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error);
+    result = fn(store);
+  });
+}
+
+async function getAllOutbox() {
+  return outboxTx('readonly', s => s.getAll());
+}
+async function putOutbox(item) {
+  return outboxTx('readwrite', s => s.put(item));
+}
+async function deleteOutbox(id) {
+  return outboxTx('readwrite', s => s.delete(id));
+}
+
+function calcNextAttempt(attemptCount) {
+  const base = 2000;
+  const expo = Math.min(attemptCount - 1, 6);
+  return Date.now() + base * Math.pow(2, expo);
+}
+
+async function flushOutbox() {
+  const all = await getAllOutbox();
+  const now = Date.now();
+  const eligible = all.filter(i => i.status === 'pending' && i.next_attempt_at <= now).sort((a,b)=>a.created_at-b.created_at).slice(0, 25);
+  for (const item of eligible) {
+    let updated = { ...item, status: 'sending', last_attempt_at: Date.now() };
+    await putOutbox(updated);
+    try {
+      const res = await fetch(item.url, {
+        method: item.method || 'POST',
+        headers: { 'Content-Type': 'application/json', ...(item.headers||{}) },
+        body: item.body ? JSON.stringify(item.body) : undefined
+      });
+      if (!res.ok) {
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+          await putOutbox({ ...updated, status: 'dead-letter', http_status: res.status });
+          continue;
+        }
+        throw new Error('HTTP '+res.status);
+      }
+      await deleteOutbox(item.id);
+      const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      clientsList.forEach(c => c.postMessage({ type: 'OUTBOX_ITEM_SENT', id: item.id }));
+    } catch (e) {
+      const attempts = (item.attempt_count || 0) + 1;
+      if (attempts >= 8) {
+        await putOutbox({ ...updated, status: 'dead-letter', attempt_count: attempts, error: e.message });
+      } else {
+        await putOutbox({ ...updated, status: 'pending', attempt_count: attempts, next_attempt_at: calcNextAttempt(attempts) });
+      }
+    }
+  }
+  const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  clientsList.forEach(c => c.postMessage({ type: 'OUTBOX_UPDATED' }));
+}
+
+self.addEventListener('sync', event => {
+  if (event.tag === 'mimir-outbox') {
+    event.waitUntil(flushOutbox());
+  }
+});
+
+// Fallback: try flush when we regain connectivity
+self.addEventListener('online', () => {
+  flushOutbox();
+});
+
+// Listen for manual flush command from client
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'OUTBOX_FLUSH') {
+    flushOutbox();
+  }
+});
+
 console.log('[SW] Mimir UI Workbox service worker loaded');
 /* eslint-disable no-restricted-globals */
 // Basic service worker implementing app-shell caching + runtime strategies.

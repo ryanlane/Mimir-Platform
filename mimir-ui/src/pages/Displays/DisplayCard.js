@@ -437,17 +437,6 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
           </div>
         )}
 
-        <div className="display-capabilities">
-          <h4>Capabilities</h4>
-          <div className="capabilities-list">
-            <div className="capability">
-              <strong>Formats:</strong> {display.supported_formats?.join(', ') || 'N/A'}
-            </div>
-            <div className="capability">
-              <strong>Version:</strong> {display.client_version || 'Unknown'}
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Image Preview Modal */}
