@@ -1,14 +1,95 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings as SettingsIcon, Volume2, VolumeX, Wifi } from 'lucide-react';
-import { api } from '../../services/api';
+import { Settings as SettingsIcon, Volume2, VolumeX, Wifi, Download, Database, Trash2, RefreshCw } from 'lucide-react';
 import { logger } from '../../utils/logger';
 import './Settings.css';
+import { useInstallPrompt } from '../../hooks/useInstallPrompt';
+import { idb } from '../../services/idb';
+import { persistentCache } from '../../services/persistentCache';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 import AdminOperations from '../../components/AdminOperations/AdminOperations';
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
+  // Install prompt hook
+  const { canInstall, promptInstall, installed } = useInstallPrompt();
+  const [installing, setInstalling] = useState(false);
+
+  // Cache management state
+  const [idbStats, setIdbStats] = useState({ scenes: 0, channels: 0, distribution: 0 });
+  const [swCacheStats, setSwCacheStats] = useState({ mipages: 0, api: 0, images: 0, static: 0, legacyApp: 0, runtime: 0 });
+  const [cacheLoading, setCacheLoading] = useState(false);
+  const [forceUpdating, setForceUpdating] = useState(false);
+
+  const loadCacheStats = useCallback(async () => {
+    setCacheLoading(true);
+    try {
+      // IDB stats (count keys per store)
+      const [scenesKeys, channelKeys, distKeys] = await Promise.all([
+        idb.keys(idb.STORES.SCENES),
+        idb.keys(idb.STORES.CHANNELS),
+        idb.keys(idb.STORES.DISTRIBUTION)
+      ]);
+      setIdbStats({
+        scenes: scenesKeys.length,
+        channels: channelKeys.length,
+        distribution: distKeys.length
+      });
+
+      // SW caches
+      const cacheNames = await caches.keys();
+      const statObj = { mipages: 0, api: 0, images: 0, static: 0, legacyApp: 0, runtime: 0 };
+      await Promise.all(cacheNames.map(async (cn) => {
+        const cache = await caches.open(cn);
+        const requests = await cache.keys();
+        if (cn === 'mimir-pages') statObj.mipages = requests.length;
+        else if (cn === 'mimir-api') statObj.api = requests.length;
+        else if (cn === 'mimir-images') statObj.images = requests.length;
+        else if (cn === 'mimir-static') statObj.static = requests.length;
+        else if (cn.startsWith('mimir-app-shell-')) statObj.legacyApp += requests.length;
+        else if (cn === 'mimir-runtime') statObj.runtime = requests.length;
+      }));
+      setSwCacheStats(statObj);
+    } catch (e) {
+      console.warn('Failed to load cache stats', e);
+    } finally {
+      setCacheLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCacheStats();
+  }, [loadCacheStats]);
+
+  const clearIdbCaches = async () => {
+    await persistentCache.clearAll();
+    await loadCacheStats();
+    console.log('IndexedDB caches cleared');
+  };
+
+  const clearSwCaches = async () => {
+    const names = await caches.keys();
+    await Promise.all(names.map(n => caches.delete(n)));
+    await loadCacheStats();
+    console.log('Service Worker caches cleared');
+  };
+
+  const forceServiceWorkerUpdate = async () => {
+    if (!navigator.serviceWorker?.controller) return;
+    setForceUpdating(true);
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.update()));
+      // Ask current waiting worker to skip waiting if present
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+      }
+      // trigger reload after a short delay
+      setTimeout(() => window.location.reload(), 600);
+    } finally {
+      setForceUpdating(false);
+    }
+  };
   
   // Console verbosity settings
   const [consoleSettings, setConsoleSettings] = useState({
@@ -392,6 +473,134 @@ const Settings = () => {
                 Test Logging
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Install App (PWA) */}
+        <div className="settings-card">
+          <div className="card-header">
+            <div className="flex items-center gap-sm">
+              <Download size={20} />
+              <h3 className="card-title">Install App</h3>
+            </div>
+          </div>
+          <div className="card-body">
+            <p className="text-tertiary" style={{ marginBottom: '0.75rem' }}>
+              Install this web app for faster launch, offline support, and a more native experience.
+            </p>
+            <div className="install-status" style={{ marginBottom: '0.75rem', fontSize: '14px' }}>
+              {installed ? (
+                <span className="status-installed" style={{ color: 'var(--color-success)', fontWeight: 500 }}>
+                  Installed on this device
+                </span>
+              ) : canInstall ? (
+                <span style={{ color: 'var(--color-text-secondary)' }}>
+                  Ready to install
+                </span>
+              ) : (
+                <span style={{ color: 'var(--color-text-tertiary)' }}>
+                  {window.matchMedia('(display-mode: standalone)').matches ? 'Running in standalone mode' : 'Install prompt not currently available'}
+                </span>
+              )}
+            </div>
+            <div className="install-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!canInstall || installing}
+                onClick={async () => {
+                  if (!canInstall) return;
+                  setInstalling(true);
+                  const result = await promptInstall();
+                  setInstalling(false);
+                  if (result?.outcome === 'accepted') {
+                    console.log('PWA install accepted');
+                  } else {
+                    console.log('PWA install dismissed');
+                  }
+                }}
+              >
+                <Download size={16} /> {installing ? 'Installing...' : installed ? 'Installed' : 'Install App'}
+              </button>
+              {window.matchMedia('(display-mode: standalone)').matches && !installed && (
+                <span style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
+                  (Standalone mode detected)
+                </span>
+              )}
+            </div>
+            {!canInstall && !installed && (
+              <small className="form-help" style={{ display: 'block', marginTop: '0.75rem' }}>
+                Tip: Use the browser share/menu and choose "Add to Home Screen" if supported.
+              </small>
+            )}
+          </div>
+        </div>
+
+        {/* Cache Management */}
+        <div className="settings-card">
+          <div className="card-header">
+            <div className="flex items-center gap-sm">
+              <Database size={20} />
+              <h3 className="card-title">Cache Management</h3>
+            </div>
+          </div>
+          <div className="card-body">
+            <p className="text-tertiary" style={{ marginBottom: '0.75rem' }}>
+              View and manage local caches used for offline support and faster loads.
+            </p>
+            <div className="cache-stats-grid" style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', marginBottom: '1rem' }}>
+              <div className="cache-stat-box">
+                <strong>{idbStats.scenes}</strong>
+                <span>Scenes (IDB)</span>
+              </div>
+              <div className="cache-stat-box">
+                <strong>{idbStats.channels}</strong>
+                <span>Channels (IDB)</span>
+              </div>
+              <div className="cache-stat-box">
+                <strong>{idbStats.distribution}</strong>
+                <span>Distribution (IDB)</span>
+              </div>
+              <div className="cache-stat-box">
+                <strong>{swCacheStats.mipages}</strong>
+                <span>Pages (SW)</span>
+              </div>
+              <div className="cache-stat-box">
+                <strong>{swCacheStats.api}</strong>
+                <span>API (SW)</span>
+              </div>
+              <div className="cache-stat-box">
+                <strong>{swCacheStats.images}</strong>
+                <span>Images (SW)</span>
+              </div>
+              <div className="cache-stat-box">
+                <strong>{swCacheStats.static}</strong>
+                <span>Static (SW)</span>
+              </div>
+              {swCacheStats.legacyApp > 0 && (
+                <div className="cache-stat-box">
+                  <strong>{swCacheStats.legacyApp}</strong>
+                  <span>Legacy Shell</span>
+                </div>
+              )}
+            </div>
+            <div className="cache-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <button type="button" className="btn btn-outline" disabled={cacheLoading} onClick={loadCacheStats}>
+                <RefreshCw size={14} /> {cacheLoading ? 'Refreshing...' : 'Refresh Stats'}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={clearIdbCaches}>
+                <Trash2 size={14} /> Clear Data Caches
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={clearSwCaches}>
+                <Trash2 size={14} /> Clear SW Caches
+              </button>
+              <button type="button" className="btn btn-primary" disabled={forceUpdating} onClick={forceServiceWorkerUpdate}>
+                <RefreshCw size={14} /> {forceUpdating ? 'Updating...' : 'Force SW Update'}
+              </button>
+            </div>
+            <small className="form-help" style={{ display: 'block', marginTop: '0.75rem' }}>
+              Clearing caches may temporarily slow loads until data is refetched. Force Update checks for a new service worker and applies it immediately.
+            </small>
           </div>
         </div>
 
