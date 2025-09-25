@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout/Layout';
+import AddToHomeScreenNudge from './components/AddToHomeScreen/AddToHomeScreenNudge';
 import Dashboard from './pages/Dashboard/Dashboard';
 import Scenes from './pages/Scenes/Scenes';
 import Channels from './pages/Channels/Channels';
@@ -67,6 +68,11 @@ function AppContent() {
           </Routes>
         </Layout>
       </Router>
+
+      {/* Add To Home Screen Nudge */}
+      <AddToHomeScreenNudge onInstalled={() => {
+        toast.success('Mimir installed! Enjoy faster access.');
+      }} />
       
       {/* Global Toast Container */}
       <ToastContainer toasts={toast.toasts} removeToast={toast.removeToast} />
