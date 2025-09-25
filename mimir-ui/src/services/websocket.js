@@ -31,12 +31,14 @@ class WebSocketService {
       const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
       const devPorts = new Set(['3000', '5173', '8080']);
 
-      // Prefer same-origin host for non-localhost to avoid mixed-content/CORS on mobile Safari
+      // Prefer same-origin host ONLY when on HTTPS (use wss). On HTTP use backend :5000 to match API.
       if (!isLocalhost && !devPorts.has(port)) {
-        // Replace http(s) with ws(s) but keep host/port
-        const url = new URL(origin);
-        url.protocol = wsProtocol;
-        return url.toString().replace(/\/$/, '');
+        if (isSecure) {
+          const url = new URL(origin);
+          url.protocol = wsProtocol;
+          return url.toString().replace(/\/$/, '');
+        }
+        return `ws://${hostname}:5000`;
       }
 
       // If on dev ports but non-localhost (e.g., http://<LAN-IP>:3000), point to ws://<LAN-IP>:5000

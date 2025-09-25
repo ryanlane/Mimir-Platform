@@ -14,13 +14,17 @@ function getApiBaseUrl() {
 
   // 2) Smart fallback based on current environment
   if (typeof window !== 'undefined' && window.location) {
-    const { hostname, origin, port } = window.location;
+    const { hostname, origin, port, protocol } = window.location;
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
     const devPorts = new Set(['3000', '5173', '8080']); // common dev servers
 
-    // Prefer same-origin /api for non-localhost to avoid CORS/mixed-content (esp. Safari iOS)
+    // Prefer same-origin /api ONLY when we're on HTTPS (avoids mixed-content and supports reverse proxy)
     if (!isLocalhost && !devPorts.has(port)) {
-      return ensureApiSuffix(origin);
+      if (protocol === 'https:') {
+        return ensureApiSuffix(origin);
+      }
+      // On plain HTTP with no explicit dev port, default to backend :5000
+      return `http://${hostname}:5000/api`;
     }
 
     // If on dev ports but not localhost (e.g., phone hitting http://<LAN-IP>:3000), use that host on :5000 (http)

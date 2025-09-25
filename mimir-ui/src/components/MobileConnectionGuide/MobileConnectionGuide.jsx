@@ -17,9 +17,12 @@ const MobileConnectionGuide = () => {
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
     const devPorts = new Set(['3000', '5173', '8080']);
 
-    // Prefer same-origin for non-localhost to avoid CORS/mixed-content (iOS Safari)
+    // Prefer same-origin for HTTPS; on HTTP prefer backend :5000
     if (!isLocalhost && !devPorts.has(port)) {
-      return origin.replace(/\/$/, '');
+      if (window.location.protocol === 'https:') {
+        return origin.replace(/\/$/, '');
+      }
+      return `http://${hostname}:5000`;
     }
 
     // Localhost/dev: explicit backend port
@@ -34,9 +37,12 @@ const MobileConnectionGuide = () => {
     const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
 
     if (!isLocalhost && !devPorts.has(port)) {
-      const url = new URL(origin);
-      url.protocol = wsProtocol;
-      return url.toString().replace(/\/$/, '');
+      if (protocol === 'https:') {
+        const url = new URL(origin);
+        url.protocol = wsProtocol;
+        return url.toString().replace(/\/$/, '');
+      }
+      return `ws://${hostname}:5000`;
     }
 
     return 'ws://localhost:5000';

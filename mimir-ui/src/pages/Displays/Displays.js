@@ -1,6 +1,6 @@
 // Multi-Display Management page for v2.3 API
 import React, { useState, useEffect, useCallback } from 'react';
-import { Monitor, Plus, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw } from 'lucide-react';
+import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -116,12 +116,25 @@ const Displays = () => {
         })
       ]);
 
-      const allDisplays = displaysResponse.data?.data || displaysResponse.data || [];
+      // Normalize displays payload to an array regardless of server shape or errors
+      const payload = displaysResponse?.data;
+      let allDisplays = [];
+      if (Array.isArray(payload)) {
+        allDisplays = payload;
+      } else if (Array.isArray(payload?.displays)) {
+        allDisplays = payload.displays;
+      } else if (Array.isArray(payload?.data)) {
+        allDisplays = payload.data;
+      } else if (Array.isArray(payload?.items)) {
+        allDisplays = payload.items;
+      } else {
+        allDisplays = [];
+      }
       const discoveryData = discoveryResponse?.data || null;
       const statsData = statsResponse?.data || null;
 
       // Get discovered display assignments
-      let discoveredAssignments = {};
+  let discoveredAssignments = {};
       try {
         const assignmentsResponse = await api.getAssignmentStatus();
         discoveredAssignments = assignmentsResponse.data?.assignments || {};
@@ -144,16 +157,19 @@ const Displays = () => {
         });
         
         // Add scene IDs from discovered display assignments
-        Object.values(discoveredAssignments).forEach(assignment => {
-          if (assignment.scene_id) {
-            allSceneIds.add(assignment.scene_id);
-          }
-        });
+        if (discoveredAssignments && typeof discoveredAssignments === 'object') {
+          Object.values(discoveredAssignments).forEach(assignment => {
+            if (assignment && assignment.scene_id) {
+              allSceneIds.add(assignment.scene_id);
+            }
+          });
+        }
 
         // Fetch scene names for all unique scene IDs
         if (allSceneIds.size > 0) {
           const scenesResponse = await api.getScenes();
-          const scenes = scenesResponse.data?.scenes || [];
+          const sd = scenesResponse?.data;
+          const scenes = Array.isArray(sd?.scenes) ? sd.scenes : (Array.isArray(sd) ? sd : []);
           sceneNames = scenes.reduce((acc, scene) => {
             acc[scene.id] = scene.name;
             return acc;
