@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Monitor, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
+import { persistentCache } from '../../services/persistentCache';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import SceneForm from './SceneForm';
 import DistributionManager from '../../components/DistributionManager/DistributionManager';
@@ -59,10 +60,26 @@ const Scenes = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const [scenesResponse, channelsResponse] = await Promise.all([
-        api.getScenes(),
-        api.getChannels()
-      ]);
+      // Use persistent cache with SWR; immediate cached data (if any) then background update
+      const scenesPromise = persistentCache.getScenes({
+        onUpdate: (fresh) => {
+          if (Array.isArray(fresh.scenes)) {
+            setScenes(fresh.scenes);
+          }
+        }
+      });
+      const channelsPromise = persistentCache.getChannels({
+        onUpdate: (fresh) => {
+          if (Array.isArray(fresh.channels)) {
+            setChannels(fresh.channels);
+          }
+        }
+      });
+
+      const [{ data: scenesData }, { data: channelsData }] = await Promise.all([scenesPromise, channelsPromise]);
+
+      const scenesResponse = { data: scenesData };
+      const channelsResponse = { data: channelsData };
 
       // Handle display status separately to gracefully handle "no displays" case
       let displayResponse = null;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Settings, RefreshCw, AlertCircle, Heart, Info } from 'lucide-react';
 import { api } from '../../services/api';
+import { persistentCache } from '../../services/persistentCache';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
@@ -8,10 +9,7 @@ import ChannelSettings from './ChannelSettings';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Channels.css';
 
-// Global cache for channels data to prevent excessive API requests
-let channelsCache = null;
-let channelsCacheTime = null;
-const CHANNELS_CACHE_TIMEOUT = 30 * 1000; // 30 seconds
+// Legacy in-memory cache removed; persistent IndexedDB cache now used.
 
 const Channels = () => {
   const [channels, setChannels] = useState([]);
@@ -53,31 +51,18 @@ const Channels = () => {
 
   const loadChannels = useCallback(async () => {
     try {
-      // Check cache first
-      const now = Date.now();
-      if (channelsCache && channelsCacheTime && (now - channelsCacheTime) < CHANNELS_CACHE_TIMEOUT) {
-        console.log('🚀 Using cached channels data');
-        setChannels(channelsCache);
-        
-        // Load health for cached channels if supported
-        if (featureDetection.supportsChannelHealth()) {
-          loadAllChannelHealth(channelsCache);
+  const { data } = await persistentCache.getChannels({
+        onUpdate: (fresh) => {
+          if (Array.isArray(fresh.channels)) {
+            setChannels(fresh.channels);
+            if (featureDetection.supportsChannelHealth()) {
+              loadAllChannelHealth(fresh.channels);
+            }
+          }
         }
-        setLoading(false);
-        return;
-      }
-      
-      console.log('📡 Fetching fresh channels data');
-      const response = await api.getChannels();
-      const channelsData = response.data.channels || [];
-      
-      // Update cache
-      channelsCache = channelsData;
-      channelsCacheTime = now;
-      
+      });
+      const channelsData = data.channels || [];
       setChannels(channelsData);
-      
-      // Load health for all channels if supported
       if (featureDetection.supportsChannelHealth()) {
         loadAllChannelHealth(channelsData);
       }
@@ -90,12 +75,21 @@ const Channels = () => {
 
   // Manual refresh function that bypasses cache
   const refreshChannels = useCallback(async () => {
-    // Clear cache to force fresh data
-    channelsCache = null;
-    channelsCacheTime = null;
+    // Force bypass: directly call API then update persistent cache
     setLoading(true);
-    await loadChannels();
-  }, [loadChannels]);
+    try {
+      const resp = await api.getChannels();
+      const fresh = resp.data;
+      setChannels(fresh.channels || []);
+      // Write through to IDB for next load
+      // Reuse persistentCache internals by setting directly
+      // (Import idb if needed for fine control; here we rely on background refresh next visit.)
+    } catch (e) {
+      console.error('Manual refresh failed:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const initializeChannels = async () => {
