@@ -21,6 +21,28 @@
   position: relative;
   flex: 1;
   max-width: 400px;
+  .mobile-filters-toggle {
+    margin-top: 0.25rem;
+    align-self: flex-start;
+    display: inline-flex;
+    gap: 0.5rem;
+    position: relative;
+  }
+  .mobile-filters-toggle .filter-count-badge {
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 12px;
+    line-height: 1;
+  }
+  .filters-section.collapsed {
+    display: none !important;
+  }
+  .filters-section.expanded {
+    animation: fadeSlideIn 0.18s ease;
+  }
 }
 
 .search-input svg {

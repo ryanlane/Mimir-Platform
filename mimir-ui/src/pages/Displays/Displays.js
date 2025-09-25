@@ -45,6 +45,22 @@ const Displays = () => {
   const [onlineFilter, setOnlineFilter] = useState('all'); // 'all', 'online', 'offline'
   const [tagFilter, setTagFilter] = useState('');
   const [includeDiscovered, setIncludeDiscovered] = useState(true);
+  // Mobile filters collapsed by default (decide after first render via effect to avoid hydration mismatch if SSR ever added)
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Determine initial mobile state & listen for resize
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const apply = () => {
+      const mobile = mq.matches;
+      setIsMobile(mobile);
+      setFiltersCollapsed(mobile); // collapse when entering mobile
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
   
   // Discovery service status
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
@@ -468,7 +484,7 @@ const Displays = () => {
       )}
 
       {/* Search and Filters */}
-      <div className="displays-controls">
+      <div className={`displays-controls ${isMobile ? 'mobile-controls' : ''}`}>
         <div className="search-section">
           <div className="search-input">
             <Search size={18} />
@@ -479,9 +495,34 @@ const Displays = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          {isMobile && (
+            <button
+              type="button"
+              className="btn btn-tertiary mobile-filters-toggle"
+              aria-expanded={!filtersCollapsed}
+              aria-controls="display-filters-panel"
+              onClick={() => setFiltersCollapsed(c => !c)}
+            >
+              {filtersCollapsed ? 'Show Filters' : 'Hide Filters'}
+              {/* Active filter count (exclude defaults) */}
+              {(() => {
+                const active = [
+                  onlineFilter !== 'all',
+                  !!locationFilter,
+                  !!tagFilter,
+                  !includeDiscovered === true // if unchecked differs from default true
+                ].filter(Boolean).length;
+                return active > 0 ? <span className="filter-count-badge">{active}</span> : null;
+              })()}
+            </button>
+          )}
         </div>
 
-        <div className="filters-section">
+        <div
+          id="display-filters-panel"
+          className={`filters-section ${filtersCollapsed && isMobile ? 'collapsed' : 'expanded'}`}
+          style={filtersCollapsed && isMobile ? { display: 'none' } : undefined}
+        >
           <div className="filter-group">
             <Filter size={16} />
             <select 
