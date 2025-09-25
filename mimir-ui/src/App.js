@@ -14,11 +14,12 @@ import './theme.css';
 import './App.css';
 import { usePwaUpdates } from './hooks/usePwaUpdates';
 import { useSystemTheme } from './hooks/useSystemTheme';
-import './version';
+
+export const ThemeContext = React.createContext(null);
 
 function AppContent() {
   const toast = useToast();
-  useSystemTheme();
+  const themeState = useSystemTheme();
 
   // Provide toast context to the whole app
   React.createContext(toast);
@@ -96,7 +97,7 @@ function AppContent() {
   }, []);
 
   return (
-    <>
+    <ThemeContext.Provider value={themeState}>
       {/* current theme: {theme} */}
       <Router>
         <Layout>
@@ -131,7 +132,7 @@ function AppContent() {
           }
         }} />
       </div>
-    </>
+    </ThemeContext.Provider>
   );
 }
 

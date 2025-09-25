@@ -47,8 +47,12 @@ export function useSystemTheme() {
 
   // Reflect on documentElement for CSS overrides and UA styling hints
   useEffect(() => {
-    document.documentElement.dataset.theme = resolvedTheme;
-  }, [resolvedTheme]);
+    if (preference === 'system') {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = resolvedTheme;
+    }
+  }, [resolvedTheme, preference]);
 
   const setThemePreference = (value) => {
     if (!VALID.includes(value)) return;

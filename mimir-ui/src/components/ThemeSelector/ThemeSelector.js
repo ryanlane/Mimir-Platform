@@ -1,14 +1,19 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import './ThemeSelector.css';
 import { Sun, Moon, Monitor } from 'lucide-react';
-import { useSystemTheme } from '../../hooks/useSystemTheme';
+import { ThemeContext } from '../../App';
 
 /**
  * ThemeSelector component
  * Provides UI to pick between Light, Dark, or System theme modes.
  */
 export function ThemeSelector() {
-  const { preference, resolvedTheme, setThemePreference } = useSystemTheme();
+  const ctx = useContext(ThemeContext);
+  const { preference, resolvedTheme, setThemePreference } = ctx || {};
+
+  if (!ctx) {
+    return <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Theme context unavailable</div>;
+  }
 
   const options = [
     { value: 'system', label: 'System', icon: <Monitor size={16} /> },
