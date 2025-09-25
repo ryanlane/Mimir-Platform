@@ -438,33 +438,6 @@ const Displays = () => {
         </div>
       </div>
 
-      {/* Discovery Status */}
-      {discoveryStatus && (
-        <div className="discovery-status">
-          <div className="discovery-info">
-            <div className="discovery-indicator">
-              {discoveryStatus.service_status?.is_running ? (
-                <>
-                  <div className="status-dot online"></div>
-                  <span>mDNS Discovery Active</span>
-                </>
-              ) : (
-                <>
-                  <div className="status-dot offline"></div>
-                  <span>mDNS Discovery Inactive</span>
-                </>
-              )}
-            </div>
-            {discoveryStatus.service_status?.is_running && (
-              <div className="discovery-stats">
-                <span>{discoveryStatus.service_status.total_discovered} discovered</span>
-                <span>{discoveryStatus.service_status.online_displays} online</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Discovered Display Assignment Stats */}
       {false && discoveredDisplayStats && (
         <div className="assignment-stats">
