@@ -16,6 +16,8 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
+    "prebuild": "node ./scripts/gen-version.mjs",
+    "gen:version": "node ./scripts/gen-version.mjs",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",

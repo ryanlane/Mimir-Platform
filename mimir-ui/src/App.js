@@ -11,6 +11,8 @@ import Distribution from './pages/Distribution/Distribution';
 import { ErrorBoundary, useToast, ToastContainer, NetworkStatus } from './components/ErrorHandling/ErrorHandling';
 import CacheDebug from './utils/cacheDebug';
 import './App.css';
+import { usePwaUpdates } from './hooks/usePwaUpdates';
+import './version';
 
 function AppContent() {
   const toast = useToast();
@@ -51,6 +53,44 @@ function AppContent() {
       window.removeEventListener('mimir:sw-update', handleUpdate);
     };
   }, [toast]);
+
+  // Initialize PWA update lifecycle (hook wires events & polling)
+  usePwaUpdates({
+    onUpdateAvailable: () => {
+      toast.info('New version available', 'info', {
+        duration: 20000,
+        actionLabel: 'Update',
+        onAction: () => {
+          window.dispatchEvent(new Event('mimir:sw-skip-waiting'));
+        },
+        dismissible: true
+      });
+    },
+    onCritical: () => {
+      toast.warning('Critical update installing…', 'warning', {
+        duration: 10000,
+        dismissible: false
+      });
+      // Force skip waiting without user action
+      window.dispatchEvent(new Event('mimir:sw-skip-waiting'));
+    }
+  });
+
+  // Global skip-waiting handler
+  React.useEffect(() => {
+    const handler = async () => {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg?.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      } catch (e) {
+        console.warn('Skip waiting failed', e);
+      }
+    };
+    window.addEventListener('mimir:sw-skip-waiting', handler);
+    return () => window.removeEventListener('mimir:sw-skip-waiting', handler);
+  }, []);
 
   return (
     <>

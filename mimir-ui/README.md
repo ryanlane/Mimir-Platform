@@ -142,3 +142,53 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 ### `npm run build` fails to minify
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+## Build & Version Automation
+
+This project generates a build version automatically every time you run `npm run build` (or any script that invokes the build step). The script `scripts/gen-version.mjs` creates/updates two artifacts:
+
+- `src/version.js` – Exports `APP_VERSION` and attaches it to `window.__APP_VERSION__`.
+- `public/version.json` – Runtime-readable manifest used by the PWA update hook.
+
+### Version Format
+`YYYY.MM.DD-HHMMSS[-<gitsha>][-<CHANNEL>][+meta]`
+
+Examples:
+- `2025.09.25-142355-1a2b3c` (UTC timestamp + git short SHA)
+- `2025.09.25-142355-1a2b3c-RC` (release candidate channel)
+- `2025.09.25-142355+hotfix42` (with metadata)
+
+Lexical ordering matches chronological ordering because of fixed-width date/time components.
+
+### Environment Variables
+You can influence generation with:
+
+| Variable | Purpose |
+|----------|---------|
+| `APP_VERSION` | Set explicit version (bypass auto) |
+| `BUILD_ID` / `BUILD_NUMBER` | Populates `build` field in `version.json` |
+| `BUILD_META` | Appended after `+` (e.g. `+hotfix`) |
+| `VERSION_CHANNEL` | Adds suffix after build (e.g. `-RC`, `-PROD`, `-DEV`) |
+| `CRITICAL_UPDATE=true` | Marks manifest `critical: true` (UI can force reload) |
+| `MIN_CLIENT=version` | Sets minimum client version required to continue |
+| `FORCE_VERSION_DOWNGRADE=true` | Allow writing an older version (normally blocked) |
+
+### Critical vs Min Client
+- `critical: true` – Signals clients an update is strongly recommended; UX shows an upgrade toast/dialog.
+- `minClient` – If a client’s current `APP_VERSION` < `minClient`, the app can block interaction until updated (optional UI enforcement to be implemented).
+
+### Manual Invocation
+Run it directly if needed:
+```bash
+node scripts/gen-version.mjs
+```
+
+### Workflow Integration
+1. Developer runs `npm run build` – prebuild hook auto-generates version.
+2. Service worker & `usePwaUpdates` hook fetch `/version.json` periodically.
+3. If a new version is found, user receives an update toast; critical/minClient logic adjusts messaging.
+
+### Safe Editing
+If you manually change `src/version.js` it will be overwritten on next build. Only commit manual edits for emergency patches if you do NOT run a build locally afterwards.
+
+---
