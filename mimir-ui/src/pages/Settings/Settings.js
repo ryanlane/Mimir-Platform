@@ -132,6 +132,20 @@ const Settings = () => {
   const [testingApi, setTestingApi] = useState(false);
   const [testingWs, setTestingWs] = useState(false);
 
+  // Collapsible sections (all collapsed by default)
+  const [sectionsExpanded, setSectionsExpanded] = useState({
+    connection: false,
+    appearance: false,
+    console: false,
+    install: false,
+    cache: false,
+    system: false,
+  });
+
+  const toggleSection = (key) => {
+    setSectionsExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   // Remove display status loading since Display Control section is removed
   useEffect(() => {
     setLoading(false);
@@ -342,14 +356,23 @@ const Settings = () => {
 
       {/* Connection Configuration */}
       <div className="settings-card">
-        <div className="card-header">
+        <div
+          className="card-header"
+          role="button"
+          tabIndex={0}
+          onClick={() => toggleSection('connection')}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('connection'); } }}
+        >
           <div className="flex items-center gap-sm">
             <Wifi size={20} />
             <h3 className="card-title">Connection Configuration</h3>
           </div>
+          <button type="button" className="expand-button" aria-label={sectionsExpanded.connection ? 'Collapse section' : 'Expand section'}>
+            {sectionsExpanded.connection ? '−' : '+'}
+          </button>
         </div>
-        
-        <div className="card-body">
+        {sectionsExpanded.connection && (
+          <div className="card-body">
           <p className="text-tertiary" style={{ marginBottom: '1rem' }}>
             Configure API and WebSocket connections. Leave blank to use auto-detection based on current page URL.
           </p>
@@ -411,19 +434,30 @@ const Settings = () => {
               </div>
             )}
           </div>
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="settings-grid">
         {/* Theme Selection */}
         <div className="settings-card">
-          <div className="card-header">
+          <div
+            className="card-header"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleSection('appearance')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('appearance'); } }}
+          >
             <div className="flex items-center gap-sm">
               <SettingsIcon size={20} />
               <h3 className="card-title">Appearance</h3>
             </div>
+            <button type="button" className="expand-button" aria-label={sectionsExpanded.appearance ? 'Collapse section' : 'Expand section'}>
+              {sectionsExpanded.appearance ? '−' : '+'}
+            </button>
           </div>
-          <div className="card-body">
+          {sectionsExpanded.appearance && (
+            <div className="card-body">
             <p className="text-tertiary" style={{ marginTop: 0 }}>
               Choose your preferred theme or follow the system setting.
             </p>
@@ -431,19 +465,29 @@ const Settings = () => {
             <small className="form-help" style={{ marginTop: '0.75rem' }}>
               Changing theme updates colors instantly. Components should use CSS variables (e.g., var(--color-background)).
             </small>
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Console Verbosity Settings */}
         <div className="settings-card">
-          <div className="card-header">
+          <div
+            className="card-header"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleSection('console')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('console'); } }}
+          >
             <div className="flex items-center gap-sm">
               <Volume2 size={20} />
               <h3 className="card-title">Console Verbosity</h3>
             </div>
+            <button type="button" className="expand-button" aria-label={sectionsExpanded.console ? 'Collapse section' : 'Expand section'}>
+              {sectionsExpanded.console ? '−' : '+'}
+            </button>
           </div>
-          
-          <div className="card-body">
+          {sectionsExpanded.console && (
+            <div className="card-body">
             <div className="form-section">
               <div className="form-group">
                 <label>Verbosity Level</label>
@@ -518,18 +562,29 @@ const Settings = () => {
                 Test Logging
               </button>
             </div>
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Install App (PWA) */}
         <div className="settings-card">
-          <div className="card-header">
+          <div
+            className="card-header"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleSection('install')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('install'); } }}
+          >
             <div className="flex items-center gap-sm">
               <Download size={20} />
               <h3 className="card-title">Install App</h3>
             </div>
+            <button type="button" className="expand-button" aria-label={sectionsExpanded.install ? 'Collapse section' : 'Expand section'}>
+              {sectionsExpanded.install ? '−' : '+'}
+            </button>
           </div>
-          <div className="card-body">
+          {sectionsExpanded.install && (
+            <div className="card-body">
             <p className="text-tertiary" style={{ marginBottom: '0.75rem' }}>
               Install this web app for faster launch, offline support, and a more native experience.
             </p>
@@ -578,18 +633,29 @@ const Settings = () => {
                 Tip: Use the browser share/menu and choose "Add to Home Screen" if supported.
               </small>
             )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Cache Management */}
         <div className="settings-card">
-          <div className="card-header">
+          <div
+            className="card-header"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleSection('cache')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('cache'); } }}
+          >
             <div className="flex items-center gap-sm">
               <Database size={20} />
               <h3 className="card-title">Cache Management</h3>
             </div>
+            <button type="button" className="expand-button" aria-label={sectionsExpanded.cache ? 'Collapse section' : 'Expand section'}>
+              {sectionsExpanded.cache ? '−' : '+'}
+            </button>
           </div>
-          <div className="card-body">
+          {sectionsExpanded.cache && (
+            <div className="card-body">
             <p className="text-tertiary" style={{ marginBottom: '0.75rem' }}>
               View and manage local caches used for offline support and faster loads.
             </p>
@@ -653,7 +719,8 @@ const Settings = () => {
             <small className="form-help" style={{ display: 'block', marginTop: '0.75rem' }}>
               Clearing caches may temporarily slow loads until data is refetched. Force Update checks for a new service worker and applies it immediately.
             </small>
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Admin Operations */}
@@ -664,14 +731,23 @@ const Settings = () => {
 
         {/* System Information */}
         <div className="settings-card">
-          <div className="card-header">
+          <div
+            className="card-header"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleSection('system')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('system'); } }}
+          >
             <div className="flex items-center gap-sm">
               <SettingsIcon size={20} />
               <h3 className="card-title">System Information</h3>
             </div>
+            <button type="button" className="expand-button" aria-label={sectionsExpanded.system ? 'Collapse section' : 'Expand section'}>
+              {sectionsExpanded.system ? '−' : '+'}
+            </button>
           </div>
-          
-          <div className="card-body">
+          {sectionsExpanded.system && (
+            <div className="card-body">
             <div className="system-info">
               <div className="info-row">
                 <span>User Agent:</span>
@@ -696,7 +772,8 @@ const Settings = () => {
                 </span>
               </div>
             </div>
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
