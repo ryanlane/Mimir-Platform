@@ -367,24 +367,26 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
                 <Play size={14} />
                 <span>Scene: <strong>{display.assigned_scene_name}</strong></span>
               </div>
-              <button 
-                className="btn btn-sm btn-secondary" 
-                onClick={() => onAssignScene(display)}
-              >
-                Change Scene
-              </button>
-              {canManualUpdate && (
-                <button
-                  className="btn btn-sm btn-tertiary"
-                  onClick={handleManualUpdate}
-                  disabled={manualUpdateLoading}
-                  title={manualUpdateLoading ? 'Triggering update...' : 'Trigger scheduled scene now'}
-                  style={{ marginLeft: '0.5rem' }}
+              <div className="scene-buttons">
+                <button 
+                  className="btn btn-sm btn-secondary" 
+                  onClick={() => onAssignScene(display)}
                 >
-                  <Zap size={14} className={manualUpdateLoading ? 'spinning' : ''} />
-                  {!manualUpdateLoading && 'Update Now'}
+                  Change Scene
                 </button>
-              )}
+                {canManualUpdate && (
+                  <button
+                    className="btn btn-sm btn-tertiary"
+                    onClick={handleManualUpdate}
+                    disabled={manualUpdateLoading}
+                    title={manualUpdateLoading ? 'Triggering update...' : 'Trigger scheduled scene now'}
+                    style={{ marginLeft: '0.5rem' }}
+                  >
+                    <Zap size={14} className={manualUpdateLoading ? 'spinning' : ''} />
+                    {!manualUpdateLoading && 'Update Now'}
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="scene-unassigned">
