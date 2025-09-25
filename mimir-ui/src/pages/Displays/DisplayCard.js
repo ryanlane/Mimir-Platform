@@ -409,7 +409,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
           )}
         </div>
 
-        {(thumbnailUrl || display.current_image_url) && (
+        {/* {(thumbnailUrl || display.current_image_url) && (
           <div className="display-image-section">
             <div className="image-info">
               <div className="image-status">
@@ -435,7 +435,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
               </div>
             </div>
           </div>
-        )}
+        )} */}
 
       </div>
 
