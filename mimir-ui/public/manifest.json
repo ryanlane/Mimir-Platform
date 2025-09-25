@@ -1,40 +1,49 @@
 {
+  "id": "/",
   "short_name": "Mimir",
   "name": "Mimir Display Control",
+  "description": "Manage scenes, channels, displays and distribution for the Mimir digital signage system.",
+  "scope": "/",
+  "start_url": "/?source=pwa",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "orientation": "any",
+  "theme_color": "#000000",
+  "background_color": "#ffffff",
+  "categories": ["productivity", "utilities", "business"],
   "icons": [
+    { "src": "favicon.ico", "sizes": "64x64 32x32 24x24 16x16", "type": "image/x-icon" },
+    { "src": "favicon-16x16.png", "sizes": "16x16", "type": "image/png" },
+    { "src": "favicon-32x32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "maskable any" },
+    { "src": "android-chrome-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "android-chrome-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
     {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
+      "name": "Scenes",
+      "short_name": "Scenes",
+      "description": "Manage scenes",
+      "url": "/scenes?source=shortcut",
+      "icons": [{ "src": "android-chrome-192x192.png", "sizes": "192x192" }]
     },
     {
-      "src": "favicon-16x16.png",
-      "sizes": "16x16",
-      "type": "image/png"
-    },
-    {
-      "src": "favicon-32x32.png",
-      "sizes": "32x32",
-      "type": "image/png"
-    },
-    {
-      "src": "apple-touch-icon.png",
-      "sizes": "180x180",
-      "type": "image/png"
-    },
-    {
-      "src": "android-chrome-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
+      "name": "Channels",
+      "short_name": "Channels",
+      "description": "Manage channels",
+      "url": "/channels?source=shortcut",
+      "icons": [{ "src": "android-chrome-192x192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
     {
       "src": "android-chrome-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "label": "Dashboard overview"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "prefer_related_applications": false,
+  "dir": "ltr",
+  "lang": "en-US"
 }
