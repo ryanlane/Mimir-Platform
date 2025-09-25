@@ -344,8 +344,8 @@
 /* Responsive design for performance components */
 @media (max-width: 768px) {
   .network-status-container {
-    bottom: 0.5rem;
-    left: 0.5rem;
+    top: 0.5rem;
+    right: 0.5rem;
   }
   
   .virtual-scroll-container {
