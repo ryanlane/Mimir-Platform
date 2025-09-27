@@ -28,6 +28,21 @@ class AssignCommand(BaseModel):
     scene_name: str
     content: AssignContent
     timestamp: datetime
+    # Update semantics:
+    # update_type: "push" for real-time push updates, "scheduled" for polling/scheduler-driven.
+    # refresh_interval_s: Polling interval in seconds when update_type == "scheduled".
+    #   Must be omitted or null when update_type == "push".
+    update_type: Optional[str] = None
+    refresh_interval_s: Optional[int] = None
+
+    class Config:
+        json_schema_extra = {
+            "description": (
+                "Assign command sent to display clients. New optional fields 'update_type' and "
+                "'refresh_interval_s' communicate whether the scene should be updated by push "
+                "events or by client polling. Older clients can ignore these fields safely."
+            )
+        }
 
 class ClearSceneCommand(BaseModel):
     type: str = "clear_scene"

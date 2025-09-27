@@ -574,6 +574,30 @@ class MQTTSceneAssignmentPublisher:
         ttl_seconds: int = 3600,
         sequence: int = 1,
     ) -> bool:
+        # Derive update_type / refresh_interval_s from scene database record if present
+        update_type: Optional[str] = None
+        refresh_interval_s: Optional[int] = None
+        try:
+            from app.db.base import SessionLocal as _SL  # local import to avoid circulars at module import
+            from app.db.models import Scene as _Scene
+            session = _SL()
+            scene_obj = session.query(_Scene).filter(_Scene.id == scene_id).first()
+            if scene_obj is not None:
+                # Map DB field update_strategy (scheduler|push) to update_type (scheduled|push)
+                strat = getattr(scene_obj, "update_strategy", None) or "scheduler"
+                update_type = "push" if strat == "push" else "scheduled"
+                if update_type == "scheduled":
+                    refresh_interval_s = getattr(scene_obj, "push_fallback_poll_seconds", None)
+                else:
+                    refresh_interval_s = None
+        except Exception as e:  # pragma: no cover - defensive
+            logger.debug(f"Could not enrich assign payload with scene scheduling info: {e}")
+        finally:
+            try:
+                session.close()  # type: ignore
+            except Exception:
+                pass
+
         payload = {
             "type": "assign",
             "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
@@ -592,6 +616,10 @@ class MQTTSceneAssignmentPublisher:
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        if update_type:
+            payload["update_type"] = update_type
+        if update_type == "scheduled":
+            payload["refresh_interval_s"] = refresh_interval_s
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
     # Convenience helper: clear stored scene on device
