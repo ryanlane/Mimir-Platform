@@ -35,7 +35,7 @@ except ImportError:
 from app.config import settings
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
-from app.db.models import DisplayClient
+from app.db.models import DisplayClient, Scene, SchedulerJob
 
 logger = get_logger(__name__)
 
@@ -313,10 +313,13 @@ class MqttSceneAssignmentService:
         
         payload = {
             "type": "set_scene",
-            "scene_id": scene_id,  # Fixed: was incorrectly using scene_id as assignment_id
-            "assignment_id": assignment_id,  # Fixed: now using proper assignment_id
+            "scene_id": scene_id,
+            "assignment_id": assignment_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+        # Enrich with scheduling semantics using unified helper
+        self._enrich_with_schedule_fields(scene_id, payload)
         
         # Only include subchannel_id if provided
         if subchannel_id is not None:
@@ -574,30 +577,6 @@ class MQTTSceneAssignmentPublisher:
         ttl_seconds: int = 3600,
         sequence: int = 1,
     ) -> bool:
-        # Derive update_type / refresh_interval_s from scene database record if present
-        update_type: Optional[str] = None
-        refresh_interval_s: Optional[int] = None
-        try:
-            from app.db.base import SessionLocal as _SL  # local import to avoid circulars at module import
-            from app.db.models import Scene as _Scene
-            session = _SL()
-            scene_obj = session.query(_Scene).filter(_Scene.id == scene_id).first()
-            if scene_obj is not None:
-                # Map DB field update_strategy (scheduler|push) to update_type (scheduled|push)
-                strat = getattr(scene_obj, "update_strategy", None) or "scheduler"
-                update_type = "push" if strat == "push" else "scheduled"
-                if update_type == "scheduled":
-                    refresh_interval_s = getattr(scene_obj, "push_fallback_poll_seconds", None)
-                else:
-                    refresh_interval_s = None
-        except Exception as e:  # pragma: no cover - defensive
-            logger.debug(f"Could not enrich assign payload with scene scheduling info: {e}")
-        finally:
-            try:
-                session.close()  # type: ignore
-            except Exception:
-                pass
-
         payload = {
             "type": "assign",
             "assignment_id": f"mqtt-{uuid.uuid4().hex[:8]}",
@@ -616,10 +595,7 @@ class MQTTSceneAssignmentPublisher:
             },
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        if update_type:
-            payload["update_type"] = update_type
-        if update_type == "scheduled":
-            payload["refresh_interval_s"] = refresh_interval_s
+        self._enrich_with_schedule_fields(scene_id, payload)
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
     # Convenience helper: clear stored scene on device
@@ -670,7 +646,7 @@ class MQTTSceneAssignmentPublisher:
         if image_height is not None:
             payload["image_height"] = image_height
         
-        logger.debug(f"Sending display_image command to {device_id}")
+        logger.debug("Sending display_image command to %s", device_id)
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
     # ---------- Worker / connection loop ----------
@@ -790,3 +766,78 @@ async def setup_mqtt_scene_assignment():
     except Exception as e:
         logger.error(f"Failed to setup MQTT scene assignment: {e}")
         return False
+
+# ---------------------- Scheduling Enrichment Helper ----------------------
+def _extract_refresh_interval(scene: Scene, session) -> Optional[int]:
+    """Derive a best-effort refresh interval (seconds) for scheduled scenes.
+
+    Priority:
+    1. scene.push_fallback_poll_seconds (legacy naming repurposed)
+    2. scene.timing_config: look for keys (poll_interval_seconds, pollIntervalSeconds,
+       refresh_interval_s, refreshIntervalS, interval_seconds, intervalSeconds)
+    3. Related SchedulerJob (if any) with smallest approx_interval_seconds referencing this scene
+       (heuristic: job.action_config has scene_id)
+    """
+    # 1. Direct field
+    if getattr(scene, "push_fallback_poll_seconds", None):
+        return scene.push_fallback_poll_seconds
+
+    # 2. timing_config keys
+    cfg = getattr(scene, "timing_config", None) or {}
+    candidate_keys = [
+        "poll_interval_seconds", "pollIntervalSeconds",
+        "refresh_interval_s", "refreshIntervalS",
+        "interval_seconds", "intervalSeconds",
+    ]
+    for k in candidate_keys:
+        if k in cfg:
+            try:
+                val = int(cfg[k])
+                if val > 0:
+                    return val
+            except Exception:
+                continue
+
+    # 3. Scheduler job fallback
+    try:
+        job = (
+            session.query(SchedulerJob)
+            .filter(SchedulerJob.action_type == "refresh_scene")
+            .filter(SchedulerJob.action_config["scene_id"].as_string() == scene.id)  # type: ignore
+            .order_by(SchedulerJob.approx_interval_seconds.asc())
+            .first()
+        )
+        if job and job.approx_interval_seconds:
+            return job.approx_interval_seconds
+    except Exception:
+        pass
+    return None
+
+def _derive_update_type(scene: Scene) -> str:
+    strat = getattr(scene, "update_strategy", None) or "scheduler"
+    return "push" if strat == "push" else "scheduled"
+
+def _enrich_with_schedule_fields(scene_id: str, payload: Dict[str, Any]) -> None:
+    """Populate update_type and refresh_interval_s in-place if resolvable."""
+    try:
+        session = SessionLocal()
+        scene = session.query(Scene).filter(Scene.id == scene_id).first()
+        if not scene:
+            return
+        update_type = _derive_update_type(scene)
+        payload["update_type"] = update_type
+        if update_type == "scheduled":
+            refresh = _extract_refresh_interval(scene, session)
+            if refresh is not None:
+                payload["refresh_interval_s"] = refresh
+    except Exception:
+        return
+    finally:
+        try:
+            session.close()
+        except Exception:
+            pass
+
+# Monkey-patch helper into both classes without altering their public API
+MqttSceneAssignmentService._enrich_with_schedule_fields = staticmethod(_enrich_with_schedule_fields)  # type: ignore
+MQTTSceneAssignmentPublisher._enrich_with_schedule_fields = staticmethod(_enrich_with_schedule_fields)  # type: ignore

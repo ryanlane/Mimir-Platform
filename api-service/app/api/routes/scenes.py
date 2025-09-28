@@ -31,21 +31,10 @@ async def get_scene(
     scene_service: SceneService = Depends(get_scene_service)
 ):
     """Get scene by ID"""
-    scene = scene_service.get_scene_by_id(scene_id)
-    if not scene:
+    scene_payload = scene_service.get_scene_with_schedule(scene_id)
+    if not scene_payload:
         raise HTTPException(status_code=404, detail="Scene not found")
-    
-    return {
-        "id": scene.id,
-        "name": scene.name,
-        "channels": scene.channels,
-        "overlay": scene.overlays,  # Map 'overlays' column to 'overlay' for frontend
-        "schedule": scene.timing_config,  # Map 'timing_config' column to 'schedule' for frontend
-        "distribution_mode": scene.distribution_mode,  # New field
-        "is_active": scene.is_active,
-        "update_strategy": scene.update_strategy,
-        "push_fallback_poll_seconds": scene.push_fallback_poll_seconds
-    }
+    return scene_payload
 
 
 @router.post("")

@@ -80,6 +80,18 @@ class SceneResponse(SceneBase, TimestampMixin):
     content_epoch: Optional[int] = Field(None, alias="contentEpoch")
     overlay: Optional[SceneOverlay] = None
     schedule: Optional[SceneSchedule] = None
+    # Auto-refresh scheduler summary (derived from SchedulerJob + assignment)
+    refresh_schedule: Optional[Dict[str, Any]] = Field(
+        None,
+        alias="refreshSchedule",
+        description=(
+            "Derived scheduler frequency for this scene: {job_id, freq_unit, freq_value, enabled}. "
+            "Provided when a scheduler job assigns this scene; picks the enabled job with the smallest interval."
+        ),
+        examples=[
+            {"job_id": "job-123", "freq_unit": "minute", "freq_value": 5, "enabled": True}
+        ],
+    )
     
     class Config:
         from_attributes = True
