@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, Eye, RotateCcw, Image, Play, Zap } from 'lucide-react';
 import { api } from '../../services/api';
+import NeoButton from '../../components/NeoButton/NeoButton';
 
 const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) => {
   const [imageLoading, setImageLoading] = useState(false);
@@ -368,13 +369,25 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
                 <span>Scene: <strong>{display.assigned_scene_name}</strong></span>
               </div>
               <div className="scene-buttons">
-                <button 
-                  className="btn btn-sm btn-secondary" 
+                <NeoButton
+                  label="Edit"
+                  icon="Edit"
+                  iconSize={14}
                   onClick={() => onAssignScene(display)}
-                >
-                  Change Scene
-                </button>
+                />
+                
                 {canManualUpdate && (
+                  <NeoButton
+                    label={manualUpdateLoading ? 'Updating...' : (manualUpdateSuccess ? 'Triggered' : 'Update Now')}
+                    icon="Zap"
+                    iconSize={14}
+                    onClick={handleManualUpdate}
+                    disabled={manualUpdateLoading || manualUpdateSuccess}
+                    hasDot={manualUpdateSuccess}
+                    isActive={manualUpdateSuccess}
+                  />
+                )}
+                {/* {!canManualUpdate && (
                   <button
                     className="btn btn-sm btn-tertiary"
                     onClick={handleManualUpdate}
@@ -385,7 +398,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
                     <Zap size={14} className={manualUpdateLoading ? 'spinning' : ''} />
                     {!manualUpdateLoading && 'Update Now'}
                   </button>
-                )}
+                )} */}
               </div>
             </div>
           ) : (
