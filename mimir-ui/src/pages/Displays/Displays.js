@@ -428,31 +428,19 @@ const Displays = () => {
   return (
     <PullToRefresh onRefresh={refreshDisplays}>
     <div className="page-container">
-      <div className="page-header">
-        <div className="page-title-section">
-          <h1 className="page-title">
-            <Monitor size={24} />
-            Displays
-            {isConnected && <span className="connection-status connected">Live</span>}
-          </h1>
-          <p className="page-subtitle">
-            Manage display clients and scene assignments
-          </p>
-        </div>
+        <Header title="Displays" icon="MonitorSpeaker" iconSize={36} description="Manage display clients and scene assignments" />
         
-        <div className="page-actions">
-          {/* Desktop refresh button retained; hidden on mobile via CSS */}
-          <button 
-            className="btn btn-secondary desktop-only-refresh" 
-            onClick={refreshDisplays}
-            disabled={loading}
-          >
-            <RotateCcw size={18} />
-            Refresh
-          </button>
-        </div>
-      </div>
 
+   
+      <button 
+          className="btn btn-secondary desktop-only-refresh" 
+          onClick={refreshDisplays}
+          disabled={loading}
+        >
+          <RotateCcw size={18} />
+          Refresh
+      </button>
+    
       {/* Discovered Display Assignment Stats */}
       {false && discoveredDisplayStats && (
         <div className="assignment-stats">

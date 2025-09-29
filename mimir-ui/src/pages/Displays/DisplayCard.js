@@ -378,7 +378,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
                 
                 {canManualUpdate && (
                   <NeoButton
-                    label={manualUpdateLoading ? 'Updating...' : (manualUpdateSuccess ? 'Triggered' : 'Update Now')}
+                    label={manualUpdateLoading ? 'Updating...' : (manualUpdateSuccess ? 'Triggered' : 'Update')}
                     icon="Zap"
                     iconSize={14}
                     onClick={handleManualUpdate}
