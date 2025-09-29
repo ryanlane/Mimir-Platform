@@ -1,0 +1,60 @@
+import { Meta, ColorPalette, ColorItem } from '@storybook/addon-docs/blocks';
+
+<Meta title="Design/Colors" />
+
+<ColorPalette>
+  <ColorItem
+    title="Text & Icon"
+    subtitle="Core foreground tokens"
+    colors={{
+      Text: 'var(--color-text)',
+      TextSecondary: 'var(--color-text-secondary)',
+      Icon: 'var(--color-icon)'
+    }}
+  />
+  <ColorItem
+    title="Greys / Surfaces"
+    subtitle="Foundational backgrounds"
+    colors={{
+      Background: 'var(--color-background)',
+      BackgroundAlt: 'var(--color-background-alt)',
+      Surface: 'var(--color-surface)',
+      SurfaceHover: 'var(--color-surface-hover)',
+      Border: 'var(--color-border)'
+    }}
+  />
+  <ColorItem
+    title="Neutral FG Scale"
+    subtitle="Foreground emphasis levels"
+    colors={{
+      Primary: 'var(--color-primary)',
+      Secondary: 'var(--color-secondary)',
+      Tertiary: 'var(--color-tertiary)'
+    }}
+  />
+  <ColorItem
+    title="Accent"
+    subtitle="Interactive / link accent"
+    colors={{
+      Accent: 'var(--color-accent)',
+      AccentHover: 'var(--color-accent-hover)'
+    }}
+  />
+  <ColorItem
+    title="Status"
+    subtitle="Semantic feedback colors"
+    colors={{
+      Success: 'var(--color-success)',
+      Warning: 'var(--color-warning)',
+      Error: 'var(--color-error)',
+      FocusRing: 'var(--color-focus-ring)'
+    }}
+  />
+  <ColorItem
+    title="Gradient"
+    subtitle="Decorative accent gradient"
+    colors={{
+      GradientAccent: 'var(--gradient-accent)'
+    }}
+  />
+</ColorPalette>

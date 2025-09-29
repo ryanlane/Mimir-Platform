@@ -1,0 +1,51 @@
+/* Header component styles */
+.header {
+	padding: 0 0 1.25rem;
+	margin: 0 0 1.25rem;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.header-content {
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
+    color: var(--color-text-secondary);
+}
+
+.header-icon {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+}
+
+.header-title {
+	font-size: 1.6rem;
+	line-height: 1.15;
+	margin: 0 0 0.25rem;
+	font-weight: 600;
+    color: var(--color-text);
+}
+
+.header-description {
+	margin: 0;
+	font-size: 0.85rem;
+	max-width: 60ch;
+}
+
+@media (max-width: 640px) {
+	.header {
+		padding-bottom: 1rem;
+		margin-bottom: 1rem;
+	}
+	.header-icon {
+		width: 42px;
+		height: 42px;
+		border-radius: 10px;
+	}
+	.header-title {
+		font-size: 1.35rem;
+	}
+}
