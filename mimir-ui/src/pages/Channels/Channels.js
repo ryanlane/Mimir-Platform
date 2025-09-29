@@ -5,6 +5,7 @@ import { persistentCache } from '../../services/persistentCache';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
+import Header from '../../components/Header/Header';
 import ChannelSettings from './ChannelSettings';
 import './Channels.css';
 
@@ -173,14 +174,8 @@ const Channels = () => {
   return (
     <div className="channels">
       <div className="channels-header">
-        <div>
-          <h1>Channels</h1>
-          <p className="text-tertiary">
-            Manage channel configurations and settings
-            {isConnected && <span className="connection-status"> • Live updates enabled</span>}
-            {apiVersion && <span className="api-version"> • API v{apiVersion}</span>}
-          </p>
-        </div>
+        <Header title="Channels" icon="tv" iconSize={36} description="Manage channel configurations and settings" />
+
         <div className="header-actions">
           {supportsPluginSystem() && (
             <button className="btn btn-secondary" onClick={loadManifest}>

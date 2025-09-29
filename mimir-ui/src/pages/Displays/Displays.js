@@ -10,6 +10,7 @@ import PullToRefresh from '../../components/PullToRefresh/PullToRefresh';
 import SceneAssignment from './SceneAssignment';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Displays.css';
+import Header from '../../components/Header/Header';
 
 // Global cache for displays data to prevent excessive API requests
 let displaysCache = null;
@@ -411,12 +412,8 @@ const Displays = () => {
   if (!supportsDisplayManagement()) {
     return (
       <div className="page-container">
-        <div className="page-header">
-          <h1 className="page-title">
-            <Monitor size={24} />
-            Displays
-          </h1>
-        </div>
+        <Header title="Displays" icon="MonitorSpeaker" iconSize={36} description="Manage display clients and scene assignments" />
+
         
         <div className="empty-state">
           <h3>Display Management Not Available</h3>

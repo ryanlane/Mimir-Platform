@@ -4,6 +4,7 @@ import { Monitor, Layers, Activity, Play } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import './Dashboard.css';
+import Header from '../../components/Header/Header';
 
 // --- New Dashboard Concept -------------------------------------------------
 // 1. Summary bar (displays online/offline, active scenes, unassigned displays)
@@ -212,10 +213,8 @@ const Dashboard = () => {
 
   return (
     <div className="dashboard new-layout">
-      <div className="dashboard-header">
-        <h1>Dashboard</h1>
-        <p className="text-tertiary">Real-time overview of displays & scenes{isConnected && <span className="connection-status"> • Live</span>}</p>
-      </div>
+      <Header title="Dashboard" icon="Home" iconSize={36} description="Real-time overview of displays & scenes" />
+
       {/* Summary Bar */}
       <div className="summary-bar">
         <div className="metric"><span className="metric-label">Displays</span><span className="metric-value">{displays.length}</span></div>

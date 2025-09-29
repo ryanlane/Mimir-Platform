@@ -10,6 +10,7 @@ import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 import AdminOperations from '../../components/AdminOperations/AdminOperations';
 import { ThemeSelector } from '../../components/ThemeSelector/ThemeSelector';
+import Header from '../../components/Header/Header';
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
@@ -346,17 +347,8 @@ const Settings = () => {
 
   return (
     <div className="settings">
-      <div className="settings-header">
-        <div className="header-content">
-          <div className="header-icon">
-            <SettingsIcon size={32} />
-          </div>
-          <div>
-            <h1>Settings</h1>
-            <p className="text-tertiary">Configure display settings and console verbosity</p>
-          </div>
-        </div>
-      </div>
+      <Header title="Settings" icon="settings" iconSize={36} description="Configure application settings" />
+
       {/* WebSocket Status Component */}
       <WebSocketStatus />
 

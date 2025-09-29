@@ -10,26 +10,37 @@
 
   --color-text: #000000D0;
   --color-text-secondary: #000000A0;
+  --color-text-tertiary: #3b4b59;
   --color-primary: #000000;
   --color-secondary: #333333;
   --color-tertiary: #666666;
-  --color-background: #d9d2c6;
+  --color-background: #f4f4f4;
   --color-background-alt: #f5f5f5;
-  --color-surface: #d9c3b0;
+  --color-surface: #e9e6e3;
   --color-border: #e0e0e0;
   --color-accent: #3b4b59;
   --color-accent-hover: #5f788d;
-  --color-success: #736b1e;
+  --color-success: #8d9629;
   --color-warning: #cc6324;
   --color-error: #bf1b1b;
   --color-focus-ring: #bfa07a;
   --color-icon: #000000A0;
+  --color-mimir-green: #7eff00C0;
 
   --elevation-1: 0 1px 3px rgba(0 0 0 / 10%);
   --elevation-2: 0 4px 12px rgba(0 0 0 / 12%);
   --gradient-accent: linear-gradient(135deg, #0066cc, #004c99);
   --color-surface-hover: #efefef;
+
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-xxl: 3rem;
+
 }
+
 
 html, body {
   font-family: var(--font-base);
@@ -44,12 +55,13 @@ html, body {
 :root[data-theme='light'] {
   --color-text: #000000D0;
   --color-text-secondary: #000000A0;
+  --color-text-tertiary: #3b4b59;
   --color-primary: #000000;
   --color-secondary: #333333;
   --color-tertiary: #666666;
-  --color-background: #d9d2c6;
+  --color-background: #f4f4f4;
   --color-background-alt: #f5f5f5;
-  --color-surface: #d9c3b0;
+  --color-surface: #e9e6e3;
   --color-border: #e0e0e0;
   --color-accent: #3b4b59;
   --color-accent-hover: #5f788d;
@@ -58,6 +70,7 @@ html, body {
   --color-error: #bf1b1b;
   --color-focus-ring: #bfa07a;
   --color-icon: #000000A0;
+  --color-mimir-green: #7eff00C0;
 
   --elevation-1: 0 1px 3px rgba(0 0 0 / 10%);
   --elevation-2: 0 4px 12px rgba(0 0 0 / 12%);
@@ -71,6 +84,7 @@ html, body {
   :root {
     --color-text: #FFFFFFD0;
     --color-text-secondary: #FFFFFFA0;
+    --color-text-tertiary: #ffffff84;
     --color-primary: #f5f7fa;
     --color-secondary: #121418;
     --color-tertiary: #9aa0ab;
@@ -85,6 +99,7 @@ html, body {
     --color-error: #bf1b1b;
     --color-focus-ring: #bfa07a;
     --color-icon: #FFFFFFA0;
+    --color-mimir-green: #80ff0082;
 
 
 
@@ -108,6 +123,7 @@ html, body {
 :root[data-theme='dark'] {
   --color-text: #FFFFFFD0;
     --color-text-secondary: #FFFFFFA0;
+    --color-text-tertiary: #ffffff84;
     --color-primary: #f5f7fa;
     --color-secondary: #121418;
     --color-tertiary: #9aa0ab;
@@ -122,6 +138,7 @@ html, body {
     --color-error: #bf1b1b;
     --color-focus-ring: #bfa07a;
     --color-icon: #FFFFFFA0;
+    --color-mimir-green: #80ff0082;
 
   --elevation-1: 0 1px 2px rgba(0 0 0 / 60%), 0 0 0 1px rgba(255 255 255 / 4%);
   --elevation-2: 0 4px 16px -4px rgba(0 0 0 / 70%);

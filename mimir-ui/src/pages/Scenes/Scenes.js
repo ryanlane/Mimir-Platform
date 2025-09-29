@@ -7,6 +7,7 @@ import SceneForm from './SceneForm';
 import DistributionManager from '../../components/DistributionManager/DistributionManager';
 import './Scenes.css';
 import SceneLiveStatus from './components/SceneLiveStatus';
+import Header from '../../components/Header/Header';
 
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
@@ -353,14 +354,9 @@ const Scenes = () => {
 
   return (
     <div className="scenes">
+     
       <div className="scenes-header">
-        <div>
-          <h1>Scenes</h1>
-          <p className="text-tertiary">
-            Manage your display scenes and configurations
-            {isConnected && <span className="connection-status"> • Live updates enabled</span>}
-          </p>
-        </div>
+        <Header title="Scenes" icon="layers" iconSize={36} description="Manage your display scenes and configurations" />
         <div className="scenes-header-actions">
           <button className="btn btn-secondary" onClick={() => {
             console.log('🔄 Manual state sync requested');

@@ -62,9 +62,8 @@
   max-width: 100%;
 }
 
-/* Active state - iOS blue */
 .mobile-nav-item-active {
-  color: #007AFF; /* iOS active blue */
+  color: var(--color-accent)
 }
 
 .mobile-nav-item-active .mobile-nav-icon {
@@ -136,7 +135,7 @@
   }
   
   .mobile-nav-item-active {
-    color: #0A84FF; /* iOS dark mode blue */
+    color: var(--color-mimir-green);
   }
 }
 
@@ -179,7 +178,7 @@
 
 /* Focus states for accessibility */
 .mobile-nav-item:focus {
-  outline: 2px solid #007AFF;
+  outline: 2px solid var(--color-mimir-green);
   outline-offset: 2px;
   border-radius: 8px;
 }
