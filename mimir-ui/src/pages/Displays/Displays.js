@@ -11,6 +11,7 @@ import SceneAssignment from './SceneAssignment';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Displays.css';
 import Header from '../../components/Header/Header';
+import Button from '../../components/Button/Button';
 
 // Global cache for displays data to prevent excessive API requests
 let displaysCache = null;
@@ -430,16 +431,15 @@ const Displays = () => {
     <div className="page-container">
         <Header title="Displays" icon="MonitorSpeaker" iconSize={36} description="Manage display clients and scene assignments" />
         
-
+      <Button
+        className="btn btn-secondary desktop-only-refresh"
+        onClick={refreshDisplays}
+        disabled={loading}
+      >
+        <RotateCcw size={18} />
+        Refresh
+      </Button>
    
-      <button 
-          className="btn btn-secondary desktop-only-refresh" 
-          onClick={refreshDisplays}
-          disabled={loading}
-        >
-          <RotateCcw size={18} />
-          Refresh
-      </button>
     
       {/* Discovered Display Assignment Stats */}
       {false && discoveredDisplayStats && (

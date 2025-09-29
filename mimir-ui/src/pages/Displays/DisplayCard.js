@@ -1,11 +1,12 @@
 // Display Card component for individual display clients
 import React, { useState, useEffect } from 'react';
-import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, Eye, RotateCcw, Image, Play, Zap } from 'lucide-react';
+import './DisplayCard.css';
+import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play } from 'lucide-react';
 import { api } from '../../services/api';
 import NeoButton from '../../components/NeoButton/NeoButton';
 
-const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) => {
-  const [imageLoading, setImageLoading] = useState(false);
+const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiClient = api }) => {
+  // const [imageLoading, setImageLoading] = useState(false); // (unused after image section commented out)
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [thumbLoading, setThumbLoading] = useState(false);
@@ -38,7 +39,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
       return () => { cancelled = true; };
     }
     setPersisted(p => ({ ...p, loading: true, error: null }));
-    api.getPersistedLastImage(display.id, assignedSceneId)
+  apiClient.getPersistedLastImage(display.id, assignedSceneId)
       .then(resp => {
         if (cancelled) return;
         const data = resp?.data || {};
@@ -59,7 +60,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
         }
       });
     return () => { cancelled = true; };
-  }, [display.id, display.assigned_scene_id]);
+  }, [display.id, display.assigned_scene_id, apiClient]);
 
   // Fetch scene details & scheduler job mapping when assigned scene changes
   useEffect(() => {
@@ -80,7 +81,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
     const cacheFresh = (now - cache.ts) < SCHEDULE_CACHE_TTL_MS;
 
     // Fetch scene details first
-    api.getScene(assignedSceneId)
+  apiClient.getScene(assignedSceneId)
       .then(resp => {
         if (cancelled) return;
         setSceneInfo(resp.data);
@@ -100,7 +101,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
     }
 
     // Fetch scene assignments (NOT full jobs)
-    api.getSceneSchedules(assignedSceneId)
+  apiClient.getSceneSchedules(assignedSceneId)
       .then(async resp => {
         if (cancelled) return;
         const assignments = resp?.data || [];
@@ -115,7 +116,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
         setSceneAssignment(firstAssignment);
         // Fetch job details so we can verify enabled & interval
         try {
-          const jobResp = await api.getSchedulerJob(firstAssignment.job_id);
+          const jobResp = await apiClient.getSchedulerJob(firstAssignment.job_id);
           if (cancelled) return;
             setJobDetails(jobResp?.data || null);
             cache.jobsByScene[assignedSceneId] = { assignment: firstAssignment, jobDetails: jobResp?.data || null };
@@ -136,7 +137,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
       });
 
     return () => { cancelled = true; };
-  }, [display.assigned_scene_id]);
+  }, [display.assigned_scene_id, apiClient]);
 
   const canManualUpdate = (() => {
     // Need at least an assigned scene
@@ -177,7 +178,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
     try {
       const jobId = sceneAssignment.job_id || jobDetails?.id;
       if (!jobId) throw new Error('Missing job id for manual trigger');
-      await api.triggerSchedulerJob(jobId, 'Manual display card update');
+  await apiClient.triggerSchedulerJob(jobId, 'Manual display card update');
       setManualUpdateSuccess(true);
       // After triggering the job, attempt a refresh of current image (slight delay may be needed externally)
       onRefresh && onRefresh();
@@ -191,28 +192,11 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
   };
 
   const fallbackThumb = display.current_image_url
-    ? `${api.getDisplayImageUrl(display.id)}?thumb=1&ts=${Date.now()}`
+    ? `${apiClient.getDisplayImageUrl(display.id)}?thumb=1&ts=${Date.now()}`
     : null;
   const thumbnailUrl = persisted.thumb || fallbackThumb;
 
-  const handleRefreshImage = async () => {
-    setImageLoading(true);
-    try {
-      // Force refresh by calling the display image endpoint
-      await api.getDisplayImage(display.id);
-      onRefresh();
-    } catch (error) {
-      console.error('Error refreshing display image:', error);
-    } finally {
-      setImageLoading(false);
-    }
-  };
-
-  const handleViewImage = () => {
-    if (display.current_image_url) {
-      setShowImagePreview(true);
-    }
-  };
+  // Image action handlers removed (image section currently commented out)
 
   const formatLastSeen = (lastSeen) => {
     if (!lastSeen) return 'Never';
@@ -469,7 +453,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
             </div>
             <div className="modal-body">
               <img
-                src={persisted.image || api.getDisplayImageUrl(display.id)}
+                src={persisted.image || apiClient.getDisplayImageUrl(display.id)}
                 alt={`Current display for ${display.name}`}
                 onError={() => setImageError(true)}
                 style={{
@@ -490,7 +474,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh }) =>
                 Close
               </button>
               <a 
-                href={persisted.image || api.getDisplayImageUrl(display.id)}
+                href={persisted.image || apiClient.getDisplayImageUrl(display.id)}
                 download={`display-${display.name}-current.jpg`}
                 className="btn btn-primary"
               >
