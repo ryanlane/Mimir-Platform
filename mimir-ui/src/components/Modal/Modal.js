@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import './Modal.css';
 
@@ -37,15 +38,15 @@ const Modal = ({
     }
   };
 
-  return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
+  const modalNode = (
+    <div className="modal-overlay" role="dialog" aria-modal="true" onClick={handleOverlayClick}>
       <div className={`modal-content modal-${size}`}>
         {(title || showCloseButton) && (
           <div className="modal-header">
             {title && <h2 className="modal-title">{title}</h2>}
             {showCloseButton && (
-              <button 
-                className="modal-close" 
+              <button
+                className="modal-close"
                 onClick={onClose}
                 aria-label="Close modal"
               >
@@ -60,6 +61,8 @@ const Modal = ({
       </div>
     </div>
   );
+
+  return createPortal(modalNode, document.body);
 };
 
 export default Modal;
