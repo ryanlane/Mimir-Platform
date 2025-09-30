@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import SelectItem from '../../../components/SelectItem/SelectItem.jsx';
 
 /**
  * DistributionModeSelector
@@ -20,19 +21,15 @@ const DistributionModeSelector = ({ value, onChange }) => {
       <label className="form-label">Distribution Mode</label>
       <div className="distribution-mode-selection">
         {modes.map(mode => (
-          <label key={mode.value} className="radio-item">
-            <input
-              type="radio"
-              name="distribution_mode"
-              value={mode.value}
-              checked={value === mode.value}
-              onChange={(e) => onChange(e.target.value)}
-            />
-            <div className="mode-info">
-              <span className="mode-name">{mode.title}</span>
-              <span className="mode-description">{mode.desc}</span>
-            </div>
-          </label>
+          <SelectItem
+            key={mode.value}
+            name="distribution_mode"
+            value={mode.value}
+            checked={value === mode.value}
+            onChange={onChange}
+            title={mode.title}
+            description={mode.desc}
+          />
         ))}
       </div>
     </div>

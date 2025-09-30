@@ -21,6 +21,7 @@
   --color-border: #e0e0e0;
   --color-accent: #3b4b59;
   --color-accent-hover: #5f788d;
+  --color-active: #8d962941;
   --color-success: #8d9629;
   --color-warning: #cc6324;
   --color-error: #bf1b1b;
@@ -66,6 +67,7 @@ html, body {
   --color-border: #e0e0e0;
   --color-accent: #3b4b59;
   --color-accent-hover: #5f788d;
+  --color-active: #8d962941;
   --color-success: #736b1e;
   --color-warning: #cc6324;
   --color-error: #bf1b1b;

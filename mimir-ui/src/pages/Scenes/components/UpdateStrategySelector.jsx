@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import SelectItem from '../../../components/SelectItem/SelectItem.jsx';
 
 /**
  * UpdateStrategySelector
@@ -12,8 +13,7 @@ import PropTypes from 'prop-types';
  *  - onChange: ({ strategy, fallbackSeconds }) => void
  */
 const UpdateStrategySelector = ({ strategy, fallbackSeconds, pushAllowed, hasChannelSelected, onChange, disabledReason }) => {
-  const handleStrategyChange = (e) => {
-    const value = e.target.value;
+  const handleStrategyChange = (value) => {
     if (value === 'push') {
       onChange({ strategy: 'push', fallbackSeconds: fallbackSeconds || 120 });
     } else {
@@ -25,41 +25,23 @@ const UpdateStrategySelector = ({ strategy, fallbackSeconds, pushAllowed, hasCha
     <div className="form-group">
       <label className="form-label">Update Strategy</label>
       <div className="update-strategy-options">
-        <label className={`radio-item ${!pushAllowed ? 'disabled' : ''}`}> 
-          <input
-            type="radio"
-            name="update_strategy"
-            value="push"
-            disabled={!pushAllowed}
-            checked={strategy === 'push'}
-            onChange={handleStrategyChange}
-          />
-          <div className="mode-info">
-            <span className="mode-name">Real-time Push</span>
-            <span className="mode-description">
-              Instant updates driven by channel events.
-              {!pushAllowed && (
-                <>
-                  {' '}
-                  <em>{disabledReason || 'Not supported by selected channel'}</em>
-                </>
-              )}
-            </span>
-          </div>
-        </label>
-        <label className="radio-item">
-          <input
-            type="radio"
-            name="update_strategy"
+        <SelectItem
+          name="update_strategy"
+          value="push"
+          checked={strategy === 'push'}
+          disabled={!pushAllowed}
+          onChange={handleStrategyChange}
+          title="Real-time Push"
+          description={`Instant updates driven by channel events.${!pushAllowed ? ' ' + (disabledReason || 'Not supported by selected channel') : ''}`}
+        />
+        <SelectItem
+          name="update_strategy"
             value="scheduler"
             checked={strategy !== 'push'}
             onChange={handleStrategyChange}
-          />
-          <div className="mode-info">
-            <span className="mode-name">Scheduled (Polling)</span>
-            <span className="mode-description">Refreshes follow configured schedule or manual triggers</span>
-          </div>
-        </label>
+            title="Scheduled (Polling)"
+            description="Refreshes follow configured schedule or manual triggers"
+        />
       </div>
       {strategy === 'push' && (
         <div className="fallback-config">

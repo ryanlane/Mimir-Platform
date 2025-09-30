@@ -1,5 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import SelectItem from '../../../components/SelectItem/SelectItem.jsx';
 
 /**
  * ChannelSelector
@@ -46,15 +47,14 @@ const ChannelSelector = ({
       <div className="channels-selection">
         {channels.map(channel => (
           <div key={channel.id} className="channel-assignment-group">
-            <label className="radio-item">
-              <input
-                type="radio"
-                name="channel"
-                checked={isSelected(channel.id)}
-                onChange={() => toggleChannel(channel.id)}
-              />
-              <span>{channel.name}</span>
-            </label>
+            <SelectItem
+              name="channel"
+              value={String(channel.id)}
+              checked={isSelected(channel.id)}
+              onChange={() => toggleChannel(channel.id)}
+              title={channel.name || channel.id}
+              description={subChannelSupport[channel.id] ? 'Supports galleries' : 'Single stream'}
+            />
             {isSelected(channel.id) && subChannelSupport[channel.id] && (
               <div className="subchannel-selection">
                 <label className="subchannel-label">Gallery/Sub-Channel:</label>
