@@ -10,6 +10,7 @@ import ChannelSelector from './components/ChannelSelector.jsx';
 import ScheduleEditor from './components/ScheduleEditor.jsx';
 import { useSceneFormLogic } from './useSceneFormLogic';
 import Modal from '../../components/Modal/Modal';
+import Button from '../../components/Button/Button';
 
 const SceneForm = ({ scene, channels, onClose }) => {
   // Debug render counter
@@ -78,7 +79,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
           <div className="scene-form-body">
             <p>Required components failed to load. Check console for details.</p>
             <div style={{ marginTop: '1rem' }}>
-              <button className="btn btn-sm" onClick={onClose}>Close</button>
+              <Button size="sm" variant="secondary" onClick={onClose}>Close</Button>
             </div>
           </div>
         </div>
@@ -153,14 +154,17 @@ const SceneForm = ({ scene, channels, onClose }) => {
             />
 
           <div className="scene-form-footer">
-            <button type="button" className="btn" onClick={onClose}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
-            </button>
+            </Button>
             {(() => { const valid = isFormValid(); return (
-              <button type="submit" className="btn btn-primary" disabled={loading || !valid}>
-                <Save size={16} />
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={loading || !valid}
+                icon={<Save size={16} aria-hidden="true" />}>
                 {loading ? 'Saving...' : 'Save Scene'}
-              </button>
+              </Button>
             ); })()}
           </div>
         </form>
