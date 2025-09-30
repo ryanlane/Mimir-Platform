@@ -273,20 +273,29 @@ const Scenes = () => {
   };
 
   const getSceneScheduleStatus = (sceneId) => {
-    const schedules = sceneSchedules[sceneId] || [];
-    const activeSchedules = schedules.filter(s => s.enabled);
-    
-    if (activeSchedules.length === 0) {
+    const schedules = sceneSchedules[sceneId];
+    if (!Array.isArray(schedules) || schedules.length === 0) {
       return { hasSchedule: false, status: 'No schedule', count: 0 };
     }
-    
-    const schedule = activeSchedules[0]; // Get first active schedule
+    // Prefer an explicitly enabled schedule; fallback to first
+    const schedule = schedules.find(s => s.enabled === true || s.active === true || s.status === 'enabled') || schedules[0];
+    const enabled = schedule.enabled === true || schedule.active === true || schedule.status === 'enabled';
+    let statusText;
+    if (schedule.freq_value && schedule.freq_unit) {
+      statusText = `Every ${schedule.freq_value} ${schedule.freq_unit}${schedule.freq_value > 1 ? 's' : ''}`;
+    } else if (schedule.description) {
+      statusText = schedule.description;
+    } else if (schedule.name) {
+      statusText = schedule.name;
+    } else {
+      statusText = 'Scheduled';
+    }
     return {
       hasSchedule: true,
-      status: `Every ${schedule.freq_value} ${schedule.freq_unit}${schedule.freq_value > 1 ? 's' : ''}`,
-      count: activeSchedules.length,
-      enabled: schedule.enabled,
-      nextRun: schedule.next_run_at
+      status: statusText,
+      count: schedules.length,
+      enabled,
+      nextRun: schedule.next_run_at || schedule.nextRunAt || schedule.next_run || null
     };
   };
 
