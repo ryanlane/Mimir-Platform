@@ -1,6 +1,7 @@
 // Scene Assignment component for assigning scenes to displays
 import React, { useState, useEffect } from 'react';
-import { Monitor, Play, X, Image, CheckCircle } from 'lucide-react';
+import { Monitor, Play, Image, CheckCircle } from 'lucide-react';
+import Modal from '../../components/Modal/Modal';
 import { api } from '../../services/api';
 import './Displays.css';
 
@@ -99,17 +100,12 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content scene-assignment-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>
-            <Play size={24} />
-            Assign Scene to {display.name}
-          </h2>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
-
-        <div className="modal-body">
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={`Assign Scene to ${display.name}`}
+      size="large"
+    >
           {error && (
             <div className="error-message">
               {error}
@@ -165,7 +161,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                     />
                     <div className="scene-info">
                       <div className="scene-header">
-                        <X size={20} />
+                        {/* Removed X icon (close) after migrating to shared Modal */}
                         <span className="scene-name">No Scene (Unassign)</span>
                       </div>
                       <p className="scene-description">Remove any assigned scene from this display</p>
@@ -256,7 +252,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                 )}
               </div>
 
-              <div className="modal-footer">
+              <div className="modal-footer" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
@@ -275,9 +271,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
               </div>
             </form>
           )}
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 
