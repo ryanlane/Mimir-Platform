@@ -55,6 +55,10 @@ const Scenes = () => {
           }));
 
           const jobs = jobResults.filter(Boolean);
+          // Fallback: if we could not resolve job objects, retain lightweight assignment markers
+          if (jobs.length === 0) {
+            return { sceneId: scene.id, schedules: assignments.map(a => ({ __assignment: true, job_id: a.job_id, scene_id: a.scene_id, enabled: true })) };
+          }
           return { sceneId: scene.id, schedules: jobs };
         } catch (error) {
           console.log(`Could not load schedules for scene ${scene.id}:`, error.message);
@@ -68,6 +72,7 @@ const Scenes = () => {
         return acc;
       }, {});
       setSceneSchedules(schedulesMap);
+      console.log('[Scenes] Loaded scene schedules map:', schedulesMap);
     } catch (error) {
       console.error('Error loading scene schedules:', error);
     }
@@ -289,8 +294,11 @@ const Scenes = () => {
       return { hasSchedule: false, status: 'No schedule', count: 0 };
     }
 
-    // Determine enabled schedules & earliest next run
-    const isEnabled = (s) => s?.enabled === true || s?.active === true || s?.status === 'enabled';
+    // Determine enabled schedules & earliest next run (treat missing flags as enabled)
+    const isEnabled = (s) => {
+      if (s?.enabled === undefined && s?.active === undefined && s?.status === undefined) return true; // assignment stub
+      return s?.enabled === true || s?.active === true || s?.status === 'enabled';
+    };
     const enabledSchedules = schedules.filter(isEnabled);
     const primary = enabledSchedules[0] || schedules[0];
     const enabled = isEnabled(primary);
