@@ -83,23 +83,33 @@ const Scenes = () => {
       // Use persistent cache with SWR; immediate cached data (if any) then background update
       const scenesPromise = persistentCache.getScenes({
         onUpdate: (fresh) => {
-          if (Array.isArray(fresh.scenes)) {
-            setScenes(fresh.scenes);
+          // fresh can be either { scenes: [...] } or an array depending on backend response
+          if (fresh) {
+            if (Array.isArray(fresh.scenes)) {
+              setScenes(fresh.scenes);
+            } else if (Array.isArray(fresh)) {
+              setScenes(fresh);
+            }
           }
         }
       });
       const channelsPromise = persistentCache.getChannels({
         onUpdate: (fresh) => {
-          if (Array.isArray(fresh.channels)) {
-            setChannels(fresh.channels);
-          }
+          // fresh can be either { channels: [...] } or an array
+            if (fresh) {
+              if (Array.isArray(fresh.channels)) {
+                setChannels(fresh.channels);
+              } else if (Array.isArray(fresh)) {
+                setChannels(fresh);
+              }
+            }
         }
       });
 
       const [{ data: scenesData }, { data: channelsData }] = await Promise.all([scenesPromise, channelsPromise]);
 
-      const scenesResponse = { data: scenesData };
-      const channelsResponse = { data: channelsData };
+  const scenesResponse = { data: scenesData };
+  const channelsResponse = { data: channelsData };
 
       // Handle display status separately to gracefully handle "no displays" case
       let displayResponse = null;
@@ -119,9 +129,28 @@ const Scenes = () => {
 
       console.log('Current scene from API:', displayResponse?.data?.currentScene);
 
-      const scenesList = scenesResponse.data.scenes || [];
+      // Normalize / defensively extract scenes list
+      const rawScenes = scenesResponse?.data;
+      let scenesList = [];
+      if (Array.isArray(rawScenes)) {
+        scenesList = rawScenes;
+      } else if (rawScenes && Array.isArray(rawScenes.scenes)) {
+        scenesList = rawScenes.scenes;
+      } else if (rawScenes && Array.isArray(rawScenes.items)) { // alternate key just in case
+        scenesList = rawScenes.items;
+      }
       setScenes(scenesList);
-      const channelList = channelsResponse.data.channels || [];
+
+      // Normalize / defensively extract channels list
+      const rawChannels = channelsResponse?.data;
+      let channelList = [];
+      if (Array.isArray(rawChannels)) {
+        channelList = rawChannels;
+      } else if (rawChannels && Array.isArray(rawChannels.channels)) {
+        channelList = rawChannels.channels;
+      } else if (rawChannels && Array.isArray(rawChannels.items)) {
+        channelList = rawChannels.items;
+      }
       setChannels(channelList);
       
       // Load channel manifests for better subchannel display
