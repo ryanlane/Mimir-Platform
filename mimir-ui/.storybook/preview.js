@@ -1,37 +1,35 @@
+// .storybook/preview.ts (or .js)
 /** @type { import('@storybook/react-webpack5').Preview } */
+import { MINIMAL_VIEWPORTS, INITIAL_VIEWPORTS } from 'storybook/viewport';
 
 import '../src/styles/theme.css';
 
-// Custom viewport presets (desktop, tablet, mobile)
+// Your custom viewport presets
 const CUSTOM_VIEWPORTS = {
+  responsive: {
+    name: 'Responsive (fluid)',
+    styles: { width: '100%', height: '100%' },
+    type: 'desktop',
+  },
   desktop: {
     name: 'Desktop 1440',
     styles: { width: '1440px', height: '900px' },
-    type: 'desktop'
+    type: 'desktop',
   },
   tablet: {
-    name: 'Tablet 834', // iPad Air logical width portrait
+    name: 'Tablet 834', // iPad Air logical width (portrait)
     styles: { width: '834px', height: '1112px' },
-    type: 'tablet'
+    type: 'tablet',
   },
   mobile: {
     name: 'Mobile 390', // Modern iPhone logical width
     styles: { width: '390px', height: '844px' },
-    type: 'mobile'
-  }
-};
-
-export const parameters = {
-  controls: {
-    matchers: { color: /(background|color)$/i, date: /Date$/i },
+    type: 'mobile',
   },
-  viewport: {
-    viewports: CUSTOM_VIEWPORTS,
-    defaultViewport: 'desktop'
-  }
 };
 
-export const globalTypes = {
+// Theme toolbar
+const globalTypes = {
   theme: {
     name: 'Theme',
     description: 'Global theme for components',
@@ -40,41 +38,74 @@ export const globalTypes = {
       icon: 'mirror',
       items: [
         { value: 'light', title: 'Light' },
-        { value: 'dark',  title: 'Dark'  },
+        { value: 'dark', title: 'Dark' },
       ],
       showName: true,
     },
   },
 };
 
+// Theme decorator
 const withTheme = (Story, context) => {
   const theme = context.globals.theme;
   document.documentElement.setAttribute('data-theme', theme);
 
-  // Derive a sensible background for the canvas area. Prefer CSS vars if available.
-  // Fallback colors chosen for good contrast.
   const lightBg = 'var(--color-app-background, #ffffff)';
   const darkBg = 'var(--color-app-background, #0e1116)';
   const background = theme === 'dark' ? darkBg : lightBg;
 
-  // Apply to body so full-height stories (modals, layouts) inherit it.
   document.body.style.background = background;
-  document.body.style.color = theme === 'dark' ? 'var(--color-text, #f5f7fa)' : 'var(--color-text, #1a1d21)';
+  document.body.style.color =
+    theme === 'dark' ? 'var(--color-text, #f5f7fa)' : 'var(--color-text, #1a1d21)';
 
-  // Wrap story to ensure consistent min-height and smooth transition.
   return (
-    <div style={{      
-      background,
-      transition: 'background .25s ease'
-    }}>
+    <div style={{ background, transition: 'background .25s ease' }}>
       <Story />
     </div>
   );
 };
 
-export const decorators = [withTheme];
+const preview = {
+  // Use the single object export style Storybook recommends
+  parameters: {
+    controls: {
+      matchers: { color: /(background|color)$/i, date: /Date$/i },
+    },
+    viewport: {
+      // Per docs: use `options` (not `viewports`)
+      // Choose which base set you want:
+      //   - MINIMAL_VIEWPORTS: mobile1, mobile2, tablet
+      //   - INITIAL_VIEWPORTS: detailed device list
+      // Here we take MINIMAL as a base and add your customs.
+      options: {
+        ...MINIMAL_VIEWPORTS,
+        ...CUSTOM_VIEWPORTS,
+      },
+      // NOTE: `defaultViewport` is deprecated in favor of initialGlobals/globals.
+    },
+    // Backgrounds: define named swatches for the toolbar
+    // Keys (e.g. 'light', 'dark') become the values you set in globals/backgrounds.
+    backgrounds: {
+      options: {
+        light: { name: 'Light', value: '#ffffff' },
+        dark:  { name: 'Dark',  value: '#0e1116' },
+        // Optional extras while designing:
+        // gray:  { name: 'Gray',  value: '#f5f5f7' },
+        // ink:   { name: 'Ink',   value: '#111318' },
+      },
+      // grid can be toggled globally or per-story via globals.backgrounds.grid
+      // grid: true,
+    },
+  },
 
-// Optionally set an initial global viewport (Storybook 8 may also use globals)
-export const initialGlobals = {
-  viewport: { value: 'desktop', isRotated: false }
+  // Set the initial viewport selection the new way
+  initialGlobals: {
+    viewport: { value: 'desktop', isRotated: false }, // must match one of the keys in `options`
+  },
+
+  // Keep your theme toolbar + decorator
+  globalTypes,
+  decorators: [withTheme],
 };
+
+export default preview;
