@@ -1,154 +1,228 @@
 .btn-loading {
-  position: relative;
-  pointer-events: none;
+	position: relative;
+	pointer-events: none;
 }
 
 .btn-spinner {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 14px;
-  height: 14px;
-  border: 2px solid transparent;
-  border-top: 2px solid currentColor;
-  border-radius: 50%;
-  animation: btn-spin 1s linear infinite;
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	width: 14px;
+	height: 14px;
+	border: 2px solid transparent;
+	border-top: 2px solid currentColor;
+	border-radius: 50%;
+	animation: btn-spin 1s linear infinite;
 }
 
 .btn-content-loading {
-  opacity: 0;
+	opacity: 0;
 }
 
 @keyframes btn-spin {
-  0% { transform: translate(-50%, -50%) rotate(0deg); }
-  100% { transform: translate(-50%, -50%) rotate(360deg); }
+	0% {
+		transform: translate(-50%, -50%) rotate(0deg);
+	}
+
+	100% {
+		transform: translate(-50%, -50%) rotate(360deg);
+	}
 }
 
 
 /* Button styles - variable driven */
 .btn {
-  /* Default tokens (can be overridden per variant) */
-  --_btn-bg: var(--color-background);
-  --_btn-fg: var(--color-primary);
-  --_btn-border: var(--color-border);
-  --_btn-bg-hover: var(--color-surface);
-  --_btn-border-hover: var(--color-secondary);
-  --_btn-fg-hover: var(--_btn-fg);
-  --_btn-bg-active: var(--_btn-bg-hover);
-  --_btn-border-active: var(--_btn-border-hover);
+	/* Default tokens (can be overridden per variant) */
+	--_btn-bg: var(--color-surface);
+	--_btn-fg: var(--color-text);
+	/* Icon inherits by default, but allow override if needed */
+	--_btn-icon-fg: var(--_btn-fg);
+	--_btn-border: var(--color-border);
+	--_btn-bg-hover: var(--color-surface);
+	--_btn-border-hover: var(--color-secondary);
+	--_btn-fg-hover: var(--color-text);
+	--_btn-bg-active: var(--_btn-bg-hover);
+	--_btn-border-active: var(--_btn-border-hover);
 
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 1px solid var(--_btn-border);
-  border-radius: var(--radius-sm);
-  background: var(--_btn-bg);
-  color: var(--_btn-fg);
-  font-family: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .1s ease;
-  -webkit-user-select: none; /* Safari */
-  user-select: none;
-  padding: 6px 12px;
+	display: inline-flex;
+	align-items: center;
+	gap: var(--spacing-sm);
+	padding: var(--spacing-sm) var(--spacing-md);
+	border: 1px solid var(--_btn-border);
+	border-radius: var(--radius-sm);
+	background: var(--_btn-bg);
+	color: var(--_btn-fg);
+	font-family: inherit;
+	font-size: 0.875rem;
+	font-weight: 500;
+	text-decoration: none;
+	cursor: pointer;
+	transition: background .18s ease, border-color .18s ease, color .18s ease, transform .1s ease;
+	-webkit-user-select: none;
+	/* Safari */
+	user-select: none;
+	padding: 6px 12px;
+}
+
+/* Icon handling */
+.btn-with-icon {
+	display: inline-flex;
+}
+
+.btn-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	line-height: 0;
+	pointer-events: none;
+	/* Icon itself shouldn't capture events */
+}
+
+/* Bind svg icon color to button foreground token */
+.btn-icon svg {
+	width: 1em;
+	height: 1em;
+	color: var(--_btn-icon-fg);
+	stroke: currentColor;
+	/* ensure stroke-based icons follow color */
+	flex-shrink: 0;
+	display: block;
+}
+
+.btn:hover:not(:disabled) .btn-icon svg {
+	opacity: 0.75;
+}
+
+.btn-icon-left {
+	margin-right: 4px;
+}
+
+.btn-icon-right {
+	margin-left: 4px;
+}
+
+.btn-icon-only {
+	padding: 6px;
+	/* square shape */
+	aspect-ratio: 1 / 1;
+	justify-content: center;
+}
+
+.btn-icon-only .btn-icon-left,
+.btn-icon-only .btn-icon-right {
+	margin: 0;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--_btn-bg-hover);
-  border-color: var(--_btn-border-hover);
-  color: var(--_btn-fg-hover);
+	opacity: 0.75;
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(1px);
-  background: var(--_btn-bg-active);
-  border-color: var(--_btn-border-active);
+	transform: translateY(1px);
+	background: var(--_btn-bg-active);
+	border-color: var(--_btn-border-active);
 }
 
 .btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 /* Primary */
 .btn-primary {
-  --_btn-bg: var(--color-primary);
-  --_btn-fg: var(--color-background);
-  --_btn-border: var(--color-primary);
-  --_btn-bg-hover: var(--color-secondary);
-  --_btn-border-hover: var(--color-secondary);
-  --_btn-fg-hover: var(--color-background);
+	--_btn-bg: var(--color-success);
+	--_btn-fg: var(--color-text-on-dark);
+	--_btn-border: var(--color-primary);
+	--_btn-bg-hover: var(--color-secondary);
+	--_btn-border-hover: var(--color-secondary);
+	--_btn-fg-hover: var(--color-background);
 }
 
 /* Secondary */
 .btn-secondary {
-  --_btn-bg: var(--color-surface);
-  --_btn-border: var(--color-border);
-  --_btn-fg: var(--color-primary);
-  --_btn-bg-hover: var(--color-background);
-  --_btn-border-hover: var(--color-secondary);
+	--_btn-bg: var(--color-surface);
+	--_btn-border: var(--color-secondary);
+	--_btn-fg: var(--color-text);
+	--_btn-bg-hover: var(--color-background);
+	--_btn-border-hover: var(--color-secondary);
 }
 
 /* Danger */
 .btn-danger {
-  --_btn-bg: var(--color-error);
-  --_btn-fg: var(--color-background);
-  --_btn-border: var(--color-error);
-  --_btn-bg-hover: color-mix(in srgb, var(--color-error) 92%, white);
-  --_btn-border-hover: var(--color-error);
+	--_btn-bg: var(--color-error);
+	--_btn-fg: var(--color-text-on-dark);
+	--_btn-border: var(--color-error);
+	--_btn-bg-hover: color-mix(in srgb, var(--color-error) 70%, white);
+	--_btn-border-hover: var(--color-error);
 }
 
 /* Ghost */
 .btn-ghost {
-  --_btn-bg: transparent;
-  --_btn-fg: var(--color-secondary);
-  --_btn-border: transparent;
-  --_btn-bg-hover: var(--color-surface);
-  --_btn-border-hover: var(--color-border);
-  --_btn-fg-hover: var(--color-primary);
+	--_btn-bg: transparent;
+	--_btn-fg: var(--color-text);
+	--_btn-border: transparent;
+	--_btn-bg-hover: var(--color-surface);
+	--_btn-border-hover: var(--color-border);
+	--_btn-fg-hover: var(--color-primary);
 }
 
 /* Focus ring */
 .btn:focus-visible {
-  outline: 2px solid var(--color-focus-ring, var(--color-accent));
-  outline-offset: 2px;
+	outline: 2px solid var(--color-focus-ring, var(--color-accent));
+	outline-offset: 2px;
 }
 
 /* Accent */
 .btn-accent {
-  --_btn-bg: var(--color-accent);
-  --_btn-fg: var(--color-background);
-  --_btn-border: var(--color-accent);
-  --_btn-bg-hover: #0052a3;
-  --_btn-border-hover: #0052a3;
+	--_btn-bg: var(--color-accent);
+	--_btn-fg: var(--color-text-on-dark);
+	--_btn-border: var(--color-accent);
+	--_btn-bg-hover: #0052a3;
+	--_btn-border-hover: #0052a3;
 }
 
 /* Success */
-.btn-success { --_btn-bg: var(--color-success); --_btn-fg: var(--color-background); --_btn-border: var(--color-success); }
+.btn-success {
+	--_btn-bg: var(--color-success);
+	--_btn-fg: var(--color-background);
+	--_btn-border: var(--color-success);
+}
 
 /* Warning */
-.btn-warning { --_btn-bg: var(--color-warning); --_btn-fg: var(--color-background); --_btn-border: var(--color-warning); }
+.btn-warning {
+	--_btn-bg: var(--color-warning);
+	--_btn-fg: var(--color-background);
+	--_btn-border: var(--color-warning);
+}
 
 /* Error (alias of danger style for compatibility) */
-.btn-error { --_btn-bg: var(--color-error); --_btn-fg: var(--color-background); --_btn-border: var(--color-error); }
+.btn-error {
+	--_btn-bg: var(--color-error);
+	--_btn-fg: var(--color-text-on-dark);
+	--_btn-border: var(--color-error);
+}
 
 .btn-sm {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.75rem;
+	padding: var(--spacing-xs) var(--spacing-sm);
+	font-size: 0.75rem;
 }
 
 .btn-lg {
-  padding: var(--spacing-md) var(--spacing-lg);
-  font-size: 1rem;
+	padding: var(--spacing-md) var(--spacing-lg);
+	font-size: 1rem;
 }
 
 /* Loading overlay nuance */
 .btn.btn-loading {
-  position: relative;
+	position: relative;
 }
-.btn.btn-loading .btn-spinner { z-index: 2; }
-.btn.btn-loading span { position: relative; z-index: 1; }
+
+.btn.btn-loading .btn-spinner {
+	z-index: 2;
+}
+
+.btn.btn-loading span {
+	position: relative;
+	z-index: 1;
+}

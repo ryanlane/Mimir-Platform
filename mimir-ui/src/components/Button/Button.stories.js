@@ -23,6 +23,9 @@ export default {
       control: 'boolean',
     },
     onClick: { action: 'clicked' },
+    icon: { control: 'text', description: 'Lucide icon name or ignored if using children element' },
+    iconPosition: { control: 'inline-radio', options: ['left', 'right'] },
+    iconSize: { control: { type: 'number', min: 12, max: 32, step: 2 } }
   },
 };
 
@@ -115,50 +118,33 @@ export const DisplayButton = {
   },
 };
 
-export const EditScene = {
+
+
+// Icon variations
+export const IconLeft = {
   args: {
-    children: 'Edit',
-    variant: 'secondary',
-    size: 'sm',
+    children: 'Settings',
+    icon: 'Settings',
+    iconPosition: 'left'
   },
-  parameters: {
-    docs: {
-      description: {
-        story: 'Edit button used in scene cards for scene modification',
-      },
-    },
-  },
+  parameters: { docs: { description: { story: 'Button with left-aligned icon (default).' } } }
 };
 
-export const DeleteScene = {
+export const IconRight = {
   args: {
-    children: 'Delete',
+    children: 'Add Item',
+    icon: 'Plus',
+    iconPosition: 'right',
+    variant: 'primary'
+  },
+  parameters: { docs: { description: { story: 'Right-aligned icon useful for forward / next actions.' } } }
+};
+
+export const IconOnly = {
+  args: {
+    icon: 'Trash2',
     variant: 'danger',
-    size: 'sm',
+    'aria-label': 'Delete item'
   },
-  parameters: {
-    docs: {
-      description: {
-        story: 'Delete button used in scene cards for scene removal',
-      },
-    },
-  },
-};
-
-// Button group example for scene cards
-export const SceneCardButtons = {
-  render: () => (
-    <div style={{ display: 'flex', gap: '8px' }}>
-      <Button variant="primary" size="sm">Display</Button>
-      <Button variant="secondary" size="sm">Edit</Button>
-      <Button variant="danger" size="sm">Delete</Button>
-    </div>
-  ),
-  parameters: {
-    docs: {
-      description: {
-        story: 'Button group as used in scene cards',
-      },
-    },
-  },
+  parameters: { docs: { description: { story: 'Icon-only button; MUST provide aria-label for accessibility.' } } }
 };

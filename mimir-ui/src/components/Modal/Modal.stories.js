@@ -12,7 +12,7 @@ export default {
   argTypes: {
     size: {
       control: 'select',
-      options: ['small', 'medium', 'large'],
+      options: ['small', 'medium', 'large', 'xlarge'],
     },
     showCloseButton: {
       control: 'boolean',
@@ -108,6 +108,76 @@ export const Large = {
     title: 'Large Modal',
     size: 'large',
   },
+};
+
+// Extra Large (edge-to-edge-ish) modal
+export const XLarge = {
+  render: (args) => (
+    <ModalWrapper {...args}>
+      <div style={{ display: 'grid', gap: '12px' }}>
+        <p>This is an extra large modal intended for wide / immersive content like previews or complex configuration forms.</p>
+        <p>Use this size sparingly—prefer large or medium for most use-cases.</p>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+          gap: '8px',
+          background: '#f7f7f7',
+          padding: '12px',
+          borderRadius: '6px'
+        }}>
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} style={{
+              background: 'white',
+              border: '1px solid #e2e2e2',
+              borderRadius: '4px',
+              padding: '8px',
+              fontSize: '.75rem',
+              textAlign: 'center'
+            }}>
+              Item {i + 1}
+            </div>
+          ))}
+        </div>
+      </div>
+    </ModalWrapper>
+  ),
+  args: {
+    title: 'Extra Large Modal',
+    size: 'xlarge',
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: 'The xlarge size maps to .modal-xlarge (100% max-width) for scenarios needing near full-width layouts.'
+      }
+    }
+  }
+};
+
+// All sizes preview (non-interactive showcase)
+export const AllSizes = {
+  render: () => {
+    const sizes = ['small', 'medium', 'large', 'xlarge'];
+    return (
+      <div style={{ display: 'grid', gap: '32px', padding: '24px' }}>
+        {sizes.map(sz => (
+          <div key={sz} style={{ border: '1px solid #ddd', borderRadius: '8px', padding: '16px' }}>
+            <h3 style={{ marginTop: 0 }}>Size: {sz}</h3>
+            <p>Class: <code>.modal-{sz}</code></p>
+            <p>This is a static showcase. Open the interactive stories to test behavior.</p>
+          </div>
+        ))}
+      </div>
+    );
+  },
+  parameters: {
+    controls: { disable: true },
+    docs: {
+      description: {
+        story: 'Reference of all modal size tokens available via the size prop.'
+      }
+    }
+  }
 };
 
 // Scene Image Preview Modal (Mimir-specific)

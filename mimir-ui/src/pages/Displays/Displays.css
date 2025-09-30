@@ -334,30 +334,7 @@
 }
 
 
-/* Modal Styles */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 2rem;
-}
 
-.modal-content {
-  background: var(--color-surface);
-  border-radius: 8px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-  max-width: 600px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-}
 
 .registration-modal {
   max-width: 700px;
@@ -818,19 +795,7 @@
     font-size: 13px;
   }
 
-  /* Modal adjustments */
-  .modal-overlay {
-    padding: 1rem;
-  }
-  .modal-content.image-preview-modal {
-    max-width: 100%;
-  }
-  .modal-header, .modal-body, .modal-footer {
-    padding: 1rem;
-  }
-  .modal-header h2, .modal-header h3 {
-    font-size: 1rem;
-  }
+
 
   /* Scene assignment panel internals */
   .scene-card {

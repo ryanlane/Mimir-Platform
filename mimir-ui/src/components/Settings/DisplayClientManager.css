@@ -65,29 +65,7 @@
   color: var(--color-text);
   font-size: 14px;
 }
-.btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: none;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.btn-primary {
-  background: var(--color-primary);
-  color: #fff;
-}
-.btn-warning {
-  background: var(--color-warning);
-  color: #fff;
-}
-.btn-secondary {
-  background: var(--color-secondary);
-  color: #fff;
-}
+
 .error-message {
   color: var(--color-error);
   background: rgba(var(--color-error-rgb), 0.1);

@@ -48,8 +48,28 @@ export const globalTypes = {
 };
 
 const withTheme = (Story, context) => {
-  document.documentElement.setAttribute('data-theme', context.globals.theme);
-  return <Story />;
+  const theme = context.globals.theme;
+  document.documentElement.setAttribute('data-theme', theme);
+
+  // Derive a sensible background for the canvas area. Prefer CSS vars if available.
+  // Fallback colors chosen for good contrast.
+  const lightBg = 'var(--color-app-background, #ffffff)';
+  const darkBg = 'var(--color-app-background, #0e1116)';
+  const background = theme === 'dark' ? darkBg : lightBg;
+
+  // Apply to body so full-height stories (modals, layouts) inherit it.
+  document.body.style.background = background;
+  document.body.style.color = theme === 'dark' ? 'var(--color-text, #f5f7fa)' : 'var(--color-text, #1a1d21)';
+
+  // Wrap story to ensure consistent min-height and smooth transition.
+  return (
+    <div style={{      
+      background,
+      transition: 'background .25s ease'
+    }}>
+      <Story />
+    </div>
+  );
 };
 
 export const decorators = [withTheme];

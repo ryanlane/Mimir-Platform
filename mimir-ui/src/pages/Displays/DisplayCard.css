@@ -69,13 +69,7 @@
 .scene-unassigned { display: flex; flex-direction: column; gap: .5rem; }
 .no-scene { font-size: .6rem; color: var(--color-text-secondary); }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal-content { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; width: min(900px, 92vw); max-height: 90vh; display: flex; flex-direction: column; }
-.modal-header { padding: .75rem 1rem; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; color: var(--color-text); }
-.modal-header h3 { margin: 0; font-size: .95rem; }
-.modal-close { background: transparent; border: none; font-size: 1.1rem; line-height: 1; cursor: pointer; color: var(--color-text-secondary); }
-.modal-body { padding: 1rem; overflow: auto; }
-.modal-footer { padding: .75rem 1rem; border-top: 1px solid var(--color-border); display: flex; gap: .5rem; justify-content: flex-end; }
+
 
 /* Display Card Variants */
 .display-card.discovered-display {

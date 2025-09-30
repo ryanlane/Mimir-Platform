@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Monitor, Edit, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
@@ -8,6 +8,8 @@ import DistributionManager from '../../components/DistributionManager/Distributi
 import './Scenes.css';
 import SceneLiveStatus from './components/SceneLiveStatus';
 import Header from '../../components/Header/Header';
+import Button from '../../components/Button/Button';
+import SceneCard from '../../components/SceneCard/SceneCard';
 
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
@@ -25,7 +27,7 @@ const Scenes = () => {
   const [sceneSchedules, setSceneSchedules] = useState({}); // Cache for scene schedules
 
   // Initialize WebSocket connection with automatic state sync on mount
-  const { isConnected, currentState, requestStateSync } = useEnsureFreshState();
+  const { currentState, requestStateSync } = useEnsureFreshState();
 
   const loadSceneSchedules = useCallback(async (scenesList) => {
     try {
@@ -356,20 +358,33 @@ const Scenes = () => {
     <div className="scenes">
      
       <div className="scenes-header">
-        <Header title="Scenes" icon="layers" iconSize={36} description="Manage your display scenes and configurations" />
-        <div className="scenes-header-actions">
-          <button className="btn btn-secondary" onClick={() => {
-            console.log('🔄 Manual state sync requested');
-            requestStateSync();
-          }}>
-            <RefreshCw size={18} />
-            Sync State
-          </button>
-          <button className="btn btn-primary" onClick={handleCreateScene}>
-            <Plus size={18} />
-            Create Scene
-          </button>
-        </div>
+        <Header
+          title="Scenes"
+          icon="layers"
+          iconSize={36}
+          description="Manage your display scenes and configurations"
+          actions={[
+            <Button
+              key="sync"
+              variant="secondary"
+              icon={<RefreshCw size={18} aria-hidden="true" />}
+              onClick={() => {
+                console.log('🔄 Manual state sync requested');
+                requestStateSync();
+              }}
+            >
+              Sync State
+            </Button>,
+            <Button
+              key="create"
+              variant="primary"
+              icon={<Plus size={18} aria-hidden="true" />}
+              onClick={handleCreateScene}
+            >
+              Create Scene
+            </Button>
+          ]}
+        />
       </div>
       <div style={{ marginTop: '12px', marginBottom: '16px' }}>
         <SceneLiveStatus
@@ -380,153 +395,20 @@ const Scenes = () => {
 
       {scenes.length > 0 ? (
         <div className="scenes-grid">
-          {scenes.map((scene) => {
-            return (
-              <div key={scene.id} className="scene-card">
-                <div className="scene-card-header">
-                  <h3>{scene.name} {' '}
-                    {(() => {
-                      // Determine strategy badge (prefer new field names)
-                      const strategy = scene.update_strategy || scene.updateStrategy || 'scheduler';
-                      const isPush = strategy === 'push';
-                      const badgeClass = isPush ? 'strategy-badge push' : 'strategy-badge scheduler';
-                      // If push but fallback poll not present, still fine. If scheduler but scene has push_fallback_poll_seconds it implies downgrade.
-                      const downgraded = !isPush && (scene.push_fallback_poll_seconds || scene.pushFallbackPollSeconds);
-                      return (
-                        <span className={badgeClass} title={downgraded ? 'Originally configured for push but downgraded due to channel capability change' : (isPush ? 'Push update strategy (websocket events trigger refresh)' : 'Scheduler update strategy (periodic refresh)')}>
-                          {isPush ? 'Push' : 'Scheduled'}
-                          {downgraded && <span className="downgrade-indicator" aria-label="Downgraded to scheduler">⚠</span>}
-                        </span>
-                      );
-                    })()}
-                  </h3>
-                </div>
-
-                <div className="scene-card-body">                  
-                  
-                  {scene.channels && scene.channels.length > 0 && (
-                    <div className="scene-channels">
-                      <span className="channels-label">Channels:</span>
-                      <div className="channel-tags">
-                        {scene.channels.map((channelAssignment, index) => {
-                          // Handle both old format (string) and new format (object)
-                          const channelId = typeof channelAssignment === 'string' 
-                            ? channelAssignment 
-                            : channelAssignment.channel_id;
-                          const subChannelId = typeof channelAssignment === 'object' 
-                            ? channelAssignment.subchannel_id 
-                            : null;
-                          
-                          const channel = channels.find(c => c.id === channelId);
-                          const displayName = channel?.name || channelId;
-                          
-                          // Get subchannel display name from manifest
-                          let subChannelDisplayName = subChannelId;
-                          if (subChannelId && channelManifests[channelId]) {
-                            const manifest = channelManifests[channelId];
-                            // Check for galleries (photo frame channel)
-                            if (manifest.galleries) {
-                              const gallery = manifest.galleries.find(g => g.id === subChannelId);
-                              if (gallery) {
-                                subChannelDisplayName = `${gallery.name} (${gallery.image_count || 0} images)`;
-                              }
-                            }
-                            // Future: Add support for other subchannel types
-                            // else if (manifest.subchannels) {
-                            //   const subchannel = manifest.subchannels.find(s => s.id === subChannelId);
-                            //   if (subchannel) {
-                            //     subChannelDisplayName = subchannel.name;
-                            //   }
-                            // }
-                          }
-                          
-                          return (
-                            <span key={`${channelId}-${subChannelId || 'all'}-${index}`} className="channel-tag">
-                              {displayName}
-                              {subChannelId && (
-                                <span className="subchannel-indicator">
-                                  → {subChannelDisplayName}
-                                </span>
-                              )}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="scene-distribution-mode">
-                    <span className="distribution-label">Distribution:</span>
-                    <select
-                      value={scene.distributionMode || scene.distribution_mode || 'MIRROR'}
-                      onChange={(e) => handleDistributionModeChange(scene.id, e.target.value)}
-                      className="distribution-mode-select"
-                    >
-                      <option value="MIRROR">Mirror</option>
-                      <option value="SEQUENTIAL">Sequential</option>
-                      <option value="RANDOM_UNIQUE">Random Unique</option>
-                    </select>
-                  </div>
-                  
-                  <div className="scene-schedule">
-                    <span className="schedule-label">Schedule:</span>
-                    {(() => {
-                      const scheduleStatus = getSceneScheduleStatus(scene.id);
-                      return (
-                        <div className="schedule-info">
-                          <span className={`schedule-status ${scheduleStatus.hasSchedule ? 'active' : 'inactive'}`}>
-                            {scheduleStatus.hasSchedule ? (
-                              <>
-                                {scheduleStatus.status}
-                                {scheduleStatus.count > 1 && (
-                                  <span className="schedule-count"> (+{scheduleStatus.count - 1} more)</span>
-                                )}
-                              </>
-                            ) : (
-                              'No schedule'
-                            )}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                <div className="scene-card-footer">
-                  <button
-                    className="btn btn-sm btn-accent"
-                    onClick={() => handleDisplayScene(scene.id)}
-                    disabled={imageLoading}
-                  >
-                    <Monitor size={16} />
-                    {imageLoading ? 'Loading...' : 'Display'}
-                  </button>
-                  {/* <button
-                    className="btn btn-sm btn-info"
-                    onClick={() => handleManageDistribution(scene)}
-                    title="Manage Distribution"
-                  >
-                    <Settings size={16} />
-                    Distribution
-                  </button> */}
-                  <button
-                    className="btn btn-sm btn-secondary"
-                    onClick={() => handleEditScene(scene)}
-                  >
-                    <Edit size={16} />
-                    Edit
-                  </button>
-                  <button
-                    className="btn btn-sm btn-error"
-                    onClick={() => handleDeleteScene(scene.id)}
-                  >
-                    <Trash2 size={16} />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {scenes.map(scene => (
+            <SceneCard
+              key={scene.id}
+              scene={scene}
+              channels={channels}
+              channelManifests={channelManifests}
+              scheduleStatus={getSceneScheduleStatus(scene.id)}
+              onChangeDistribution={handleDistributionModeChange}
+              onDisplay={handleDisplayScene}
+              onEdit={handleEditScene}
+              onDelete={handleDeleteScene}
+              loadingDisplay={imageLoading}
+            />
+          ))}
         </div>
       ) : (
         <div className="empty-state">
@@ -534,10 +416,13 @@ const Scenes = () => {
           <p className="text-tertiary">
             Create your first scene to start displaying content on your Mimir device.
           </p>
-          <button className="btn btn-primary" onClick={handleCreateScene}>
-            <Plus size={18} />
+          <Button
+            variant="primary"
+            icon={<Plus size={18} aria-hidden="true" />}
+            onClick={handleCreateScene}
+          >
             Create Your First Scene
-          </button>
+          </Button>
         </div>
       )}
 
@@ -554,12 +439,14 @@ const Scenes = () => {
           <div className="image-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Scene Preview: {currentImageData.scene_name}</h3>
-              <button 
-                className="btn btn-sm btn-secondary"
+              <Button
+                size="sm"
+                variant="secondary"
                 onClick={() => setShowImageModal(false)}
+                aria-label="Close preview"
               >
                 ×
-              </button>
+              </Button>
             </div>
             <div className="modal-body">
               <div className="scene-image-container">

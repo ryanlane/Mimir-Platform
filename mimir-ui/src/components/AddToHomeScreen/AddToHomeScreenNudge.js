@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { useInstallPrompt } from '../../hooks/useInstallPrompt';
 import './AddToHomeScreenNudge.css';
+import Button from '../Button/Button';
 
 /**
  * A2HS Nudge Component
@@ -34,30 +35,25 @@ export const AddToHomeScreenNudge = ({ onInstalled }) => {
           <span className="a2hs-sub">Get faster access & offline support</span>
         </div>
         <div className="a2hs-actions">
-          <button
-            className="a2hs-btn primary"
-            onClick={async () => {
+          <Button variant="primary" size="sm" onClick={async () => {
               const result = await promptInstall();
               if (result.outcome === 'dismissed') {
                 // Re-hide but allow future trigger after manual reset/interval
                 setVisible(false);
                 setTimeout(resetDismissed, 7 * 24 * 60 * 60 * 1000); // allow again in a week
               }
-            }}
-          >
-            <Download size={16} /> Install
-          </button>
-          <button
-            className="a2hs-btn ghost"
-            aria-label="Dismiss install"
-            onClick={() => {
+            }}>
+            Install
+          </Button>
+
+          <Button variant="ghost" size="sm" aria-label="Dismiss install" onClick={() => {
               setVisible(false);
               // Reset after some time
               setTimeout(resetDismissed, 3 * 24 * 60 * 60 * 1000);
             }}
           >
             <X size={16} />
-          </button>
+          </Button>
         </div>
       </div>
     </div>

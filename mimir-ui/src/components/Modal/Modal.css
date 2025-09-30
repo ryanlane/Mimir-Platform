@@ -23,20 +23,20 @@
   border-radius: 10px;
 }
 
-.modal-small {
+.modal-content.modal-small {
   max-width: 400px;
 }
 
-.modal-medium {
+.modal-content.modal-medium {
   max-width: 600px;
 }
 
-.modal-large {
-  max-width: 800px;
+.modal-content.modal-large {
+  max-width: 80%;
 }
 
-.modal-xlarge {
-  max-width: 1200px;
+.modal-content.modal-xlarge {
+  max-width: 100%;
 }
 
 .modal-header {
