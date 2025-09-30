@@ -31,31 +31,42 @@ const Scenes = () => {
   const { currentState, requestStateSync } = useEnsureFreshState();
 
   const loadSceneSchedules = useCallback(async (scenesList) => {
+    // Fetch ALL scheduler jobs for every scene rather than only the first assignment
     try {
       const schedulePromises = scenesList.map(async (scene) => {
         try {
           const response = await api.getSceneSchedules(scene.id);
-          const assignments = response.data || [];
-          
-          // If there are assignments, get the job details for the first one
-          if (assignments.length > 0) {
-            const jobResponse = await api.getSchedulerJob(assignments[0].job_id);
-            return { sceneId: scene.id, schedules: [jobResponse.data] };
-          } else {
+          const assignments = Array.isArray(response.data) ? response.data : [];
+
+          if (assignments.length === 0) {
             return { sceneId: scene.id, schedules: [] };
           }
+
+            // Fetch each referenced job id (dedupe in case of duplicates)
+          const uniqueJobIds = [...new Set(assignments.map(a => a.job_id).filter(Boolean))];
+          const jobResults = await Promise.all(uniqueJobIds.map(async (jobId) => {
+            try {
+              const jobResponse = await api.getSchedulerJob(jobId);
+              return jobResponse.data;
+            } catch (e) {
+              console.warn(`Failed to fetch job ${jobId} for scene ${scene.id}:`, e.message);
+              return null;
+            }
+          }));
+
+          const jobs = jobResults.filter(Boolean);
+          return { sceneId: scene.id, schedules: jobs };
         } catch (error) {
           console.log(`Could not load schedules for scene ${scene.id}:`, error.message);
           return { sceneId: scene.id, schedules: [] };
         }
       });
-      
+
       const scheduleResults = await Promise.all(schedulePromises);
       const schedulesMap = scheduleResults.reduce((acc, result) => {
         acc[result.sceneId] = result.schedules;
         return acc;
       }, {});
-      
       setSceneSchedules(schedulesMap);
     } catch (error) {
       console.error('Error loading scene schedules:', error);
@@ -277,25 +288,39 @@ const Scenes = () => {
     if (!Array.isArray(schedules) || schedules.length === 0) {
       return { hasSchedule: false, status: 'No schedule', count: 0 };
     }
-    // Prefer an explicitly enabled schedule; fallback to first
-    const schedule = schedules.find(s => s.enabled === true || s.active === true || s.status === 'enabled') || schedules[0];
-    const enabled = schedule.enabled === true || schedule.active === true || schedule.status === 'enabled';
+
+    // Determine enabled schedules & earliest next run
+    const isEnabled = (s) => s?.enabled === true || s?.active === true || s?.status === 'enabled';
+    const enabledSchedules = schedules.filter(isEnabled);
+    const primary = enabledSchedules[0] || schedules[0];
+    const enabled = isEnabled(primary);
+
+    // Earliest next run among enabled, else among all
+    const parseDate = (val) => (val ? new Date(val) : null);
+    const allForNext = (enabledSchedules.length > 0 ? enabledSchedules : schedules)
+      .map(s => ({ raw: s, dt: parseDate(s.next_run_at || s.nextRunAt || s.next_run) }))
+      .filter(x => x.dt instanceof Date && !isNaN(x.dt.getTime()))
+      .sort((a, b) => a.dt - b.dt);
+    const earliest = allForNext[0]?.raw;
+
     let statusText;
-    if (schedule.freq_value && schedule.freq_unit) {
-      statusText = `Every ${schedule.freq_value} ${schedule.freq_unit}${schedule.freq_value > 1 ? 's' : ''}`;
-    } else if (schedule.description) {
-      statusText = schedule.description;
-    } else if (schedule.name) {
-      statusText = schedule.name;
+    if (primary.freq_value && primary.freq_unit) {
+      statusText = `Every ${primary.freq_value} ${primary.freq_unit}${primary.freq_value > 1 ? 's' : ''}`;
+    } else if (primary.description) {
+      statusText = primary.description;
+    } else if (primary.name) {
+      statusText = primary.name;
     } else {
       statusText = 'Scheduled';
     }
+
     return {
       hasSchedule: true,
       status: statusText,
       count: schedules.length,
       enabled,
-      nextRun: schedule.next_run_at || schedule.nextRunAt || schedule.next_run || null
+      enabledCount: enabledSchedules.length,
+      nextRun: (earliest?.next_run_at || earliest?.nextRunAt || earliest?.next_run) || null
     };
   };
 
