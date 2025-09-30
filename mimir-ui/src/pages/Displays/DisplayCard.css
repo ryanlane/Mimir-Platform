@@ -18,7 +18,7 @@
 .display-card-header { display: flex; justify-content: space-between; gap: 1rem; }
 .display-info { display: flex; flex-direction: column; gap: .4rem; min-width: 0; }
 .display-title { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-.display-title h3 { margin: 0; font-size: .95rem; font-weight: 600; }
+.display-title h3 { margin: 0; font-size: .95rem; font-weight: 600; color: var(--color-text) }
 .display-description { margin: 0; font-size: .7rem; color: var(--color-text-secondary); line-height: 1.3; }
 
 .status-indicator { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--color-surface-hover); }
@@ -48,9 +48,9 @@
 
 .display-scene-info { margin-top: .25rem; }
 .scene-assigned { display: flex; flex-direction: column; gap: .4rem; }
-.scene-info { display: flex; align-items: center; gap: .35rem; font-size: .65rem; }
+.scene-info { display: flex; align-items: center; gap: .35rem; font-size: .85rem; color: var(--color-text-secondary); padding: 10px 0; }
 .scene-buttons { display: flex; gap: .4rem; flex-wrap: wrap; }
-.scene-unassigned { display: flex; align-items: center; gap: .5rem; }
+.scene-unassigned { display: flex; flex-direction: column; gap: .5rem; }
 .no-scene { font-size: .6rem; color: var(--color-text-secondary); }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }

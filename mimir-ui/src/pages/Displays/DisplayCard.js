@@ -4,6 +4,7 @@ import './DisplayCard.css';
 import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play } from 'lucide-react';
 import { api } from '../../services/api';
 import NeoButton from '../../components/NeoButton/NeoButton';
+import Icon from '../../components/Icon/Icon';
 
 const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiClient = api }) => {
   // const [imageLoading, setImageLoading] = useState(false); // (unused after image section commented out)
@@ -224,7 +225,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
         <div className="display-card-header">
           <div className="display-info">
             <div className="display-title">
-              <Monitor size={20} />
+              <Icon name="Monitor" size={20} color="var(--color-text)" />              
               <h3>{display.name}</h3>
               <div className={`status-indicator ${display.is_online ? 'online' : 'offline'}`}>
                 {display.is_online ? <Wifi size={14} /> : <WifiOff size={14} />}
@@ -387,13 +388,14 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             </div>
           ) : (
             <div className="scene-unassigned">
-              <span className="no-scene">No scene assigned</span>
-              <button 
-                className="btn btn-sm btn-primary" 
+              <div className="no-scene">No scene assigned</div>
+              <NeoButton
+                label="Assign Scene"
+                icon="Plus"
+                iconSize={14}
                 onClick={() => onAssignScene(display)}
-              >
-                Assign Scene
-              </button>
+              />           
+             
             </div>
           )}
           {canManualUpdate && (manualUpdateError || manualUpdateSuccess) && (
