@@ -10,6 +10,7 @@ import SceneLiveStatus from './components/SceneLiveStatus';
 import Header from '../../components/Header/Header';
 import Button from '../../components/Button/Button';
 import SceneCard from '../../components/SceneCard/SceneCard';
+import Modal from '../../components/Modal/Modal';
 
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
@@ -482,15 +483,18 @@ const Scenes = () => {
       )}
 
       {showDistributionManager && selectedSceneForDistribution && (
-        <div className="modal-overlay" onClick={handleCloseDistributionManager}>
-          <div onClick={(e) => e.stopPropagation()}>
-            <DistributionManager
-              sceneId={selectedSceneForDistribution.id}
-              sceneName={selectedSceneForDistribution.name}
-              onClose={handleCloseDistributionManager}
-            />
-          </div>
-        </div>
+        <Modal
+          isOpen={showDistributionManager}
+          onClose={handleCloseDistributionManager}
+          title={`Distribution: ${selectedSceneForDistribution?.name || ''}`}
+          size="large"
+        >
+          <DistributionManager
+            sceneId={selectedSceneForDistribution.id}
+            sceneName={selectedSceneForDistribution.name}
+            onClose={handleCloseDistributionManager}
+          />
+        </Modal>
       )}
     </div>
   );
