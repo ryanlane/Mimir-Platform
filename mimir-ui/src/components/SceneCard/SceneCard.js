@@ -70,14 +70,15 @@ export function SceneCard({
       <div className="scene-card-header">
         <h3>
           {scene.name}{' '}
-          <span
+          
+        </h3>
+        <span
             className={badgeClass}
             title={downgraded ? 'Originally configured for push but downgraded due to channel capability change' : (isPush ? 'Push update strategy (websocket events trigger refresh)' : 'Scheduler update strategy (periodic refresh)')}
           >
             {isPush ? 'Push' : 'Scheduled'}
             {downgraded && <span className="downgrade-indicator" aria-label="Downgraded to scheduler">⚠</span>}
           </span>
-        </h3>
       </div>
 
       <div className="scene-card-body">

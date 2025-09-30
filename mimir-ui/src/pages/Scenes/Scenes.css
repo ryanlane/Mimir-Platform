@@ -40,51 +40,7 @@
   margin-right: auto;
 }
 
-/* Image Modal */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: var(--spacing-lg);
-}
 
-.image-modal {
-  background-color: var(--color-background);
-  border-radius: var(--radius-md);
-  max-width: 90vw;
-  max-height: 90vh;
-  overflow: hidden;
-  box-shadow: var(--shadow-lg);
-}
-
-.image-modal .modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-lg);
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
-}
-
-.image-modal .modal-header h3 {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 500;
-}
-
-.image-modal .modal-body {
-  padding: var(--spacing-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-}
 
 .scene-image-container {
   text-align: center;
@@ -120,56 +76,7 @@
   margin: var(--spacing-xs) 0;
 }
 
-/* Update Strategy Badges */
-.strategy-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  vertical-align: middle;
-  line-height: 1;
-  border: 1px solid transparent;
-}
 
-.strategy-badge.push {
-  background: #e0f2fe;
-  color: #075985;
-  border-color: #7dd3fc;
-}
-
-.strategy-badge.scheduler {
-  background: #f1f5f9;
-  color: #334155;
-  border-color: #cbd5e1;
-}
-
-.strategy-badge .downgrade-indicator {
-  margin-left: 2px;
-  font-size: 0.7rem;
-  color: #b45309; /* amber */
-}
-
-
-
-/* Modal styles */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
 
 @media (max-width: 768px) {
   .scenes-header {
