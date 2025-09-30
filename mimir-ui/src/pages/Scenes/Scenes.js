@@ -80,6 +80,17 @@ const Scenes = () => {
 
   const loadData = useCallback(async () => {
     try {
+      // Small internal helpers to normalize payloads and aid debugging
+      const extractArray = (label, payload) => {
+        if (!payload) return [];
+        if (Array.isArray(payload)) return payload;
+        if (Array.isArray(payload.scenes)) return payload.scenes; // scenes endpoint
+        if (Array.isArray(payload.channels)) return payload.channels; // channels endpoint
+        if (Array.isArray(payload.items)) return payload.items; // generic list
+        if (Array.isArray(payload.data)) return payload.data; // sometimes nested
+        return [];
+      };
+
       // Use persistent cache with SWR; immediate cached data (if any) then background update
       const scenesPromise = persistentCache.getScenes({
         onUpdate: (fresh) => {
@@ -131,25 +142,52 @@ const Scenes = () => {
 
       // Normalize / defensively extract scenes list
       const rawScenes = scenesResponse?.data;
-      let scenesList = [];
-      if (Array.isArray(rawScenes)) {
-        scenesList = rawScenes;
-      } else if (rawScenes && Array.isArray(rawScenes.scenes)) {
-        scenesList = rawScenes.scenes;
-      } else if (rawScenes && Array.isArray(rawScenes.items)) { // alternate key just in case
-        scenesList = rawScenes.items;
+      let scenesList = extractArray('scenes', rawScenes);
+      if (scenesList.length === 0) {
+        console.warn('[Scenes] No scenes extracted. Raw payload shape:', rawScenes);
       }
-      setScenes(scenesList);
+      // Normalize backend field names (camelCase) to the keys other components might already rely on (snake_case or legacy)
+      const normalizedScenes = scenesList.map(s => {
+        // Channels array may store items with "channel_id" already; ensure uniform shape
+        const channelsNorm = Array.isArray(s.channels) ? s.channels.map(ch => {
+          if (typeof ch === 'string') return { channel_id: ch };
+          return {
+            channel_id: ch.channel_id || ch.id || ch.channelId,
+            subchannel_id: ch.subchannel_id || ch.subchannelId || ch.subchannel || null,
+            position: ch.position || null,
+            config: ch.config || null
+          };
+        }) : [];
+        return {
+          ...s,
+          id: s.id,
+            // Provide both naming styles to avoid downstream assumptions
+          name: s.name,
+          channels: channelsNorm,
+          overlay: s.overlay || s.overlays || null,
+          overlays: s.overlays || s.overlay || null,
+          schedule: s.schedule || s.timingConfig || null,
+          timing_config: s.timingConfig || s.schedule || null,
+          distribution_mode: s.distribution_mode || s.distributionMode || 'SEQUENTIAL',
+          distributionMode: s.distributionMode || s.distribution_mode || 'SEQUENTIAL',
+          is_active: s.is_active ?? s.isActive ?? false,
+          isActive: s.isActive ?? s.is_active ?? false,
+          update_strategy: s.update_strategy || s.updateStrategy || s.update_strategy || 'scheduler',
+          updateStrategy: s.updateStrategy || s.update_strategy || 'scheduler',
+          push_fallback_poll_seconds: s.push_fallback_poll_seconds || s.pushFallbackPollSeconds || null,
+          pushFallbackPollSeconds: s.pushFallbackPollSeconds || s.push_fallback_poll_seconds || null,
+        };
+      });
+      if (normalizedScenes.length && process.env.NODE_ENV !== 'production') {
+        console.debug('[Scenes] Normalized scenes sample:', normalizedScenes[0]);
+      }
+      setScenes(normalizedScenes);
 
       // Normalize / defensively extract channels list
       const rawChannels = channelsResponse?.data;
-      let channelList = [];
-      if (Array.isArray(rawChannels)) {
-        channelList = rawChannels;
-      } else if (rawChannels && Array.isArray(rawChannels.channels)) {
-        channelList = rawChannels.channels;
-      } else if (rawChannels && Array.isArray(rawChannels.items)) {
-        channelList = rawChannels.items;
+      let channelList = extractArray('channels', rawChannels);
+      if (channelList.length === 0) {
+        console.warn('[Scenes] No channels extracted. Raw payload shape:', rawChannels);
       }
       setChannels(channelList);
       
