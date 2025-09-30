@@ -436,50 +436,42 @@ const Scenes = () => {
       )}
 
       {showImageModal && currentImageData && (
-        <div className="modal-overlay" onClick={() => setShowImageModal(false)}>
-          <div className="image-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Scene Preview: {currentImageData.scene_name}</h3>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setShowImageModal(false)}
-                aria-label="Close preview"
-              >
-                ×
-              </Button>
+        <Modal
+          isOpen={showImageModal}
+          onClose={() => setShowImageModal(false)}
+          title={`Scene Preview: ${currentImageData.scene_name}`}
+          size="large"
+        >
+          <div className="image-modal">
+            <div className="scene-image-container">
+              <img
+                src={currentImageData.image_url}
+                alt={`Preview of ${currentImageData.scene_name}`}
+                className="scene-preview-image"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  e.target.nextSibling.style.display = 'block';
+                }}
+              />
+              <div className="image-error" style={{ display: 'none' }}>
+                <p>Image preview not available</p>
+                <p className="text-tertiary">The scene may not have generated content yet.</p>
+              </div>
             </div>
-            <div className="modal-body">
-              <div className="scene-image-container">
-                <img 
-                  src={currentImageData.image_url} 
-                  alt={`Preview of ${currentImageData.scene_name}`}
-                  className="scene-preview-image"
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'block';
-                  }}
-                />
-                <div className="image-error" style={{ display: 'none' }}>
-                  <p>Image preview not available</p>
-                  <p className="text-tertiary">The scene may not have generated content yet.</p>
-                </div>
-              </div>
-              <div className="scene-details">
-                <p><strong>Scene ID:</strong> {currentImageData.scene_id}</p>
-                {currentImageData.channels && (
-                  <p><strong>Channels:</strong> {currentImageData.channels.join(', ')}</p>
-                )}
-                {currentImageData.resolution && (
-                  <p><strong>Resolution:</strong> {currentImageData.resolution.join(' × ')}</p>
-                )}
-                {currentImageData.generated_at && (
-                  <p><strong>Generated:</strong> {new Date(currentImageData.generated_at).toLocaleString()}</p>
-                )}
-              </div>
+            <div className="scene-details">
+              <p><strong>Scene ID:</strong> {currentImageData.scene_id}</p>
+              {currentImageData.channels && (
+                <p><strong>Channels:</strong> {currentImageData.channels.join(', ')}</p>
+              )}
+              {currentImageData.resolution && (
+                <p><strong>Resolution:</strong> {currentImageData.resolution.join(' × ')}</p>
+              )}
+              {currentImageData.generated_at && (
+                <p><strong>Generated:</strong> {new Date(currentImageData.generated_at).toLocaleString()}</p>
+              )}
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showDistributionManager && selectedSceneForDistribution && (
