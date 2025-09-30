@@ -358,7 +358,7 @@
   gap: var(--spacing-md);
 }
 
-.display-card {
+.dashboard-display-card {
   position: relative;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -370,11 +370,11 @@
   min-height: 110px;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.display-card.online { border-color: var(--color-success); }
-.display-card.offline { opacity: 0.6; }
-.display-card:hover { background: var(--color-surface-alt, #fafafa); }
+.dashboard-display-card.online { border-color: var(--color-success); }
+.dashboard-display-card.offline { opacity: 0.6; }
 
-.display-card-header {
+
+.dashboard-display-card-header {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
@@ -384,11 +384,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.display-card-header .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.dashboard-display-card-header .name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 
-.display-card-body { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+.dashboard-display-card-body { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 
-.display-card .scene-line { font-size: 0.7rem; }
+.dashboard-display-card .scene-line { font-size: 0.7rem; }
 .scene-badge {
   display: inline-block;
   background: var(--color-primary);
@@ -404,7 +404,7 @@
 }
 .scene-badge.empty { background: var(--color-border); color: var(--color-tertiary); }
 
-.display-card .meta {
+.dashboard-display-card .meta {
   display: flex;
   justify-content: space-between;
   align-items: center;

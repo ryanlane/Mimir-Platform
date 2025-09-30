@@ -168,12 +168,12 @@ const Dashboard = () => {
   const DisplayCard = ({ d }) => {
     const sceneName = d.assigned_scene_name || d.assignedSceneName;
     return (
-      <div className={`display-card ${d.is_online !== false ? 'online' : 'offline'}`}>
-        <div className="display-card-header">
+      <div className={`dashboard-display-card ${d.is_online !== false ? 'online' : 'offline'}`}>
+        <div className="dashboard-display-card-header">
           <Monitor size={18} />
           <span className="name" title={d.name}>{d.name}</span>
         </div>
-        <div className="display-card-body">
+  <div className="dashboard-display-card-body">
           <div className="scene-line">
             {sceneName ? <span className="scene-badge">{sceneName}</span> : <span className="scene-badge empty">Unassigned</span>}
           </div>
