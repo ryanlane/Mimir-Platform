@@ -55,31 +55,7 @@
   margin-bottom: var(--spacing-md);
 }
 
-.detail-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-xs) 0;
-  font-size: 0.875rem;
-}
 
-.detail-item .label {
-  color: var(--color-secondary);
-  font-weight: 500;
-}
-
-.detail-item .value {
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.detail-item .value.mono {
-  font-family: var(--font-family-mono);
-  font-size: 0.75rem;
-  background-color: var(--color-surface);
-  padding: var(--spacing-xs);
-  border-radius: var(--radius-sm);
-}
 
 .features-list h4 {
   margin: 0 0 var(--spacing-sm) 0;

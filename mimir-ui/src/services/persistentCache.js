@@ -40,6 +40,23 @@ async function staleWhileRevalidate({ store, key, ttl, fetcher, onUpdate }) {
   return { data: fresh, fromCache: false, stale: false };
 }
 
+// Helper to unwrap common API response shapes into a plain array (for list endpoints)
+function unwrapList(raw) {
+  if (!raw) return raw;
+  // Already an array
+  if (Array.isArray(raw)) return raw;
+  // Common shapes: { scenes: [...] }, { channels: [...] }
+  if (Array.isArray(raw.scenes)) return raw.scenes;
+  if (Array.isArray(raw.channels)) return raw.channels;
+  // Nested axios pattern some backends use: { data: { scenes: [...] }} or double wrapped
+  if (raw.data) {
+    if (Array.isArray(raw.data)) return raw.data;
+    if (Array.isArray(raw.data.scenes)) return raw.data.scenes;
+    if (Array.isArray(raw.data.channels)) return raw.data.channels;
+  }
+  return raw; // Fallback – caller will attempt its own extraction
+}
+
 export const persistentCache = {
   async getScenes({ onUpdate } = {}) {
     return staleWhileRevalidate({
@@ -48,7 +65,10 @@ export const persistentCache = {
       ttl: TTL.SCENES,
       fetcher: async () => {
         const resp = await api.getScenes();
-        return resp.data; // axios response
+        // Normalize so callers always see either an array or an object containing scenes
+        const unwrapped = unwrapList(resp.data);
+        // If we unwrapped to a bare array, return an object with scenes to preserve legacy expectations elsewhere
+        return Array.isArray(unwrapped) ? { scenes: unwrapped } : unwrapped;
       },
       onUpdate
     });
@@ -60,7 +80,8 @@ export const persistentCache = {
       ttl: TTL.CHANNELS,
       fetcher: async () => {
         const resp = await api.getChannels();
-        return resp.data;
+        const unwrapped = unwrapList(resp.data);
+        return Array.isArray(unwrapped) ? { channels: unwrapped } : unwrapped;
       },
       onUpdate
     });

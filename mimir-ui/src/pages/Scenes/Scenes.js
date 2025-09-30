@@ -83,11 +83,25 @@ const Scenes = () => {
       // Small internal helpers to normalize payloads and aid debugging
       const extractArray = (label, payload) => {
         if (!payload) return [];
+        // Direct array
         if (Array.isArray(payload)) return payload;
-        if (Array.isArray(payload.scenes)) return payload.scenes; // scenes endpoint
-        if (Array.isArray(payload.channels)) return payload.channels; // channels endpoint
-        if (Array.isArray(payload.items)) return payload.items; // generic list
-        if (Array.isArray(payload.data)) return payload.data; // sometimes nested
+        // Top-level named arrays
+        if (Array.isArray(payload.scenes)) return payload.scenes;
+        if (Array.isArray(payload.channels)) return payload.channels;
+        if (Array.isArray(payload.items)) return payload.items;
+        if (Array.isArray(payload.data)) return payload.data;
+        // Nested axios-like shapes { data: { scenes: [...] }}
+        if (payload.data) {
+          const d = payload.data;
+          if (Array.isArray(d)) return d;
+          if (Array.isArray(d.scenes)) return d.scenes;
+          if (Array.isArray(d.channels)) return d.channels;
+          if (Array.isArray(d.items)) return d.items;
+        }
+        // Development debug once per session on unexpected shape
+        if (process.env.NODE_ENV !== 'production') {
+          console.debug(`[extractArray] Unrecognized ${label} payload shape`, payload);
+        }
         return [];
       };
 
@@ -117,10 +131,11 @@ const Scenes = () => {
         }
       });
 
-      const [{ data: scenesData }, { data: channelsData }] = await Promise.all([scenesPromise, channelsPromise]);
+    const [{ data: scenesData }, { data: channelsData }] = await Promise.all([scenesPromise, channelsPromise]);
 
-  const scenesResponse = { data: scenesData };
-  const channelsResponse = { data: channelsData };
+    // persistentCache now returns object possibly like { scenes: [...] } / { channels: [...] }
+    const scenesResponse = { data: scenesData };
+    const channelsResponse = { data: channelsData };
 
       // Handle display status separately to gracefully handle "no displays" case
       let displayResponse = null;
