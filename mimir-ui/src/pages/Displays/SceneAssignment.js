@@ -1,9 +1,10 @@
 // Scene Assignment component for assigning scenes to displays
 import React, { useState, useEffect } from 'react';
-import { Monitor, Play, Image, CheckCircle } from 'lucide-react';
+import { Monitor, Play, CheckCircle } from 'lucide-react';
 import Modal from '../../components/Modal/Modal';
 import { api } from '../../services/api';
 import './Displays.css';
+import './SceneAssignment.css';
 
 const SceneAssignment = ({ display, onClose, onSuccess }) => {
   const [scenes, setScenes] = useState([]);
@@ -106,6 +107,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
       title={`Assign Scene to ${display.name}`}
       size="large"
     >
+      <div className="scene-assignment-modal">
           {error && (
             <div className="error-message">
               {error}
@@ -159,12 +161,9 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                       checked={selectedScene === ''}
                       onChange={(e) => setSelectedScene(e.target.value)}
                     />
-                    <div className="scene-info">
-                      <div className="scene-header">
-                        {/* Removed X icon (close) after migrating to shared Modal */}
-                        <span className="scene-name">No Scene (Unassign)</span>
-                      </div>
-                      <p className="scene-description">Remove any assigned scene from this display</p>
+                    <div className="scene-main">
+                      <span className="scene-name">No Scene (Unassign)</span>
+                      <span className="scene-meta">Remove assignment</span>
                     </div>
                   </label>
                 </div>
@@ -183,46 +182,19 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                           onChange={(e) => setSelectedScene(e.target.value)}
                           disabled={!compatibility.compatible}
                         />
-                        <div className="scene-info">
-                          <div className="scene-header">
-                            <Play size={20} />
-                            <span className="scene-name">{scene.name}</span>
-                            {compatibility.compatible && (
-                              <CheckCircle size={16} className="compatible-icon" />
-                            )}
-                          </div>
-                          
-                          {scene.description && (
-                            <p className="scene-description">{scene.description}</p>
+                        <div className="scene-main">
+                          <Play size={18} />
+                          <span className="scene-name">{scene.name}</span>
+                          {compatibility.compatible && (
+                            <CheckCircle size={16} className="compatible-icon" />
                           )}
-                          
-                          <div className="scene-details">
-                            <div className="scene-channels">
-                              <strong>Channels:</strong> {
-                                scene.channels?.map(ch => ch.channel_id || ch).join(', ') || 'None'
-                              }
-                            </div>
-                            
-                            {scene.overlay && scene.overlay.overlays?.length > 0 && (
-                              <div className="scene-overlays">
-                                <strong>Overlays:</strong> {scene.overlay.overlays.join(', ')}
-                              </div>
-                            )}
-                          </div>
-
                           {!compatibility.compatible && (
-                            <div className="compatibility-warning">
-                              ⚠️ {compatibility.reason}
-                            </div>
+                            <span className="compatibility-badge" title={compatibility.reason}>⚠ {compatibility.reason}</span>
                           )}
-                        </div>
-
-                        <div className="scene-preview">
-                          <div className="preview-placeholder">
-                            <Image size={24} />
-                            <span>Preview</span>
-                          </div>
-                          {/* In a real implementation, this would show actual preview */}
+                          <span className="scene-meta">
+                            {(scene.channels?.length || 0)} channel{(scene.channels?.length || 0) === 1 ? '' : 's'}
+                            {scene.overlay && scene.overlay.overlays?.length > 0 && ` • ${scene.overlay.overlays.length} overlay${scene.overlay.overlays.length === 1 ? '' : 's'}`}
+                          </span>
                         </div>
                       </label>
                     </div>
@@ -271,6 +243,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
               </div>
             </form>
           )}
+      </div>
     </Modal>
   );
 };

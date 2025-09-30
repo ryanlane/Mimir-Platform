@@ -1,0 +1,98 @@
+/* Scoped styles for SceneAssignment modal to avoid leaking to other pages */
+.scene-assignment-modal .scene-option { /* keep spacing between options */
+  margin-bottom: 0.5rem;
+}
+
+.scene-assignment-modal .scene-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  position: relative;
+}
+
+.scene-assignment-modal .scene-card:hover {
+  background: var(--color-surface-alt, rgba(var(--color-primary-rgb), 0.04));
+  border-color: var(--color-border-strong, var(--color-border));
+}
+
+.scene-assignment-modal .scene-card.incompatible {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.scene-assignment-modal .scene-card input[type="radio"] {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.scene-assignment-modal .scene-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0; /* allow truncation */
+}
+
+.scene-assignment-modal .scene-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18ch;
+}
+
+.scene-assignment-modal .scene-meta {
+  font-size: 12px;
+  color: var(--color-text-tertiary, var(--color-text-secondary));
+  margin-left: 0.5rem;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.scene-assignment-modal .compatibility-badge {
+  background: rgba(var(--color-error-rgb), 0.12);
+  color: var(--color-error);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.scene-assignment-modal .compatible-icon {
+  color: var(--color-success);
+}
+
+/* Unassign option tweak */
+.scene-assignment-modal .unassign-option .scene-name {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+.scene-assignment-modal .unassign-option .scene-meta {
+  font-style: italic;
+}
+
+/* Reduce vertical margin for last element */
+.scene-assignment-modal .scene-selection .scene-option:last-child { margin-bottom: 0.25rem; }
+
+/* Responsive: stack meta under name on very narrow widths */
+@media (max-width: 520px) {
+  .scene-assignment-modal .scene-main {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .scene-assignment-modal .scene-meta {
+    margin-left: 2rem; /* indent after radio + maybe icon */
+  }
+}
