@@ -750,58 +750,7 @@
   margin-bottom: 1rem;
 }
 
-.scene-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  padding: 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: var(--color-background);
-}
 
-.scene-card:hover {
-  border-color: var(--color-primary);
-  background: var(--color-surface);
-}
-
-.scene-card.incompatible {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.scene-card.incompatible:hover {
-  border-color: var(--color-border);
-  background: var(--color-background);
-}
-
-.scene-card.unassign-option {
-  border-color: var(--color-text-tertiary);
-  border-style: dashed;
-}
-
-.scene-card input[type="radio"] {
-  margin: 0;
-  flex-shrink: 0;
-}
-
-.scene-info {
-  flex: 1;
-}
-
-.scene-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.scene-name {
-  font-weight: 600;
-  color: var(--color-text);
-}
 
 .compatible-icon {
   color: var(--color-success);
