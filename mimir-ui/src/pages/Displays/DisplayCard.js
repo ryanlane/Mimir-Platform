@@ -5,6 +5,7 @@ import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play } from '
 import { api } from '../../services/api';
 import NeoButton from '../../components/NeoButton/NeoButton';
 import Icon from '../../components/Icon/Icon';
+import Modal from '../../components/Modal/Modal';
 
 const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiClient = api }) => {
   // const [imageLoading, setImageLoading] = useState(false); // (unused after image section commented out)
@@ -407,82 +408,56 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
           )}
         </div>
 
-        {/* {(thumbnailUrl || display.current_image_url) && (
-          <div className="display-image-section">
-            <div className="image-info">
-              <div className="image-status">
-                <Image size={14} />
-                <span>Current Image Available</span>
-              </div>
-              <div className="image-actions">
-                <button 
-                  className="btn btn-sm btn-tertiary" 
-                  onClick={handleViewImage}
-                  title="View Current Image"
-                >
-                  <Eye size={14} />
-                </button>
-                <button 
-                  className="btn btn-sm btn-tertiary" 
-                  onClick={handleRefreshImage}
-                  disabled={imageLoading}
-                  title="Refresh Image"
-                >
-                  <RotateCcw size={14} className={imageLoading ? 'spinning' : ''} />
-                </button>
-              </div>
-            </div>
-          </div>
-        )} */}
+
 
       </div>
 
-      {/* Image Preview Modal */}
-      {showImagePreview && (
-        <div className="modal-overlay" onClick={() => setShowImagePreview(false)}>
-          <div className="modal-content image-preview-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Current Display Image - {display.name}</h3>
-              <button 
-                className="modal-close" 
-                onClick={() => setShowImagePreview(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <img
-                src={persisted.image || apiClient.getDisplayImageUrl(display.id)}
-                alt={`Current display for ${display.name}`}
-                onError={() => setImageError(true)}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '70vh',
-                  objectFit: 'contain'
-                }}
-              />
-              {imageError && (
-                <p className="error-message">Failed to load image</p>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button 
-                className="btn btn-secondary" 
-                onClick={() => setShowImagePreview(false)}
-              >
-                Close
-              </button>
-              <a 
-                href={persisted.image || apiClient.getDisplayImageUrl(display.id)}
-                download={`display-${display.name}-current.jpg`}
-                className="btn btn-primary"
-              >
-                Download
-              </a>
-            </div>
+      <Modal
+        isOpen={showImagePreview}
+        onClose={() => setShowImagePreview(false)}
+        title={`Current Display Image - ${display.name}`}
+        size="large"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <img
+            src={persisted.image || apiClient.getDisplayImageUrl(display.id)}
+            alt={`Current display for ${display.name}`}
+            onError={() => setImageError(true)}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '70vh',
+              objectFit: 'contain',
+              border: '1px solid var(--color-border)',
+              borderRadius: '4px'
+            }}
+          />
+          {imageError && (
+            <p className="error-message" style={{ color: 'var(--color-error)', fontSize: '0.75rem' }}>Failed to load image</p>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
+            <NeoButton
+              label="Close"
+              icon="X"
+              iconSize={14}
+              onClick={() => setShowImagePreview(false)}
+            />
+            <NeoButton
+              label="Download"
+              icon="Download"
+              iconSize={14}
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = persisted.image || apiClient.getDisplayImageUrl(display.id);
+                link.download = `display-${display.name}-current.jpg`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            />
+
           </div>
         </div>
-      )}
+      </Modal>
     </>
   );
 };

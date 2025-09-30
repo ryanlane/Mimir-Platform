@@ -77,6 +77,19 @@
 .modal-body { padding: 1rem; overflow: auto; }
 .modal-footer { padding: .75rem 1rem; border-top: 1px solid var(--color-border); display: flex; gap: .5rem; justify-content: flex-end; }
 
+/* Display Card Variants */
+.display-card.discovered-display {
+  border-left: 4px solid var(--color-success);
+}
+
+.display-card.registered-display {
+  border-left: 4px solid var(--color-warning);
+}
+
+.display-card.discovered-display:hover {
+  border-color: var(--color-success);
+}
+
 @keyframes shimmer { 0% { transform: translateX(-60%); } 100% { transform: translateX(60%); } }
 
 @media (max-width: 700px) {
