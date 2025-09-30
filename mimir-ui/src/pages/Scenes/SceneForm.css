@@ -17,7 +17,6 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-width: 600px;
   max-height: 90vh;
   overflow: hidden;
   display: flex;
@@ -40,7 +39,6 @@
 
 .scene-form-body {
   flex: 1;
-  overflow-y: auto;
   padding: var(--spacing-lg);
 }
 

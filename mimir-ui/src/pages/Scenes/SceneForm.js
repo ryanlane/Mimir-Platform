@@ -72,7 +72,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
         isOpen={true}
         onClose={onClose}
         title="Scene Form Load Error"
-        size="large"
+        size="medium"
       >
         <div className="scene-form">
           <div className="scene-form-body">
@@ -91,7 +91,7 @@ const SceneForm = ({ scene, channels, onClose }) => {
       isOpen={true}
       onClose={onClose}
       title={scene ? 'Edit Scene' : 'Create Scene'}
-      size="large"
+      size="medium"
     >
       <div className="scene-form">
         <form onSubmit={handleSubmit} className="scene-form-body">
