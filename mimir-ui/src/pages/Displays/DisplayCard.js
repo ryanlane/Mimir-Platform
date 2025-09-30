@@ -291,9 +291,6 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
                 <div className="thumb-placeholder">No Image</div>
               )}
               <div className="reload-hint">View</div>
-              {persisted.thumb && !thumbError && (
-                <div className="thumb-badge" title="Persisted thumbnail">P</div>
-              )}
             </div>
           ) : (
             <div className={`display-thumbnail ${!display.is_online ? 'offline' : ''}`}>

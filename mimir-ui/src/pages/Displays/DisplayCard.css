@@ -30,9 +30,25 @@
 .source-badge.discovered { background: var(--color-warning); color: var(--color-background); }
 
 .display-thumbnail-wrapper { position: relative; }
-.display-thumbnail { cursor: pointer; border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden; position: relative; background: var(--color-background-alt); min-height: 120px; }
+.display-thumbnail { 
+    aspect-ratio: 1 / 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    background: var(--color-background-alt);
+    min-height: 120px; 
+}
 .display-thumbnail.offline { filter: grayscale(.5); }
-.display-thumbnail img { width: 100%; height: auto; display: block; }
+.display-thumbnail img { 
+    width: 100%; 
+    height: auto; 
+    object-fit: cover;
+}
 .display-thumbnail.loading::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(0,0,0,0.05), transparent); animation: shimmer 1.2s infinite; }
 .display-thumbnail.error { background: repeating-linear-gradient(45deg, #f87171, #f87171 10px, #ef4444 10px, #ef4444 20px); color: var(--color-background); }
 
@@ -55,7 +71,7 @@
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal-content { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; width: min(900px, 92vw); max-height: 90vh; display: flex; flex-direction: column; }
-.modal-header { padding: .75rem 1rem; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; }
+.modal-header { padding: .75rem 1rem; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; color: var(--color-text); }
 .modal-header h3 { margin: 0; font-size: .95rem; }
 .modal-close { background: transparent; border: none; font-size: 1.1rem; line-height: 1; cursor: pointer; color: var(--color-text-secondary); }
 .modal-body { padding: 1rem; overflow: auto; }
