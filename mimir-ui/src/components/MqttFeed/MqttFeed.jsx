@@ -16,9 +16,9 @@ import './MqttFeed.css';
  *  - Collapse JSON (summarize to first few keys)
  *  - Basic topic classification (status | heartbeat | event | other)
  */
-export default function MqttFeed({ feed, maxItems = 200 }) {
+export default function MqttFeed({ feed, maxItems = 200, defaultShowHeartbeats = false }) {
   const [filter, setFilter] = useState('');
-  const [showHeartbeats, setShowHeartbeats] = useState(false);
+  const [showHeartbeats, setShowHeartbeats] = useState(defaultShowHeartbeats);
   const [collapse, setCollapse] = useState(true);
 
   const filtered = useMemo(() => {
@@ -47,6 +47,9 @@ export default function MqttFeed({ feed, maxItems = 200 }) {
     return str.length > len ? str.slice(0, len - 1) + '…' : str;
   };
 
+  const rawCount = (feed || []).length;
+  const filteredCount = filtered.length;
+
   return (
     <section className="panel activity-panel mqtt-panel">
       <div className="panel-header">
@@ -70,7 +73,7 @@ export default function MqttFeed({ feed, maxItems = 200 }) {
         </div>
       </div>
       <ul className="activity-feed mqtt-feed">
-        {filtered.length ? filtered.map((e, i) => {
+        {filteredCount ? filtered.map((e, i) => {
           const topic = e?.payload?.topic;
           const kind = classify(e);
           const payload = e?.payload?.payload; // decoded json or raw string
@@ -98,8 +101,29 @@ export default function MqttFeed({ feed, maxItems = 200 }) {
               <span className="payload" title={rendered}>{truncate(rendered, collapse ? 100 : 300)}</span>
             </li>
           );
-        }) : <li className="empty">No MQTT messages</li>}
+        }) : (
+          <li className="empty">
+            {rawCount === 0 ? (
+              'No MQTT messages received yet'
+            ) : (
+              <span>
+                No messages match filters{!showHeartbeats && ' (heartbeats hidden)'}.
+                {!showHeartbeats && (
+                  <button
+                    type="button"
+                    style={{ marginLeft: 6 }}
+                    onClick={() => setShowHeartbeats(true)}
+                    className="link-button"
+                  >Show Heartbeats</button>
+                )}
+              </span>
+            )}
+          </li>
+        )}
       </ul>
+      <div style={{ padding: '4px 6px', fontSize: '0.55rem', opacity: 0.6 }}>
+        {filteredCount} shown / {rawCount} total {rawCount && !showHeartbeats ? '(heartbeats hidden)' : ''}
+      </div>
     </section>
   );
 }
