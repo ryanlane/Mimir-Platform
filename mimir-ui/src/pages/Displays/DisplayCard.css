@@ -11,6 +11,7 @@
   position: relative;
   box-shadow: var(--elevation-1, 0 1px 3px rgba(0 0 0 / 10%));
   transition: border-color .2s ease, box-shadow .2s ease;
+  max-width: 420px;
 }
 .display-card.status-online { box-shadow: var(--elevation-1); }
 .display-card.status-offline { opacity: .8; }
@@ -65,7 +66,15 @@
 .display-scene-info { margin-top: .25rem; }
 .scene-assigned { display: flex; flex-direction: column; gap: .4rem; }
 .scene-info { display: flex; align-items: center; gap: .35rem; font-size: .85rem; color: var(--color-text-secondary); padding: 10px 0; }
-.scene-buttons { display: flex; gap: .4rem; flex-wrap: wrap; }
+.scene-buttons { 
+  display: flex; 
+  flex-direction: row; 
+  gap: .4rem; 
+  flex-wrap: wrap; 
+  /* Right-align buttons within available width */
+  justify-content: flex-end; 
+  width: 100%;
+}
 .scene-unassigned { display: flex; flex-direction: column; gap: .5rem; }
 .no-scene { font-size: .6rem; color: var(--color-text-secondary); }
 
