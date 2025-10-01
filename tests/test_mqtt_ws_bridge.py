@@ -7,12 +7,13 @@ class DummyWebSocketManager:
     def __init__(self):
         self.events = []
 
-    async def emit_event(self, event: str, data, dashboards_only: bool = False, targets=None):  # noqa: D401
+    async def emit_event(self, event: str, data, audience: str = "all", display_ids=None, include_sequence: bool = False):  # noqa: D401
         self.events.append({
             "event": event,
             "data": data,
-            "dashboards_only": dashboards_only,
-            "targets": targets,
+            "audience": audience,
+            "display_ids": display_ids,
+            "include_sequence": include_sequence,
         })
 
 
@@ -34,6 +35,7 @@ async def test_forward_json_parsed(monkeypatch):
     assert evt["data"]["topic"] == "mimir/device1/status"
     assert evt["data"]["payload"] == {"status": "online"}
     assert evt["data"]["raw_payload"] == json.dumps({"status": "online"})
+    assert evt["audience"] == "dashboards"  # bridge should target dashboards
 
 
 @pytest.mark.asyncio
@@ -50,6 +52,7 @@ async def test_forward_raw_fallback(monkeypatch):
     evt = dummy.events[0]
     assert evt["data"]["payload"] == "not-json"
     assert evt["data"]["raw_payload"] == "not-json"
+    assert evt["audience"] == "dashboards"
 
 
 @pytest.mark.asyncio

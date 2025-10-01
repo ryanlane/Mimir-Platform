@@ -80,21 +80,28 @@ async def forward_mqtt_message(
     parsed = _try_parse_json(raw_text)
 
     # Emit via unified event envelope; dashboards already filter on event name.
-    await websocket_manager.emit_event(
-        "mqtt_message",
-        {
-            "topic": topic,
-            "payload": parsed,
-            "raw_payload": raw_text,
-            "qos": qos,
-            "retain": retain,
-        },
-        dashboards_only=True,
-    )
-
-    logger.debug(
-        "Forwarded MQTT message topic=%s len=%d parsed_type=%s", topic, len(raw_text), type(parsed).__name__
-    )
+    try:
+        # Unified manager uses `audience` kw instead of legacy dashboards_only flag.
+        await websocket_manager.emit_event(
+            "mqtt_message",
+            {
+                "topic": topic,
+                "payload": parsed,
+                "raw_payload": raw_text,
+                "qos": qos,
+                "retain": retain,
+            },
+            audience="dashboards",
+        )
+        logger.debug(
+            "Forwarded MQTT message topic=%s len=%d parsed_type=%s", topic, len(raw_text), type(parsed).__name__
+        )
+    except TypeError as te:  # signature mismatch safeguard
+        logger.error(
+            "WebSocket emit_event signature mismatch when forwarding MQTT (topic=%s): %s", topic, te
+        )
+    except Exception as e:  # pragma: no cover - defensive catch
+        logger.error("Unexpected error emitting mqtt_message event: %s", e, exc_info=True)
 
 
 __all__ = ["forward_mqtt_message", "should_forward"]
