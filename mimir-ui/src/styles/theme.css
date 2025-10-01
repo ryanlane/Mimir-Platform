@@ -1,7 +1,7 @@
 /* Global theme variables with automatic dark mode via prefers-color-scheme */
 /* Light theme (default) */
 
-@import url('./fonts.css');
+@import url('fonts.css');
 
 :root {
   --font-base: "Lato", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;

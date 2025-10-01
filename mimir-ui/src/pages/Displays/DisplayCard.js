@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import './DisplayCard.css';
 import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play } from 'lucide-react';
 import { api } from '../../services/api';
-import NeoButton from '../../components/NeoButton/NeoButton';
+import Button from '../../components/Button/Button';
 import Icon from '../../components/Icon/Icon';
 import Modal from '../../components/Modal/Modal';
 
@@ -352,23 +352,26 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
                 <span>Scene: <strong>{display.assigned_scene_name}</strong></span>
               </div>
               <div className="scene-buttons">
-                <NeoButton
-                  label="Edit"
+                <Button
                   icon="Edit"
-                  iconSize={14}
+                  iconSize={14}                  
                   onClick={() => onAssignScene(display)}
-                />
+                >
+                  Edit
+                </Button>
                 
                 {canManualUpdate && (
-                  <NeoButton
-                    label={manualUpdateLoading ? 'Updating...' : (manualUpdateSuccess ? 'Triggered' : 'Update')}
+                  <Button
                     icon="Zap"
-                    iconSize={14}
+                    iconSize={14}                    
                     onClick={handleManualUpdate}
                     disabled={manualUpdateLoading || manualUpdateSuccess}
-                    hasDot={manualUpdateSuccess}
-                    isActive={manualUpdateSuccess}
-                  />
+                    loading={manualUpdateLoading}
+                    variant={manualUpdateSuccess ? 'success' : 'default'}
+                    className={manualUpdateSuccess ? 'btn-active' : ''}
+                  >
+                    {manualUpdateLoading ? 'Updating...' : (manualUpdateSuccess ? 'Triggered' : 'Update')}
+                  </Button>
                 )}
                 {/* {!canManualUpdate && (
                   <button
@@ -387,12 +390,14 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
           ) : (
             <div className="scene-unassigned">
               <div className="no-scene">No scene assigned</div>
-              <NeoButton
-                label="Assign Scene"
+              <Button
                 icon="Plus"
                 iconSize={14}
+                size="sm"
                 onClick={() => onAssignScene(display)}
-              />           
+              >
+                Assign Scene
+              </Button>           
              
             </div>
           )}
@@ -435,16 +440,18 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             <p className="error-message" style={{ color: 'var(--color-error)', fontSize: '0.75rem' }}>Failed to load image</p>
           )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.25rem' }}>
-            <NeoButton
-              label="Close"
+            <Button
               icon="X"
               iconSize={14}
+              size="sm"
               onClick={() => setShowImagePreview(false)}
-            />
-            <NeoButton
-              label="Download"
+            >
+              Close
+            </Button>
+            <Button
               icon="Download"
               iconSize={14}
+              size="sm"
               onClick={() => {
                 const link = document.createElement('a');
                 link.href = persisted.image || apiClient.getDisplayImageUrl(display.id);
@@ -453,7 +460,9 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
                 link.click();
                 document.body.removeChild(link);
               }}
-            />
+            >
+              Download
+            </Button>
 
           </div>
         </div>
