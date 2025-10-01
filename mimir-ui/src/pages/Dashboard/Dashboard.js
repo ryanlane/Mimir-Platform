@@ -41,7 +41,7 @@ const Dashboard = () => {
   const recordMqtt = (type, payload) => setMqttFeed(prev => [
     { ts: new Date(), type, payload },
     ...prev
-  ].slice(0, 25));
+  ].slice(0, 500)); // allow deeper history for debugging
 
   // --- Normalization Helpers ----------------------------------------------
   const normalizeDisplay = useCallback((d) => {
@@ -169,12 +169,15 @@ const Dashboard = () => {
       });
     });
     const cleanupMqtt = wsService.on('mqtt_message', (data) => {
-      // Only record topics under mimir/#
       try {
+        console.debug('[Dashboard] mqtt_message event', data);
         const topic = data?.topic || '';
         if (!topic.startsWith('mimir/')) return;
-      } catch (_) { /* ignore */ }
-      recordMqtt('mqtt', data);
+        // normalize shape expected by feed component (payload.payload)
+        recordMqtt('mqtt', { topic, payload: data.payload, raw_payload: data.raw_payload });
+      } catch (err) {
+        console.warn('Failed handling mqtt_message event', err, data);
+      }
     });
     return () => { cleanupDisplay(); cleanupMqtt(); };
   }, [normalizeDisplay]);
