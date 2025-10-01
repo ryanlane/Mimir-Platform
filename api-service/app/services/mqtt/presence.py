@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING  # retained for future type-only hints
 from collections.abc import Callable
 from datetime import datetime, timezone
 from app.services.mqtt_ws_bridge import forward_mqtt_message
+from app.services.mqtt_debug_stats import mqtt_debug_stats
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -141,11 +142,9 @@ class MqttPresenceService:
                     await client.publish(will_topic, online_payload, qos=1, retain=True)
                     
                     # Subscribe to all device presence topics
-                    await client.subscribe("mimir/+/status", qos=1)
-                    await client.subscribe("mimir/+/heartbeat", qos=0)
-                    await client.subscribe("mimir/+/evt", qos=1)  # Subscribe to events for immediate scene assignment updates
-                    
-                    logger.info("MQTT client connected - monitoring presence on mimir/+/status, heartbeat, and events")
+                    # Broaden subscription to all mimir hierarchy for debug observability
+                    await client.subscribe("mimir/#", qos=0)
+                    logger.info("MQTT client connected - monitoring all topics under mimir/# (debug mode)")
                     
                     # Record successful connection
                     if METRICS_AVAILABLE:
@@ -171,43 +170,40 @@ class MqttPresenceService:
     async def _handle_mqtt_message(self, message):
         """Handle incoming MQTT presence messages"""
         try:
-            topic_parts = message.topic.value.split('/')
+            full_topic = message.topic.value
+            payload_bytes = message.payload
+            if not payload_bytes:
+                logger.warning(f"Received empty MQTT payload on topic {full_topic}")
+                return
+
+            mqtt_debug_stats.record_received(full_topic, payload_bytes)
+
+            topic_parts = full_topic.split('/')
+            # Expect at least mimir/<device>/<type>
             if len(topic_parts) < 3:
                 return
 
             device_id = topic_parts[1]
             message_type = topic_parts[2]
-
-            # Skip malformed topics with empty device_id
             if not device_id:
-                logger.warning(f"Skipping MQTT message with empty device_id on topic {message.topic.value}")
                 return
-
-            # Skip our own API messages
             if device_id.startswith('api-'):
-                return
-
-            payload_bytes = message.payload
-            if not payload_bytes:
-                logger.warning(f"Received empty MQTT payload on topic {message.topic.value}")
                 return
 
             try:
                 payload = json.loads(payload_bytes.decode())
-            except Exception as e:
-                logger.error(f"Error decoding MQTT message payload on topic {message.topic.value}: {e} | Raw payload: {payload_bytes!r}")
-                return
+            except Exception:
+                # Non JSON payloads still forwarded; skip presence semantics
+                payload = None
 
-            full_topic = message.topic.value
+            # Forward raw frame (bridge) with debounce
+            await self._maybe_forward(full_topic, payload_bytes, qos=None, retain=None)
 
-            # Forward raw frame (bridge) with debounce to avoid flooding heartbeats
-            await self._maybe_forward(full_topic, message.payload, qos=None, retain=None)
-
-            if message_type == "status":
+            if payload and message_type == "status":
                 await self._handle_status_message(device_id, payload)
-            elif message_type == "heartbeat":
+            elif payload and message_type == "heartbeat":
                 await self._handle_heartbeat_message(device_id, payload)
-            elif message_type == "evt":
+            elif payload and message_type == "evt":
                 await self._handle_event_message(device_id, payload)
 
         except Exception as e:
@@ -269,6 +265,7 @@ class MqttPresenceService:
                 return
             self._forward_last[topic] = now
             await forward_mqtt_message(topic=topic, payload_bytes=payload_bytes, qos=qos, retain=retain)
+            mqtt_debug_stats.record_forwarded(topic, payload_bytes)
         except Exception as e:  # pragma: no cover - defensive
             logger.warning("MQTT presence bridge forward error: %s", e)
 

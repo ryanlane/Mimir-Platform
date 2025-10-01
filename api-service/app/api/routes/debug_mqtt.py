@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.core.logging import get_logger
 from app.services.mqtt_ws_bridge import forward_mqtt_message, should_forward
+from app.services.mqtt_debug_stats import mqtt_debug_stats
 
 logger = get_logger(__name__)
 
@@ -80,3 +81,17 @@ async def mqtt_echo(req: EchoRequest, _: None = Depends(_ensure_enabled)):
     )
 
     return EchoResponse(forwarded=True, topic=req.topic, payload=req.payload, note="Forwarded to dashboards")
+
+
+@router.get("/stats")
+async def mqtt_stats(limit: int | None = None):
+        """Return current in-memory MQTT debug stats.
+
+        Query Params:
+            limit: optional, limit number of topic entries (most recent first)
+        """
+        snap = mqtt_debug_stats.snapshot()
+        topics = snap["topics"]
+        if limit is not None and limit >= 0:
+                topics = topics[:limit]
+        return {"total_topics": snap["total_topics"], "topics": topics}
