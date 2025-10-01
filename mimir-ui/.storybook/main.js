@@ -1,6 +1,7 @@
 
 
 /** @type { import('@storybook/react-webpack5').StorybookConfig } */
+import '../src/styles/theme.css';
 const config = {
   "stories": [
     "../src/**/*.mdx",

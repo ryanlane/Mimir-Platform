@@ -8,10 +8,13 @@ export default {
     layout: 'centered'
   },
   tags: ['autodocs'],
-  argTypes: {}
+  argTypes: {
+    // Hide internal implementation prop so users only tweak display data
+    apiClient: { table: { disable: true } }
+  }
 };
 
-// Simple mock api client matching methods used in component
+// Internal mock API client (not exposed as a controllable arg)
 const mockApi = {
   getPersistedLastImage: async () => ({ data: { thumbnail_url: null, image_url: null } }),
   getScene: async (id) => ({ data: { id, name: 'Sample Scene', update_strategy: 'interval', schedule: '*/5 * * * *' } }),
@@ -37,12 +40,16 @@ const baseDisplay = {
   current_image_url: true
 };
 
-const Template = (args) => <div style={{ maxWidth: 420 }}><DisplayCard {...args} /></div>;
+// Template always injects mockApi so story consumers don't need to know about it
+const Template = (args) => (
+  <div style={{ maxWidth: 420 }}>
+    <DisplayCard {...args} apiClient={mockApi} />
+  </div>
+);
 
 export const Online = Template.bind({});
 Online.args = {
   display: baseDisplay,
-  apiClient: mockApi,
   onAssignScene: () => {},
   onRefresh: () => {}
 };
@@ -50,7 +57,6 @@ Online.args = {
 export const Offline = Template.bind({});
 Offline.args = {
   display: { ...baseDisplay, is_online: false, last_seen: new Date(Date.now() - 3600 * 1000).toISOString() },
-  apiClient: mockApi,
   onAssignScene: () => {},
   onRefresh: () => {}
 };
@@ -58,7 +64,6 @@ Offline.args = {
 export const NoScene = Template.bind({});
 NoScene.args = {
   display: { ...baseDisplay, assigned_scene_id: null, assigned_scene_name: null },
-  apiClient: mockApi,
   onAssignScene: () => {},
   onRefresh: () => {}
 };
@@ -66,10 +71,27 @@ NoScene.args = {
 export const ManualUpdateInProgress = Template.bind({});
 ManualUpdateInProgress.args = {
   display: baseDisplay,
+  // Override behavior via a local wrapper; DisplayCard only receives apiClient internally
   apiClient: {
     ...mockApi,
     triggerSchedulerJob: async () => new Promise(res => setTimeout(res, 1500))
   },
+  onAssignScene: () => {},
+  onRefresh: () => {}
+};
+
+// Variant: Registered display styling
+export const RegisteredDisplay = Template.bind({});
+RegisteredDisplay.args = {
+  display: { ...baseDisplay, displayType: 'registered' },
+  onAssignScene: () => {},
+  onRefresh: () => {}
+};
+
+// Variant: Discovered display styling
+export const DiscoveredDisplay = Template.bind({});
+DiscoveredDisplay.args = {
+  display: { ...baseDisplay, displayType: 'discovered' },
   onAssignScene: () => {},
   onRefresh: () => {}
 };

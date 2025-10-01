@@ -1,4 +1,5 @@
-import { Meta, Typeset } from '@storybook/addon-docs/blocks';
+import { Meta, Typeset, Unstyled } from '@storybook/addon-docs/blocks';
+import '../styles/theme.css';
 
 <Meta title="Design/Typography" />
 
@@ -6,12 +7,13 @@ export const typography = {
   type: {
     primary: '"Lato", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
   },
+  // Use numbers for weights per Typeset API
   weight: {
-    thin: '100',
-    light: '300',
-    regular: '400',
-    bold: '700',
-    black: '900',
+    thin: 100,
+    light: 300,
+    regular: 400,
+    bold: 700,
+    black: 900,
   },
   size: {
     s1: 12,
@@ -28,53 +30,60 @@ export const typography = {
     tight: 1.1,
     normal: 1.4,
     relaxed: 1.6,
-  }
+  },
 };
 
-export const SampleText = 'The quick brown fox jumps over the lazy dog.';
+Include numbers, punctuation, and diacritics to validate glyph coverage
+
+export const SampleText = 'The quick brown fox jumps over the lazy dog. 0 1 2 3 4 5 6 7 8 9 — “quotes” — ÄÖÜ äöü — ÆØÅ — ¿Qué tal? – Добрый день';
+
 
 # Typography
 
-**Primary Font:** Lato (self-hosted)  
-**Defined Weights:** 100 (Thin), 300 (Light), 400 (Regular), 700 (Bold), 900 (Black)
+**Primary font:** Lato  
+**Weights:** 100 (Thin), 300 (Light), 400 (Regular), 700 (Bold), 900 (Black)
 
-The font family is declared as a semantic CSS variable (`--font-base`) in `theme.css`. Components should reference that variable instead of hard-coding a stack.
+Strip Storybook's default doc styles so we can enforce our own color cleanly
 
-## Scale Preview (regular Weight)
-<div style={{ color: 'var(--color-text)' }}>
-  <Typeset
-    fontSizes={[
-      typography.size.s1,
-      typography.size.s2,
-      typography.size.s3,
-      typography.size.m1,
-      typography.size.m2,
-      typography.size.m3,
-      typography.size.l1,
-      typography.size.l2,
-      typography.size.l3,
-    ]}
-    fontWeight={typography.weight.regular}
-    sampleText={SampleText}
-    fontFamily={typography.type.primary}
-  />
-</div>
+<Unstyled>
+  {/* Base color comes from your tokens; works in light/dark */}
+  <section style={{ color: '#000' }}>
+    ## Scale preview (Regular)
+    <Typeset
+      fontFamily={typography.type.primary}
+      fontSizes={[
+        typography.size.s1,
+        typography.size.s2,
+        typography.size.s3,
+        typography.size.m1,
+        typography.size.m2,
+        typography.size.m3,
+        typography.size.l1,
+        typography.size.l2,
+        typography.size.l3,
+      ]}
+      fontWeight={typography.weight.regular}
+      sampleText={SampleText}
+    />
 
-## Weight Samples
-
-<div style={{display:'grid', gap:'0.75rem', marginTop:'1rem', color: 'var(--color-text)'}}>
-  {Object.entries(typography.weight).map(([key, value]) => (
-    <div
-      key={key}
-      style={{
-        fontFamily: typography.type.primary,
-        fontWeight: value,
-        color: 'var(--color-text)'
-      }}
-    >
-      <code style={{opacity:0.6, marginRight:8}}>{value}</code>
-      {key.charAt(0).toUpperCase() + key.slice(1)} – {SampleText}
+    ## Weight samples
+    <div style={{ display: 'grid', gap: '0.5rem', marginTop: '1rem' }}>
+      {Object.entries(typography.weight).map(([name, value]) => (
+        <div key={name} style={{ fontFamily: typography.type.primary, fontWeight: value }}>
+          <code style={{ opacity: 0.7, marginRight: 8 }}>{value}</code>
+          {name.charAt(0).toUpperCase() + name.slice(1)} — {SampleText}
+        </div>
+      ))}
     </div>
-  ))}
-</div>
 
+    ## Line-height samples
+    <div style={{ display: 'grid', gap: '0.75rem', marginTop: '1rem' }}>
+      {Object.entries(typography.lineHeight).map(([name, lh]) => (
+        <p key={name} style={{ fontFamily: typography.type.primary, lineHeight: lh, margin: 0 }}>
+          <code style={{ opacity: 0.7, marginRight: 8 }}>lh: {lh}</code>
+          {name.charAt(0).toUpperCase() + name.slice(1)} — {SampleText}
+        </p>
+      ))}
+    </div>
+  </section>
+</Unstyled>

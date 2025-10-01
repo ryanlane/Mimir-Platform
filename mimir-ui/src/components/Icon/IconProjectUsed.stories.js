@@ -2,7 +2,7 @@ import React from 'react';
 import { PROJECT_ICON_NAMES, Icon } from './Icon';
 
 export default {
-  title: 'Components/Icon/ProjectUsed',
+  title: 'Components/Icon',
   component: Icon,
   tags: ['autodocs'],
   parameters: {

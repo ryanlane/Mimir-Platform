@@ -4,57 +4,60 @@ import { Meta, ColorPalette, ColorItem } from '@storybook/addon-docs/blocks';
 
 <ColorPalette>
   <ColorItem
+    data-theme="light"
     title="Text & Icon"
     subtitle="Core foreground tokens"
     colors={{
-      Text: 'var(--color-text)',
-      TextSecondary: 'var(--color-text-secondary)',
-      Icon: 'var(--color-icon)'
+      text: '#000000D0',
+      Secondary: '#000000A0',
+      Tertiary: '#3b4b59',
+      Icon: '#000000A0'
     }}
   />
   <ColorItem
     title="Greys / Surfaces"
     subtitle="Foundational backgrounds"
     colors={{
-      Background: 'var(--color-background)',
-      BackgroundAlt: 'var(--color-background-alt)',
-      Surface: 'var(--color-surface)',
-      SurfaceHover: 'var(--color-surface-hover)',
-      Border: 'var(--color-border)'
+      Background: '#f4f4f4',
+      BackgroundAlt: '#f8f8f8DD',
+      Surface: '#e9e6e3',
+      Border: '#e0e0e0'
     }}
   />
   <ColorItem
     title="Neutral FG Scale"
     subtitle="Foreground emphasis levels"
     colors={{
-      Primary: 'var(--color-primary)',
-      Secondary: 'var(--color-secondary)',
-      Tertiary: 'var(--color-tertiary)'
+      Mimir: '#7eff00C0',
+      Primary: '#000000',
+      Secondary: '#333333',
+      Tertiary: '#666666'
     }}
   />
   <ColorItem
     title="Accent"
     subtitle="Interactive / link accent"
     colors={{
-      Accent: 'var(--color-accent)',
-      AccentHover: 'var(--color-accent-hover)'
+      Accent: '#3b4b59',
+      AccentHover: '#5f788d'
     }}
   />
   <ColorItem
     title="Status"
     subtitle="Semantic feedback colors"
     colors={{
-      Success: 'var(--color-success)',
-      Warning: 'var(--color-warning)',
-      Error: 'var(--color-error)',
-      FocusRing: 'var(--color-focus-ring)'
+      Active: '#8d962941',
+      Success: '#8d9629',
+      Warning: '#cc6324',
+      Error: '#bf1b1b',
+      FocusRing: '#bfa07a'
     }}
   />
   <ColorItem
     title="Gradient"
     subtitle="Decorative accent gradient"
     colors={{
-      GradientAccent: 'var(--gradient-accent)'
+      GradientAccent: 'linear-gradient(135deg, #0066cc, #004c99)'
     }}
   />
 </ColorPalette>

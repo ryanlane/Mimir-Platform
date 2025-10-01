@@ -5,6 +5,7 @@ import { ThemeContext } from '../../App';
 export default {
   title: 'Components/ThemeSelector',
   component: ThemeSelector,
+  tags: ['autodocs'],
   parameters: {
     layout: 'centered',
     docs: {

@@ -1,0 +1,46 @@
+import { Meta, ColorPalette, ColorItem } from '@storybook/addon-docs/blocks';
+
+<Meta title="Design/Color Palette" />
+
+export const tokens = {
+  text: {
+    'Text / Primary': 'var(--color-text)',
+    'Text / Secondary': 'var(--color-text-secondary)',
+    'Link / Accent': 'var(--color-accent)',
+  },
+  surface: {
+    'Background': 'var(--color-background)',
+    'Surface': 'var(--color-surface)',
+    'Border': 'var(--color-border)',
+  },
+  status: {
+    'Success': 'var(--color-success)',
+    'Warning': 'var(--color-warning)',
+    'Error': 'var(--color-error)',
+  },
+};
+
+// Optional: show a gradient token too (supported by ColorItem)
+export const extras = {
+  'Brand Gradient': 'linear-gradient(90deg, var(--color-accent), var(--color-primary))'
+};
+
+# Colors (Light theme)
+{/* Background follows your configured “light” background and theme decorator */}
+<ColorPalette>
+  <ColorItem title="Text" subtitle="Semantic text tokens" colors={tokens.text} />
+  <ColorItem title="Surfaces" subtitle="Background / surface / border" colors={tokens.surface} />
+  <ColorItem title="Status" subtitle="Feedback colors" colors={tokens.status} />
+  <ColorItem title="Gradients" subtitle="Example" colors={extras} />
+</ColorPalette>
+
+# Colors (Dark theme)
+{/* Force dark locally so var() resolves to dark values (works if your CSS sets vars on [data-theme='dark']) */}
+<div data-theme="dark" style={{ padding: 12, borderRadius: 12 }}>
+  <ColorPalette>
+    <ColorItem title="Text" subtitle="Semantic text tokens" colors={tokens.text} />
+    <ColorItem title="Surfaces" subtitle="Background / surface / border" colors={tokens.surface} />
+    <ColorItem title="Status" subtitle="Feedback colors" colors={tokens.status} />
+    <ColorItem title="Gradients" subtitle="Example" colors={extras} />
+  </ColorPalette>
+</div>
