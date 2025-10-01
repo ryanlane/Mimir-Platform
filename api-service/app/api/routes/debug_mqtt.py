@@ -57,9 +57,11 @@ def _ensure_enabled():  # simple dependency gate
 
 
 @router.post("/echo", response_model=EchoResponse)
-async def mqtt_echo(req: EchoRequest, _: None = Depends(_ensure_enabled)):
+async def mqtt_echo(req: EchoRequest, burst: int | None = None, _: None = Depends(_ensure_enabled)):
     if not should_forward(req.topic):
         raise HTTPException(status_code=400, detail="Topic must begin with mimir/")
+    if '#' in req.topic or '+' in req.topic:
+        raise HTTPException(status_code=400, detail="Wildcards (#,+) not allowed in publish topics")
 
     # Prepare synthetic bytes payload (JSON serialization done here)
     import json
@@ -73,14 +75,25 @@ async def mqtt_echo(req: EchoRequest, _: None = Depends(_ensure_enabled)):
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=f"Payload not JSON serializable: {e}") from e
 
-    await forward_mqtt_message(
-        topic=req.topic,
-        payload_bytes=raw_bytes,
-        qos=req.qos,
-        retain=req.retain,
-    )
+    count = burst if (burst and burst > 0) else 1
+    if count > 1000:
+        raise HTTPException(status_code=400, detail="Burst too large (max 1000)")
+    for i in range(count):
+        # For burst >1, mutate a simple index field if payload is object
+        send_bytes = raw_bytes
+        if count > 1 and isinstance(req.payload, dict):
+            import json as _json
+            mutated = {**req.payload, "_burst_index": i}
+            send_bytes = _json.dumps(mutated).encode()
+        await forward_mqtt_message(
+            topic=req.topic,
+            payload_bytes=send_bytes,
+            qos=req.qos,
+            retain=req.retain,
+        )
 
-    return EchoResponse(forwarded=True, topic=req.topic, payload=req.payload, note="Forwarded to dashboards")
+    note = f"Forwarded {count} message(s) to dashboards"
+    return EchoResponse(forwarded=True, topic=req.topic, payload=req.payload, note=note)
 
 
 @router.get("/stats")

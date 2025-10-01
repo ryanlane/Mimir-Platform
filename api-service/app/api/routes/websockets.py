@@ -22,7 +22,8 @@ router = APIRouter(tags=["websockets"])  # Reuse global singleton
 @router.get("/api/websocket/status")
 async def get_websocket_status():
     """Return basic status/feature info about current WebSocket subsystem."""
-    stats = manager.stats()
+    # Use available public stats accessor
+    stats = manager.get_connection_stats()
     return {
         "connected_clients": stats["total_connections"],
         "websocket_url": "/ws",  # Client can resolve scheme/host
@@ -65,7 +66,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.emit_event("pong", {"timestamp": datetime.datetime.now().isoformat()}, targets=[websocket])
             elif event == "state_sync_request":
                 # Provide snapshot-like minimal info (reuse stats for now)
-                await manager.emit_event("state_snapshot", manager.stats(), targets=[websocket])
+                await manager.emit_event("state_snapshot", manager.get_connection_stats(), targets=[websocket])
             else:
                 await manager.emit_event("unknown_event", {"original": msg}, targets=[websocket])
     except WebSocketDisconnect:
