@@ -1,245 +1,124 @@
+"""WebSocket API Routes using unified WebSocketManager.
+
+This module exposes two endpoints:
+    - /ws : dashboard / generic clients
+    - /ws/display/{display_id} : display clients
+
+Responsibilities intentionally minimal — business logic now lives in
+`app.services.websocket_manager.WebSocketManager`.
 """
-WebSocket API Routes
-FastAPI router for WebSocket connections and real-time communication
-"""
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlalchemy.orm import Session
-import json
+from __future__ import annotations
+
 import asyncio
 import datetime
-from typing import Dict, List
+import json
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.db.base import SessionLocal
-from app.services.websocket_manager import ConnectionManager
+from app.services.websocket_manager import websocket_manager as manager
 
-
-router = APIRouter(tags=["websockets"])
-
-# Global WebSocket connection manager
-manager = ConnectionManager()
-
-
-def get_db():
-    """Database dependency"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+router = APIRouter(tags=["websockets"])  # Reuse global singleton
 
 
 @router.get("/api/websocket/status")
 async def get_websocket_status():
-    """Get current WebSocket connection status and information"""
+    """Return basic status/feature info about current WebSocket subsystem."""
+    stats = manager.stats()
     return {
-        "connected_clients": manager.get_connected_clients_count(),
-        "websocket_url": "ws://localhost:5000/ws",  # This should be dynamic based on server config
-        "current_sequence_id": manager.get_current_sequence_id(),
+        "connected_clients": stats["total_connections"],
+        "websocket_url": "/ws",  # Client can resolve scheme/host
+        "current_sequence_id": stats["sequence_id"],
         "features": {
             "full_state_on_connect": True,
             "heartbeat_support": True,
-            "enhanced_events": True,
-            "error_broadcasting": True,
-            "channel_status_updates": True
-        }
+            "generic_event_envelope": True,
+            "channel_status_updates": True,
+        },
     }
 
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """Main WebSocket endpoint for real-time communication"""
-    await manager.connect(websocket)
-    
+    """Dashboard / generic client endpoint.
+
+    Incoming messages currently support a minimal subset (ping/state_sync_request).
+    All outbound messages unified under `emit_event` envelope.
+    """
+    await manager.connect_dashboard(websocket)
     try:
-        # Send full state snapshot on connection
-        await manager.send_full_state(websocket)
-        
-        # Keep connection alive and handle incoming messages
         while True:
             try:
-                # Wait for messages from client with timeout for heartbeat
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-                
-                try:
-                    message = json.loads(data)
-                    await handle_websocket_message(websocket, message)
-                        
-                except json.JSONDecodeError:
-                    # Handle non-JSON messages
-                    await manager.send_personal_message(f"Echo: {data}", websocket)
-                    
             except asyncio.TimeoutError:
-                # Send heartbeat ping if no message received
-                await send_heartbeat(websocket)
-                
+                # Heartbeat ping
+                await manager.emit_event("ping", {"timestamp": datetime.datetime.now().isoformat()}, targets=[websocket])
+                continue
+
+            # Attempt JSON parse; if fail echo raw text
+            try:
+                msg = json.loads(data)
+            except json.JSONDecodeError:
+                await manager.emit_event("echo", {"text": data}, targets=[websocket])
+                continue
+
+            event = msg.get("event")
+            if event == "ping":
+                await manager.emit_event("pong", {"timestamp": datetime.datetime.now().isoformat()}, targets=[websocket])
+            elif event == "state_sync_request":
+                # Provide snapshot-like minimal info (reuse stats for now)
+                await manager.emit_event("state_snapshot", manager.stats(), targets=[websocket])
+            else:
+                await manager.emit_event("unknown_event", {"original": msg}, targets=[websocket])
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-    except Exception as e:
-        print(f"WebSocket error: {e}")
+    except Exception as e:  # pragma: no cover - defensive
         manager.disconnect(websocket)
 
 
-async def handle_websocket_message(websocket: WebSocket, message: dict):
-    """Handle incoming WebSocket messages"""
-    event = message.get("event")
-    
-    if event == "ping":
-        # Respond to ping with pong
-        pong_response = {
-            "event": "pong",
-            "data": {"timestamp": datetime.datetime.now().isoformat()},
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        await manager.send_personal_message(json.dumps(pong_response), websocket)
-        
-    elif event == "state_sync_request":
-        # Handle state sync request
-        await manager.send_full_state(websocket)
-        
-    elif event == "subscribe":
-        # Handle subscription management
-        events = message.get("data", {}).get("events", [])
-        await manager.send_personal_message(
-            json.dumps({
-                "event": "subscription_confirmed",
-                "data": {"events": events},
-                "timestamp": datetime.datetime.now().isoformat()
-            }),
-            websocket
-        )
-        
-    elif event == "display_status_update":
-        # Handle display status updates
-        await handle_display_status_update(websocket, message.get("data", {}))
-        
-    elif event == "scene_change_request":
-        # Handle scene change requests
-        await handle_scene_change_request(websocket, message.get("data", {}))
-        
-    else:
-        # Echo back unknown messages for debugging
-        await manager.send_personal_message(
-            json.dumps({
-                "event": "unknown_event",
-                "data": message,
-                "timestamp": datetime.datetime.now().isoformat()
-            }),
-            websocket
-        )
+# Legacy helper handlers removed; logic simplified inline in endpoint.
 
 
-async def send_heartbeat(websocket: WebSocket):
-    """Send heartbeat ping message"""
-    ping_message = {
-        "event": "ping",
-        "data": {"timestamp": datetime.datetime.now().isoformat()},
-        "timestamp": datetime.datetime.now().isoformat()
-    }
-    await manager.send_personal_message(json.dumps(ping_message), websocket)
+# Heartbeat now uses manager.emit_event directly inside loop.
 
 
-async def handle_display_status_update(websocket: WebSocket, data: dict):
-    """Handle display status update messages"""
-    # Broadcast display status updates to all connected clients
-    status_message = {
-        "event": "display_status_changed",
-        "data": data,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
-    await manager.broadcast(json.dumps(status_message))
+async def handle_display_status_update(data: dict):  # compatibility wrapper (may expand later)
+    await manager.emit_event("display_status_changed", data)
 
 
-async def handle_scene_change_request(websocket: WebSocket, data: dict):
-    """Handle scene change request messages"""
-    # Process scene change and broadcast to relevant displays
-    scene_id = data.get("scene_id")
-    display_id = data.get("display_id")
-    
-    change_message = {
-        "event": "scene_change_requested",
-        "data": {
-            "scene_id": scene_id,
-            "display_id": display_id,
-            "requested_by": "websocket_client"
-        },
-        "timestamp": datetime.datetime.now().isoformat()
-    }
-    await manager.broadcast(json.dumps(change_message))
+async def handle_scene_change_request(data: dict):  # compatibility wrapper
+    await manager.emit_event("scene_change_requested", {
+        "scene_id": data.get("scene_id"),
+        "display_id": data.get("display_id"),
+        "requested_by": "websocket_client",
+    })
 
 
 @router.websocket("/ws/display/{display_id}")
 async def display_websocket_endpoint(websocket: WebSocket, display_id: str):
-    """WebSocket endpoint for specific display clients"""
+    """Display client endpoint using unified manager."""
     await manager.connect_display(websocket, display_id)
-    
     try:
         while True:
-            data = await websocket.receive_text()
-            
+            raw = await websocket.receive_text()
             try:
-                message = json.loads(data)
-                
-                # Add display_id to message context
-                message["display_id"] = display_id
-                
-                # Handle display-specific messages
-                await handle_display_message(websocket, display_id, message)
-                
+                msg = json.loads(raw)
             except json.JSONDecodeError:
-                error_response = {
-                    "event": "error",
-                    "data": {"message": "Invalid JSON format"},
-                    "timestamp": datetime.datetime.now().isoformat()
-                }
-                await websocket.send_text(json.dumps(error_response))
-                
+                await manager.emit_event("error", {"message": "Invalid JSON", "raw": raw}, targets=[websocket])
+                continue
+
+            event = msg.get("event")
+            if event == "status_update":
+                payload = {"display_id": display_id, **msg.get("data", {})}
+                await handle_display_status_update(payload)
+            elif event == "content_rendered":
+                await manager.emit_event("content_rendered", {"display_id": display_id, **msg.get("data", {})})
+            elif event == "error":
+                await manager.emit_event("display_error", {"display_id": display_id, **msg.get("data", {})})
+            else:
+                await manager.emit_event("message_acknowledged", {"display_id": display_id, "original_event": event}, targets=[websocket])
     except WebSocketDisconnect:
         manager.disconnect_display(websocket, display_id)
-    except Exception as e:
-        print(f"Display WebSocket error for {display_id}: {e}")
+    except Exception:  # pragma: no cover - defensive
         manager.disconnect_display(websocket, display_id)
 
 
-async def handle_display_message(websocket: WebSocket, display_id: str, message: dict):
-    """Handle messages from display clients"""
-    event = message.get("event")
-    
-    if event == "status_update":
-        # Update display status in database and broadcast
-        await handle_display_status_update(websocket, {
-            "display_id": display_id,
-            **message.get("data", {})
-        })
-        
-    elif event == "content_rendered":
-        # Handle content rendering confirmation
-        content_message = {
-            "event": "content_rendered",
-            "data": {
-                "display_id": display_id,
-                **message.get("data", {})
-            },
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        await manager.broadcast(json.dumps(content_message))
-        
-    elif event == "error":
-        # Handle display errors
-        error_message = {
-            "event": "display_error",
-            "data": {
-                "display_id": display_id,
-                **message.get("data", {})
-            },
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        await manager.broadcast(json.dumps(error_message))
-        
-    else:
-        # Acknowledge unknown events
-        ack_response = {
-            "event": "message_acknowledged",
-            "data": {"original_event": event},
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        await websocket.send_text(json.dumps(ack_response))
+# Removed legacy per-message handler; logic handled inline for simplicity.

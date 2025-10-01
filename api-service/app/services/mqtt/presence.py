@@ -6,12 +6,13 @@ Replaces polling-based timeout detection with event-driven presence
 import asyncio
 import json
 import socket
-from typing import Dict, Optional, Callable, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING  # retained for future type-only hints
+from collections.abc import Callable
 from datetime import datetime, timezone
-from app.services.mqtt import topics
+from app.services.mqtt_ws_bridge import forward_mqtt_message
 
-if TYPE_CHECKING:
-    from app.services.mdns_discovery import MdnsDiscoveryService
+if TYPE_CHECKING:  # pragma: no cover
+    pass
 
 try:
     from aiomqtt import Client, MqttError
@@ -41,15 +42,18 @@ class MqttPresenceService:
         self.client_id = f"mimir-api-{socket.gethostname()}"
         
         # Presence tracking
-        self.online_devices: Set[str] = set()
-        self.device_metadata: Dict[str, Dict] = {}
-        
+        self.online_devices: set[str] = set()
+        self.device_metadata: dict[str, dict] = {}
+
         # Callbacks for presence events
-        self.presence_callbacks: Set[Callable] = set()
-        
+        self.presence_callbacks: set[Callable] = set()
+
         # Client state
-        self.client: Optional[Client] = None
+        self.client: Client | None = None
         self.is_running = False
+        # Simple per-topic debounce (topic -> last_forward_ts)
+        self._forward_last: dict[str, float] = {}
+        self._debounce_seconds: float = float(getattr(settings, "mqtt_ws_debounce_seconds", 0.75))
         
         logger.info(f"MQTT Presence Service initialized - Broker: {self.broker_host}:{self.broker_port}")
     
@@ -61,7 +65,7 @@ class MqttPresenceService:
         """Remove presence callback"""
         self.presence_callbacks.discard(callback)
     
-    def _notify_presence_callbacks(self, device_id: str, event_type: str, metadata: Dict = None):
+    def _notify_presence_callbacks(self, device_id: str, event_type: str, metadata: dict | None = None):
         """Notify all presence callbacks of an event"""
         for callback in self.presence_callbacks:
             try:
@@ -118,11 +122,7 @@ class MqttPresenceService:
             try:
                 # Set up Last Will & Testament for this API instance
                 will_topic = f"mimir/api/{self.client_id}/status"
-                will_payload = json.dumps({
-                    "status": "offline",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "reason": "unexpected_disconnect"
-                })
+                # Prepare last will (future aiomqtt API may use explicit config method)
                 
                 async with Client(
                     hostname=self.broker_host,
@@ -145,7 +145,7 @@ class MqttPresenceService:
                     await client.subscribe("mimir/+/heartbeat", qos=0)
                     await client.subscribe("mimir/+/evt", qos=1)  # Subscribe to events for immediate scene assignment updates
                     
-                    logger.info(f"MQTT client connected - monitoring presence on mimir/+/status, heartbeat, and events")
+                    logger.info("MQTT client connected - monitoring presence on mimir/+/status, heartbeat, and events")
                     
                     # Record successful connection
                     if METRICS_AVAILABLE:
@@ -198,6 +198,11 @@ class MqttPresenceService:
                 logger.error(f"Error decoding MQTT message payload on topic {message.topic.value}: {e} | Raw payload: {payload_bytes!r}")
                 return
 
+            full_topic = message.topic.value
+
+            # Forward raw frame (bridge) with debounce to avoid flooding heartbeats
+            await self._maybe_forward(full_topic, message.payload, qos=None, retain=None)
+
             if message_type == "status":
                 await self._handle_status_message(device_id, payload)
             elif message_type == "heartbeat":
@@ -208,7 +213,7 @@ class MqttPresenceService:
         except Exception as e:
             logger.error(f"Error handling MQTT message: {e}")
     
-    async def _handle_status_message(self, device_id: str, payload: Dict):
+    async def _handle_status_message(self, device_id: str, payload: dict):
         """Handle device status messages (online/offline)"""
         status = payload.get("status", "unknown")
         timestamp = payload.get("timestamp", datetime.now(timezone.utc).isoformat())
@@ -255,8 +260,20 @@ class MqttPresenceService:
                 if METRICS_AVAILABLE:
                     metrics.discovery_display_lost(device_id)
 
+    async def _maybe_forward(self, topic: str, payload_bytes: bytes, qos: int | None, retain: bool | None):
+        """Forward to websocket dashboards respecting debounce window per topic."""
+        try:
+            now = asyncio.get_event_loop().time()
+            last = self._forward_last.get(topic)
+            if last is not None and (now - last) < self._debounce_seconds:
+                return
+            self._forward_last[topic] = now
+            await forward_mqtt_message(topic=topic, payload_bytes=payload_bytes, qos=qos, retain=retain)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("MQTT presence bridge forward error: %s", e)
 
-    async def _handle_heartbeat_message(self, device_id: str, payload: Dict):
+
+    async def _handle_heartbeat_message(self, device_id: str, payload: dict):
         """Handle device heartbeat messages"""
         logger.info(f"Received heartbeat from device {device_id}: {payload}")
         
@@ -289,7 +306,7 @@ class MqttPresenceService:
             logger.info(f"Device marked online via heartbeat: {device_id}")
             self._notify_presence_callbacks(device_id, "heartbeat_online", {"timestamp": timestamp.isoformat()})
     
-    async def _handle_event_message(self, device_id: str, payload: Dict):
+    async def _handle_event_message(self, device_id: str, payload: dict):
         """Handle device event messages for immediate scene assignment updates"""
         event_type = payload.get("type")
         
@@ -328,7 +345,7 @@ class MqttPresenceService:
                 
                 logger.info(f"Updated scene assignment from event for {device_id}: scene_id={scene_id}, subchannel_id={subchannel_id}")
     
-    async def publish_device_status(self, device_id: str, status: str, metadata: Dict = None):
+    async def publish_device_status(self, device_id: str, status: str, metadata: dict | None = None):
         """Publish status for a device (useful for testing or manual control)"""
         if not self.client:
             logger.warning("Cannot publish device status - MQTT client not connected")
@@ -350,15 +367,15 @@ class MqttPresenceService:
             logger.error(f"Error publishing device status: {e}")
             return False
     
-    def get_online_devices(self) -> Set[str]:
+    def get_online_devices(self) -> set[str]:
         """Get set of currently online device IDs"""
         return self.online_devices.copy()
     
-    def get_device_metadata(self, device_id: str) -> Optional[Dict]:
+    def get_device_metadata(self, device_id: str) -> dict | None:
         """Get metadata for a specific device"""
         return self.device_metadata.get(device_id)
     
-    def get_all_device_metadata(self) -> Dict[str, Dict]:
+    def get_all_device_metadata(self) -> dict[str, dict]:
         """Get metadata for all known devices"""
         return self.device_metadata.copy()
     
@@ -366,7 +383,7 @@ class MqttPresenceService:
         """Check if a specific device is currently online"""
         return device_id in self.online_devices
     
-    def get_presence_stats(self) -> Dict:
+    def get_presence_stats(self) -> dict:
         """Get presence statistics"""
         total_devices = len(self.device_metadata)
         online_devices = len(self.online_devices)
@@ -406,11 +423,11 @@ async def setup_mqtt_integration():
         return False
 
 
-def _bridge_to_discovery_system(device_id: str, event_type: str, metadata: Dict):
+def _bridge_to_discovery_system(device_id: str, event_type: str, metadata: dict):
     """Bridge MQTT presence events to existing discovery system"""
     try:
         # Import here to avoid circular imports
-        from app.services.mdns_discovery import mdns_discovery_service
+    # (Import of mdns_discovery_service intentionally omitted to avoid circular + unused warning)
         
         if event_type == "online":
             logger.info(f"MQTT: Device {device_id} came online - notifying discovery system")
@@ -420,5 +437,5 @@ def _bridge_to_discovery_system(device_id: str, event_type: str, metadata: Dict)
             logger.info(f"MQTT: Device {device_id} went offline - notifying discovery system")
             # You can extend this to update the mDNS discovery service state
             
-    except Exception as e:
+    except Exception as e:  # pragma: no cover - defensive
         logger.error(f"Error bridging MQTT presence to discovery system: {e}")
