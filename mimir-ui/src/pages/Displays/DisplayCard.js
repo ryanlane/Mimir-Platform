@@ -354,7 +354,8 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
               <div className="scene-buttons">
                 <Button
                   icon="Edit"
-                  iconSize={14}                  
+                  iconSize={14}
+                  variant='primary'
                   onClick={() => onAssignScene(display)}
                 >
                   Edit
@@ -367,7 +368,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
                     onClick={handleManualUpdate}
                     disabled={manualUpdateLoading || manualUpdateSuccess}
                     loading={manualUpdateLoading}
-                    variant={manualUpdateSuccess ? 'success' : 'default'}
+                    variant={manualUpdateSuccess ? 'success' : 'secondary'}
                     className={manualUpdateSuccess ? 'btn-active' : ''}
                   >
                     {manualUpdateLoading ? 'Updating...' : (manualUpdateSuccess ? 'Triggered' : 'Update')}
@@ -394,6 +395,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
                 icon="Plus"
                 iconSize={14}
                 size="sm"
+                variant='primary'
                 onClick={() => onAssignScene(display)}
               >
                 Assign Scene
