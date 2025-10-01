@@ -331,13 +331,6 @@ const Dashboard = () => {
         <ChannelUsageBar />
       </section>
 
-      {/* Quick Scene Launcher */}
-      <section className="panel">
-        <div className="panel-header">
-          <h3><Play size={18} /> Quick Scenes</h3>
-        </div>
-        <QuickSceneList />
-      </section>
 
       {/* Recent Activity */}
       <section className="panel activity-panel">
