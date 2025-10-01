@@ -19,6 +19,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [activity, setActivity] = useState([]); // recent scene events
   const [mqttFeed, setMqttFeed] = useState([]); // mqtt + display status events
+  const [channels, setChannels] = useState([]); // channel metadata
+  const [channelUsage, setChannelUsage] = useState({}); // channel_id -> count of scenes using
 
   const { isConnected, currentState } = useEnsureFreshState();
 
@@ -95,6 +97,35 @@ const Dashboard = () => {
     }
   }, [normalizeSceneArray]);
 
+  const refreshChannels = useCallback(async () => {
+    try {
+      const resp = await api.getChannels();
+      const raw = resp.data?.channels || resp.data || [];
+      setChannels(raw);
+    } catch (e) {
+      console.error('Failed to load channels', e);
+    }
+  }, []);
+
+  // recompute channel usage whenever scenes or channels change
+  useEffect(() => {
+    if (!channels.length || !scenes.length) {
+      setChannelUsage({});
+      return;
+    }
+    // Scenes have channels array; normalize IDs (could be objects or strings)
+    const usage = {};
+    scenes.forEach(s => {
+      (s.channels || []).forEach(ch => {
+        let id = null;
+        if (typeof ch === 'string') id = ch;
+        else if (ch && typeof ch === 'object') id = ch.id || ch.channel_id || ch.name; // fallback to name
+        if (id) usage[id] = (usage[id] || 0) + 1;
+      });
+    });
+    setChannelUsage(usage);
+  }, [scenes, channels]);
+
   // Initial load (fallback if websocket state not populated quickly)
   useEffect(() => {
     let timeout = setTimeout(() => {
@@ -117,9 +148,7 @@ const Dashboard = () => {
 
   // Listen for display status & generic mqtt-related events via websocket raw events
   useEffect(() => {
-    // Access underlying ws service lazily to avoid import cycle
     const { wsService } = require('../../services/websocket');
-
     const cleanupDisplay = wsService.on('display_status_changed', (data) => {
       recordMqtt('display_status', data);
       const nd = normalizeDisplay(data);
@@ -132,8 +161,12 @@ const Dashboard = () => {
         return copy;
       });
     });
-    // Generic server forwarded mqtt message (if backend emits 'mqtt_message')
     const cleanupMqtt = wsService.on('mqtt_message', (data) => {
+      // Only record topics under mimir/#
+      try {
+        const topic = data?.topic || '';
+        if (!topic.startsWith('mimir/')) return;
+      } catch (_) { /* ignore */ }
       recordMqtt('mqtt', data);
     });
     return () => { cleanupDisplay(); cleanupMqtt(); };
@@ -202,6 +235,48 @@ const Dashboard = () => {
     );
   };
 
+  const ScenesOverview = () => {
+    if (!scenes.length) return <p className="text-tertiary">No scenes</p>;
+    return (
+      <div className="scenes-overview-grid">
+        {scenes.map(s => {
+          const count = sceneDisplayCounts[s.id] || 0;
+          return (
+            <div key={s.id} className={`scene-overview-card ${s.is_active ? 'active' : ''}`}> 
+              <div className="soc-header">
+                <Layers size={14} />
+                <span className="soc-name" title={s.name}>{s.name}</span>
+              </div>
+              <div className="soc-body">
+                <span className="soc-count" title="Assigned displays">{count} display{count === 1 ? '' : 's'}</span>
+                {s.distribution_mode && <span className="soc-mode" title="Distribution mode">{s.distribution_mode}</span>}
+              </div>
+            </div>
+          );
+        })}
+        <Link to="/scenes" className="scene-overview-card manage-link" title="Manage scenes">Manage…</Link>
+      </div>
+    );
+  };
+
+  const ChannelUsageBar = () => {
+    if (!channels.length) return null;
+    return (
+      <div className="channel-usage-bar">
+        {channels.map(ch => {
+          const id = ch.id || ch.channel_id || ch.identifier;
+            const count = channelUsage[id] || 0;
+            return (
+              <div key={id} className="channel-usage-item" title={`${count} scene(s)`}>
+                <span className="c-name">{ch.name || id}</span>
+                <span className="c-count">{count}</span>
+              </div>
+            );
+        })}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="loading">
@@ -239,6 +314,23 @@ const Dashboard = () => {
         </div>
       </section>
 
+      {/* Scenes Overview */}
+      <section className="panel">
+        <div className="panel-header">
+          <h3><Layers size={18} /> Scenes Overview</h3>
+          <Link to="/scenes" className="link-sm">View All</Link>
+        </div>
+        <ScenesOverview />
+      </section>
+
+      {/* Channel Usage Status */}
+      <section className="panel">
+        <div className="panel-header">
+          <h3><Layers size={18} /> Channel Usage</h3>
+        </div>
+        <ChannelUsageBar />
+      </section>
+
       {/* Quick Scene Launcher */}
       <section className="panel">
         <div className="panel-header">
@@ -259,7 +351,7 @@ const Dashboard = () => {
         </ul>
       </section>
 
-      {/* Real-time Display / MQTT Feed */}
+      {/* Live Device Feed (filtered mimir/#) */}
       <section className="panel activity-panel">
         <div className="panel-header">
           <h3><Activity size={18} /> Live Device Feed</h3>

@@ -470,7 +470,27 @@
   padding-bottom: var(--spacing-xl);
 }
 
+/* Scenes Overview Grid */
+.scenes-overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--spacing-sm); }
+.scene-overview-card { border:1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-sm); padding: var(--spacing-sm) var(--spacing-md); display:flex; flex-direction:column; gap:4px; min-height:72px; position:relative; overflow:hidden; }
+.scene-overview-card.active { border-color: var(--color-success); box-shadow: 0 0 0 1px var(--color-success) inset; }
+.scene-overview-card.manage-link { display:flex; align-items:center; justify-content:center; font-weight:600; font-size:0.75rem; cursor:pointer; background: var(--color-background); }
+.scene-overview-card.manage-link:hover { background: var(--color-surface-alt, #f5f5f5); }
+.soc-header { display:flex; align-items:center; gap:4px; font-size:0.75rem; font-weight:600; }
+.soc-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+.soc-body { display:flex; justify-content:space-between; align-items:center; font-size:0.6rem; color: var(--color-tertiary); }
+.soc-count { font-weight:600; font-size:0.65rem; }
+.soc-mode { background: var(--color-border); padding:2px 6px; border-radius:999px; font-size:0.55rem; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; }
+
+/* Channel Usage Bar */
+.channel-usage-bar { display:flex; flex-wrap:wrap; gap:4px; }
+.channel-usage-item { display:inline-flex; align-items:center; gap:4px; background: var(--color-surface); border:1px solid var(--color-border); padding:4px 8px; border-radius: var(--radius-pill, 999px); font-size:0.6rem; font-weight:600; }
+.channel-usage-item .c-name { max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.channel-usage-item .c-count { background: var(--color-primary); color: var(--color-background); padding:2px 6px; border-radius:999px; font-size:0.55rem; }
+
 @media (max-width: 640px) {
   .summary-bar { grid-template-columns: repeat(2, 1fr); }
   .display-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .scenes-overview-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .channel-usage-item { font-size:0.55rem; }
 }
