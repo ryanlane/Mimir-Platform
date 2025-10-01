@@ -1,16 +1,43 @@
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, Check, X, RefreshCw, Bug, EyeOff } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { AlertCircle, Check, X, RefreshCw, Bug } from 'lucide-react';
 import { api } from '../../services/api';
+import Modal from '../Modal/Modal';
+import Button from '../Button/Button';
 import './DebugPanel.css';
 
-const DebugPanel = () => {
+/**
+ * DebugPanel
+ * Refactored to use the shared Modal component instead of a fixed positioned container.
+ * The toggle button can now be rendered anywhere by the parent. Component supports
+ * both uncontrolled (defaultOpen) and controlled (open/onOpenChange) modes.
+ *
+ * Props:
+ *  - open (boolean, optional): controlled visibility
+ *  - onOpenChange (fn, optional): called with boolean when visibility toggled
+ *  - defaultOpen (boolean, optional): initial open state in uncontrolled mode
+ *  - autoRunOnOpen (boolean, default false): automatically run tests when opened
+ *  - showToggle (boolean, default true): if true and component is uncontrolled, renders an inline toggle button
+ *  - toggleLabel (string, default 'Debug'): label for the inline toggle button
+ *  - className (string): optional class for wrapper span when showToggle
+ */
+const DebugPanel = ({
+  open,
+  onOpenChange,
+  defaultOpen = false,
+  autoRunOnOpen = false,
+  showToggle = true,
+  toggleLabel = 'Debug',
+  className = ''
+}) => {
   const initialEnabled = localStorage.getItem('mimir-show-debug-panel') !== 'false';
   const [debugEnabled, setDebugEnabled] = useState(initialEnabled);
-  const [isVisible, setIsVisible] = useState(false);
+  const uncontrolled = open === undefined;
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isOpen = uncontrolled ? internalOpen : open;
   const [tests, setTests] = useState({});
   const [loading, setLoading] = useState(false);
   
-  const runTests = async () => {
+  const runTests = useCallback(async () => {
     setLoading(true);
     const results = {};
     
@@ -121,7 +148,7 @@ const DebugPanel = () => {
     
     setTests(results);
     setLoading(false);
-  };
+  }, []);
   
   useEffect(() => {
     // Auto-run tests on mobile devices
@@ -132,14 +159,20 @@ const DebugPanel = () => {
       const enabled = e.detail?.enabled;
       if (typeof enabled === 'boolean') {
         setDebugEnabled(enabled);
-        if (!enabled) setIsVisible(false);
+        if (!enabled) {
+          if (uncontrolled) setInternalOpen(false);
+          onOpenChange && onOpenChange(false);
+        }
       }
     };
     const storageHandler = (e) => {
       if (e.key === 'mimir-show-debug-panel') {
         const enabled = e.newValue !== 'false';
         setDebugEnabled(enabled);
-        if (!enabled) setIsVisible(false);
+        if (!enabled) {
+          if (uncontrolled) setInternalOpen(false);
+          onOpenChange && onOpenChange(false);
+        }
       }
     };
     window.addEventListener('mimir:debug-visibility-changed', handler);
@@ -148,7 +181,14 @@ const DebugPanel = () => {
       window.removeEventListener('mimir:debug-visibility-changed', handler);
       window.removeEventListener('storage', storageHandler);
     };
-  }, []);
+  }, [runTests, uncontrolled, onOpenChange]);
+
+  // Auto run when opened if configured
+  useEffect(() => {
+    if (isOpen && autoRunOnOpen && Object.keys(tests).length === 0 && !loading) {
+      runTests();
+    }
+  }, [isOpen, autoRunOnOpen, tests, loading, runTests]);
   
   const getStatusIcon = (status) => {
     switch (status) {
@@ -158,92 +198,97 @@ const DebugPanel = () => {
     }
   };
   
-  if (!debugEnabled) {
-    return null;
-  }
+  if (!debugEnabled) return null;
 
-  if (!isVisible) {
+  const handleToggle = () => {
+    if (uncontrolled) {
+      setInternalOpen(o => !o);
+    }
+    onOpenChange && onOpenChange(!isOpen);
+  };
+
+  const closePanel = () => {
+    if (uncontrolled) {
+      setInternalOpen(false);
+    }
+    onOpenChange && onOpenChange(false);
+  };
+
+  const renderToggle = () => {
+    if (!showToggle) return null;
     return (
-      <div className="debug-panel-toggle">
-        <button 
-          className="btn btn-sm btn-tertiary"
-          onClick={() => setIsVisible(true)}
-          title="Show Debug Panel"
-        >
-          <Bug size={16} />
-          Debug
-        </button>
-      </div>
+      <span className={`debug-inline-toggle ${className}`}>        
+        <Button size="sm" variant="tertiary" onClick={handleToggle} aria-expanded={isOpen} aria-controls="debug-panel-modal">
+          <Bug size={14} />
+          {toggleLabel}
+        </Button>
+      </span>
     );
-  }
+  };
+
+  // Only render toggle if uncontrolled or if parent explicitly wants it in controlled mode
+  const toggleNode = renderToggle();
   
   return (
-    <div className="debug-panel">
-      <div className="debug-panel-header">
-        <div className="debug-title">
-          <Bug size={18} />
-          <h3>Debug Panel</h3>
-        </div>
-        <div className="debug-actions">
-          <button 
-            className="btn btn-sm btn-secondary"
-            onClick={runTests}
-            disabled={loading}
-          >
-            <RefreshCw size={14} className={loading ? 'spinning' : ''} />
-            Run Tests
-          </button>
-          <button 
-            className="btn btn-sm btn-tertiary"
-            onClick={() => setIsVisible(false)}
-          >
-            <EyeOff size={14} />
-            Hide
-          </button>
-        </div>
-      </div>
-      
-      <div className="debug-panel-content">
-        {Object.keys(tests).length === 0 ? (
-          <div className="debug-empty">
-            <p>Click "Run Tests" to diagnose connection issues</p>
+    <>
+      {toggleNode}
+      <Modal
+        isOpen={!!isOpen}
+        onClose={closePanel}
+        title="Debug Panel"
+        size="large"
+      >
+        <div className="debug-modal-body">
+          <div className="debug-actions-bar" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+            <Button size="sm" variant="secondary" onClick={runTests} disabled={loading}>
+              <RefreshCw size={14} className={loading ? 'spinning' : ''} />
+              Run Tests
+            </Button>
+            <Button size="sm" variant="ghost" onClick={closePanel}>
+              <X size={14} />
+              Close
+            </Button>
           </div>
-        ) : (
-          <div className="debug-tests">
-            {Object.entries(tests).map(([testName, result]) => (
-              <div key={testName} className={`debug-test debug-test-${result.status}`}>
-                <div className="debug-test-header">
-                  {getStatusIcon(result.status)}
-                  <strong>{testName}</strong>
-                </div>
-                <div className="debug-test-message">
-                  {result.message}
-                </div>
-                {result.data && (
-                  <details className="debug-test-data">
-                    <summary>View Data</summary>
-                    <pre>{JSON.stringify(result.data, null, 2)}</pre>
-                  </details>
-                )}
+          <div className="debug-panel-content in-modal">
+            {Object.keys(tests).length === 0 ? (
+              <div className="debug-empty">
+                <p>Click "Run Tests" to diagnose connection issues</p>
               </div>
-            ))}
+            ) : (
+              <div className="debug-tests">
+                {Object.entries(tests).map(([testName, result]) => (
+                  <div key={testName} className={`debug-test debug-test-${result.status}`}>
+                    <div className="debug-test-header">
+                      {getStatusIcon(result.status)}
+                      <strong>{testName}</strong>
+                    </div>
+                    <div className="debug-test-message">
+                      {result.message}
+                    </div>
+                    {result.data && (
+                      <details className="debug-test-data">
+                        <summary>View Data</summary>
+                        <pre>{JSON.stringify(result.data, null, 2)}</pre>
+                      </details>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      
-      <div className="debug-panel-footer">
-        <div className="debug-instructions">
-          <h4>📱 iOS Safari Troubleshooting:</h4>
-          <ul>
-            <li>• Check if API health endpoint shows "success"</li>
-            <li>• Verify channels/displays show data (not empty arrays)</li>
-            <li>• Look for CORS or network errors</li>
-            <li>• Ensure you're on the same WiFi network as the server</li>
-            <li>• Try opening Safari DevTools (via Mac Safari → Develop)</li>
-          </ul>
+          <div className="debug-modal-footer" style={{ marginTop: '1rem' }}>
+            <h4 style={{ margin: '0 0 8px 0', fontSize: '0.85rem' }}>📱 iOS Safari Troubleshooting:</h4>
+            <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '0.7rem' }}>
+              <li>• Check if API health endpoint shows "success"</li>
+              <li>• Verify channels/displays show data (not empty arrays)</li>
+              <li>• Look for CORS or network errors</li>
+              <li>• Ensure you're on the same WiFi network as the server</li>
+              <li>• Try opening Safari DevTools (via Mac Safari → Develop)</li>
+            </ul>
+          </div>
         </div>
-      </div>
-    </div>
+      </Modal>
+    </>
   );
 };
 

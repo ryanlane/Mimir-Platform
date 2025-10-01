@@ -413,7 +413,13 @@ const Displays = () => {
   if (!supportsDisplayManagement()) {
     return (
       <div className="page-container">
-        <Header title="Displays" icon="MonitorSpeaker" iconSize={36} description="Manage display clients and scene assignments" />
+        <Header 
+          title="Displays" 
+          icon="MonitorSpeaker" 
+          iconSize={36} 
+          description="Manage display clients and scene assignments"
+          rightSlot={<DebugPanel showToggle toggleLabel="Debug" />}
+        />
 
         
         <div className="empty-state">
@@ -669,7 +675,7 @@ const Displays = () => {
         />
       )}
       
-      <DebugPanel />
+  {/* DebugPanel now rendered inside Header via rightSlot */}
     </div>
     </PullToRefresh>
   );

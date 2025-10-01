@@ -12,7 +12,8 @@ export default {
     description: { control: 'text' },
     icon: { control: false },
     iconSize: { control: { type: 'number', min: 16, max: 96, step: 4 } },
-    actions: { control: false, table: { category: 'layout' } }
+    actions: { control: false, table: { category: 'layout' } },
+    rightSlot: { control: false, table: { category: 'layout', type: { summary: 'ReactElement' }, description: 'Arbitrary content rendered on the far right (e.g., debug toggle, status badges, environment indicator)'} }
   },
   args: {
     title: 'Header Title Text',
@@ -127,5 +128,26 @@ export const WithRenderFunctionActions = {
   ),
   parameters: {
     docs: { description: { story: 'Demonstrates using a render function for deferred action creation (e.g., if computing state). Limited to max two items.' } }
+  }
+};
+
+export const WithRightSlot = {
+  render: () => (
+    <Header
+      title="Operations"
+      description="Deployment window & environment status"
+      icon={<Globe2 />}
+      actions={<Button variant="primary">Deploy</Button>}
+      rightSlot={(
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.7rem' }}>
+          <span style={{ opacity: 0.65 }}>Env:</span>
+          <span style={{ background: 'var(--color-surface-hover)', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>Prod</span>
+          <span style={{ background: 'var(--color-success)', color: 'var(--color-background)', padding: '2px 6px', borderRadius: '10px', fontWeight: 600 }}>Healthy</span>
+        </div>
+      )}
+    />
+  ),
+  parameters: {
+    docs: { description: { story: 'Demonstrates the new rightSlot prop used alongside actions to surface arbitrary status widgets (environment + health) without constraining action button count.' } }
   }
 };

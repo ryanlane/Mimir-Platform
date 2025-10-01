@@ -12,6 +12,7 @@ import Icon from '../Icon/Icon';
  *  - icon (string | ReactElement) icon name (lucide) or custom element
  *  - iconSize (number) size of icon (default 32)
  *  - actions (ReactElement | ReactElement[] | function): optional single element, array (max 2) or render fn returning element(s)
+ *  - rightSlot (ReactElement): optional arbitrary content rendered on the far right (e.g., DebugPanel or status widgets)
  *      Example: actions={[<Button key="add" />, <Button key="refresh" variant="ghost" />]}
  *  - className (string)
  *
@@ -19,7 +20,7 @@ import Icon from '../Icon/Icon';
  *  - When description is present it is associated via aria-describedby.
  *  - Action buttons should each have discernible text or aria-label.
  */
-export function Header({ title, description, icon, iconSize = 32, actions, className = '', ...rest }) {
+export function Header({ title, description, icon, iconSize = 32, actions, rightSlot, className = '', ...rest }) {
   const descId = description ? `header-desc-${title?.toLowerCase().replace(/[^a-z0-9]+/g,'-')}` : undefined;
 
   const iconNode = React.isValidElement(icon)
@@ -51,11 +52,20 @@ export function Header({ title, description, icon, iconSize = 32, actions, class
             {description && <p id={descId} className="header-description text-tertiary">{description}</p>}
           </div>
         </div>
-        {actionNodes && (
-          <div className={`header-actions header-actions-count-${Array.isArray(actionNodes) ? actionNodes.length : 1}`}>
-            {Array.isArray(actionNodes) ? actionNodes.map((node, idx) => (
-              <div key={idx} className="header-action-item">{node}</div>
-            )) : actionNodes}
+        {(actionNodes || rightSlot) && (
+          <div className="header-right-cluster">
+            {actionNodes && (
+              <div className={`header-actions header-actions-count-${Array.isArray(actionNodes) ? actionNodes.length : 1}`}>
+                {Array.isArray(actionNodes) ? actionNodes.map((node, idx) => (
+                  <div key={idx} className="header-action-item">{node}</div>
+                )) : actionNodes}
+              </div>
+            )}
+            {rightSlot && (
+              <div className="header-slot" data-slot>
+                {rightSlot}
+              </div>
+            )}
           </div>
         )}
       </div>

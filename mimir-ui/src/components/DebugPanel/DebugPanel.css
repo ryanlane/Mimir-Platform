@@ -1,25 +1,7 @@
-.debug-panel-toggle {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 1000;
-}
+/* Inline toggle wrapper (no enforced positioning now; parent decides placement) */
+.debug-inline-toggle { display: inline-flex; }
 
-.debug-panel {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 400px;
-  max-height: 70vh;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+/* Legacy panel container removed; modal now provides the shell */
 
 .debug-panel-header {
   display: flex;
@@ -165,11 +147,4 @@
 }
 
 /* Mobile responsive */
-@media (max-width: 480px) {
-  .debug-panel {
-    width: calc(100vw - 40px);
-    right: 20px;
-    left: 20px;
-    max-height: 60vh;
-  }
-}
+@media (max-width: 480px) { /* modal handles responsiveness */ }
