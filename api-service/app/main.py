@@ -9,20 +9,19 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 
 # Import infrastructure components
-from app.db.base import engine
-from app.core.logging import setup_logging, get_logger
-from app.core.metrics import setup_metrics, metrics_middleware, metrics_app
+from app.core.logging import get_logger, setup_logging
+from app.core.metrics import metrics_app, metrics_middleware, setup_metrics
 from app.core.scheduler import scheduler_service
 
-# Import services
-from app.services.channel_discovery import channel_discovery_service
+# Import services actually used in startup
 from app.services.plugin_discovery import plugin_discovery_service
-from app.services.websocket import websocket_service
 from app.services.distribution import distribution_service
-from app.services.caching import cache_service
 from app.services.mdns_discovery import mdns_discovery_service
-from app.services.mqtt.presence import mqtt_presence_service, setup_mqtt_integration
-from app.services.mqtt.publisher import MQTTSceneAssignmentPublisher, setup_mqtt_scene_assignment
+from app.services.mqtt.presence import setup_mqtt_integration
+from app.services.mqtt.publisher import (
+    MQTTSceneAssignmentPublisher,
+    setup_mqtt_scene_assignment,
+)
 from app.services.scheduler_worker import SchedulerWorker
 
 # Import routers
@@ -31,6 +30,7 @@ from app.api.routes.scenes import router as scenes_router
 from app.api.routes.displays import router as displays_router
 from app.api.routes.display_scene import router as display_scene_router
 from app.api.routes.websockets import router as websockets_router
+from app.api.routes.debug_mqtt import router as debug_mqtt_router
 from app.api.routes.admin import health_router, admin_router
 from app.api.routes.scheduler import router as scheduler_router
 from fastapi.responses import JSONResponse
@@ -87,13 +87,13 @@ async def lifespan(app: FastAPI):
         if mdns_discovery_service.is_available:
             # Start mDNS discovery (now managed by scheduler)
             await mdns_discovery_service.start_discovery()
-            logger.info(f"🔍 mDNS Discovery: enabled (continuous background monitoring)")
+            logger.info("🔍 mDNS Discovery: enabled (continuous background monitoring)")
             logger.info(f"   Update interval: {settings.mdns_update_interval}s")
             logger.info(f"   Offline timeout: {settings.mdns_offline_timeout}s")
         else:
-            logger.info(f"⚠️ mDNS Discovery: disabled (zeroconf library not available)")
+            logger.info("⚠️ mDNS Discovery: disabled (zeroconf library not available)")
     else:
-        logger.info(f"🔍 mDNS Discovery: disabled by configuration")
+        logger.info("🔍 mDNS Discovery: disabled by configuration")
     
     # Setup MQTT presence detection for instant online/offline
     if settings.mqtt_enabled:
@@ -111,11 +111,11 @@ async def lifespan(app: FastAPI):
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
-            logger.info(f"   Instant online/offline detection via Last Will & Testament")
+            logger.info("   Instant online/offline detection via Last Will & Testament")
         else:
             logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
     else:
-        logger.info(f"📡 MQTT Services: disabled by configuration")
+        logger.info("📡 MQTT Services: disabled by configuration")
     
     # Log service capabilities
     capabilities = distribution_service.get_capability_flags()
@@ -299,6 +299,7 @@ def create_app() -> FastAPI:
     
     # Include WebSocket routes (no prefix for WebSockets)
     app.include_router(websockets_router)
+    app.include_router(debug_mqtt_router, prefix=f"{settings.api_prefix}")
     
     # Mount Prometheus metrics endpoint for observability
     try:
@@ -340,7 +341,7 @@ def create_app() -> FastAPI:
         static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
         if os.path.exists(static_dir):
             app.mount("/static", StaticFiles(directory=static_dir), name="static")
-            logger.info(f"📁 Static files mounted at /static")
+            logger.info("📁 Static files mounted at /static")
         else:
             logger.warning(f"Static directory not found: {static_dir}")
     except Exception as e:
