@@ -89,21 +89,28 @@ class WebSocketService {
           }
 
           const message = JSON.parse(event.data);
-          console.log('📨 Enhanced WebSocket message received:', message);
+
+          // Heartbeat / ping messages are extremely frequent; suppress noisy log
+          const isHeartbeat = message.event === 'ping';
+          if (!isHeartbeat) {
+            console.log('📨 Enhanced WebSocket message received:', message);
+          }
           
           // Update sequence tracking
           if (message.sequenceId) {
             this.lastSequenceId = message.sequenceId;
           }
           
-          // Handle special events
-          this.handleSpecialEvents(message);
+          // Handle special events (will also catch 'ping' but internal logic is lightweight)
+            this.handleSpecialEvents(message);
           
           // Emit the specific event type
           this.emit(message.event, message.data);
           
-          // Also emit a general 'message' event
-          this.emit('message', message);
+          // Also emit a general 'message' event (skip for heartbeat to reduce listener overhead noise)
+          if (!isHeartbeat) {
+            this.emit('message', message);
+          }
         } catch (error) {
           console.error('❌ Error parsing WebSocket message:', error, 'Raw data:', event.data);
         }
