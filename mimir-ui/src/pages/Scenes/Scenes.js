@@ -11,6 +11,7 @@ import Header from '../../components/Header/Header';
 import Button from '../../components/Button/Button';
 import SceneCard from '../../components/SceneCard/SceneCard';
 import Modal from '../../components/Modal/Modal';
+import Loading from '../../components/Loading/Loading';
 
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
@@ -79,6 +80,8 @@ const Scenes = () => {
   }, []);
 
   const loadData = useCallback(async () => {
+    // Ensure loading indicator shows anytime we (re)fetch data
+    setLoading(true);
     try {
       // Small internal helpers to normalize payloads and aid debugging
       const extractArray = (label, payload) => {
@@ -471,12 +474,7 @@ const Scenes = () => {
   };
 
   if (loading) {
-    return (
-      <div className="loading">
-        <div className="loading-spinner"></div>
-        <span>Loading scenes...</span>
-      </div>
-    );
+    return <Loading message="Loading scenes..." />;
   }
 
   return (

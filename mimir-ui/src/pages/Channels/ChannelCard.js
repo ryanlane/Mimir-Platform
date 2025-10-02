@@ -95,7 +95,6 @@ const ChannelCard = ({
       <div className="channel-card-footer">
         <Button
           variant="accent"
-          size="sm"
           onClick={() => onOpenSettings(channel)}
           icon={<Settings />}
           type="button"
