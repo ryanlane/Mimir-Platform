@@ -33,6 +33,7 @@
 	display: flex;
 	flex-direction: column;
 	gap: 0.25rem;
+	color: var(--color-text-secondary);
 }
 
 .header-actions {
@@ -82,6 +83,7 @@
 	margin: 0;
 	font-size: 0.85rem;
 	max-width: 60ch;
+	color: var(--color-text-secondary);
 }
 
 @media (max-width: 640px) {
