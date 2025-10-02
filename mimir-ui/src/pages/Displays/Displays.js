@@ -435,16 +435,24 @@ const Displays = () => {
   return (
     <PullToRefresh onRefresh={refreshDisplays}>
     <div className="page-container">
-        <Header title="Displays" icon="MonitorSpeaker" iconSize={36} description="Manage display clients and scene assignments" />
-        
-      <Button
-        className="btn btn-secondary desktop-only-refresh"
-        onClick={refreshDisplays}
-        disabled={loading}
-      >
-        <RotateCcw size={18} />
-        Refresh
-      </Button>
+        <Header
+          title="Displays"
+          icon="MonitorSpeaker"
+          iconSize={36}
+          description="Manage display clients and scene assignments"
+          actions={[
+            <Button
+              key="refresh"
+              variant="secondary"
+              className="desktop-only-refresh"
+              icon={<RotateCcw size={18} aria-hidden="true" />}
+              onClick={refreshDisplays}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing…' : 'Refresh'}
+            </Button>
+          ]}
+        />
    
     
       {/* Discovered Display Assignment Stats */}
