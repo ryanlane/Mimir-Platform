@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
@@ -16,6 +16,9 @@ import Loading from '../../components/Loading/Loading';
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
   const [channels, setChannels] = useState([]);
+  // Refs to hold stable latest values to avoid adding to useCallback deps
+  const channelsRef = useRef([]);
+  const scenesRef = useRef([]);
   const [channelManifests, setChannelManifests] = useState({}); // Cache for channel manifests
   const [displayStatus, setDisplayStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +34,7 @@ const Scenes = () => {
   // Initialize WebSocket connection with automatic state sync on mount
   const { currentState, requestStateSync } = useEnsureFreshState();
 
-  const loadSceneSchedules = useCallback(async (scenesList) => {
+  const loadSceneSchedules = async (scenesList) => {
     // Fetch ALL scheduler jobs for every scene rather than only the first assignment
     try {
       const schedulePromises = scenesList.map(async (scene) => {
@@ -77,9 +80,9 @@ const Scenes = () => {
     } catch (error) {
       console.error('Error loading scene schedules:', error);
     }
-  }, []);
+  };
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     // Ensure loading indicator shows anytime we (re)fetch data
     setLoading(true);
     try {
@@ -134,11 +137,36 @@ const Scenes = () => {
         }
       });
 
-    const [{ data: scenesData }, { data: channelsData }] = await Promise.all([scenesPromise, channelsPromise]);
+    // Await raw (flexibly shaped) results from cache helper. They may be:
+    // 1) axios response-like: { data: [...] }
+    // 2) plain array: [...]
+    // 3) object with key { scenes: [...] } / { channels: [...] }
+    // 4) (unexpected) undefined while onUpdate callback will later supply data
+    const [scenesResolved, channelsResolved] = await Promise.all([scenesPromise, channelsPromise]);
 
-    // persistentCache now returns object possibly like { scenes: [...] } / { channels: [...] }
-    const scenesResponse = { data: scenesData };
-    const channelsResponse = { data: channelsData };
+    const unwrapScenes = (val) => {
+      if (!val) return undefined; // distinguish from explicit empty []
+      if (Array.isArray(val)) return val;
+      if (Array.isArray(val.scenes)) return val.scenes;
+      if (val.data) {
+        if (Array.isArray(val.data)) return val.data;
+        if (Array.isArray(val.data.scenes)) return val.data.scenes;
+      }
+      return undefined;
+    };
+    const unwrapChannels = (val) => {
+      if (!val) return undefined;
+      if (Array.isArray(val)) return val;
+      if (Array.isArray(val.channels)) return val.channels;
+      if (val.data) {
+        if (Array.isArray(val.data)) return val.data;
+        if (Array.isArray(val.data.channels)) return val.data.channels;
+      }
+      return undefined;
+    };
+
+    const rawScenes = unwrapScenes(scenesResolved);
+    const rawChannels = unwrapChannels(channelsResolved);
 
       // Handle display status separately to gracefully handle "no displays" case
       let displayResponse = null;
@@ -158,11 +186,18 @@ const Scenes = () => {
 
       console.log('Current scene from API:', displayResponse?.data?.currentScene);
 
-      // Normalize / defensively extract scenes list
-      const rawScenes = scenesResponse?.data;
+      // Normalize / defensively extract scenes list. rawScenes may be undefined when the
+      // persistentCache has not yet delivered data (onUpdate will later). Avoid clearing existing
+      // scenes in that ambiguous case to prevent the intermittent "No scenes created yet" flicker.
       let scenesList = extractArray('scenes', rawScenes);
+  // NOTE: we intentionally avoid using scenes.length directly below to prevent unnecessary re-renders.
+      const ambiguousScenes = rawScenes === undefined && scenesList.length === 0;
       if (scenesList.length === 0) {
-        console.warn('[Scenes] No scenes extracted. Raw payload shape:', rawScenes);
+        if (ambiguousScenes) {
+          console.debug('[Scenes] Scenes unresolved (ambiguous) – retaining prior state to avoid flicker');
+        } else {
+          console.warn('[Scenes] No scenes extracted. Raw payload shape (explicit empty or empty array):', rawScenes);
+        }
       }
       // Normalize backend field names (camelCase) to the keys other components might already rely on (snake_case or legacy)
       const normalizedScenes = scenesList.map(s => {
@@ -199,15 +234,31 @@ const Scenes = () => {
       if (normalizedScenes.length && process.env.NODE_ENV !== 'production') {
         console.debug('[Scenes] Normalized scenes sample:', normalizedScenes[0]);
       }
-      setScenes(normalizedScenes);
+      if (!ambiguousScenes) {
+        // Only overwrite state if we have concrete data (even if empty) to avoid transient empty UI.
+        if (normalizedScenes.length > 0 || Array.isArray(rawScenes)) {
+          setScenes(normalizedScenes);
+          scenesRef.current = normalizedScenes;
+        } else {
+          console.debug('[Scenes] Skipping setScenes due to ambiguous empty payload.');
+        }
+      }
 
       // Normalize / defensively extract channels list
-      const rawChannels = channelsResponse?.data;
       let channelList = extractArray('channels', rawChannels);
+      const ambiguousChannels = rawChannels === undefined && channelList.length === 0;
       if (channelList.length === 0) {
-        console.warn('[Scenes] No channels extracted. Raw payload shape:', rawChannels);
+        if (ambiguousChannels) {
+          console.debug('[Scenes] Channels unresolved (ambiguous) – retaining prior state.');
+          channelList = channels; // keep existing
+        } else {
+          console.warn('[Scenes] No channels extracted. Raw payload shape (explicit empty or empty array):', rawChannels);
+        }
       }
-      setChannels(channelList);
+      if (!ambiguousChannels) {
+        setChannels(channelList);
+        channelsRef.current = channelList;
+      }
       
       // Load channel manifests for better subchannel display
       const manifestPromises = channelList.map(async (channel) => {
@@ -241,9 +292,20 @@ const Scenes = () => {
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
-      setLoading(false);
+      // If data was ambiguous (cache not yet resolved) and we previously had scenes, keep spinner a hair longer
+      // to allow onUpdate to populate, mitigating UI flash of empty state.
+      const shouldDelay = scenesRef.current.length > 0 && document.visibilityState === 'visible';
+      if (shouldDelay) {
+        setTimeout(() => setLoading(false), 120);
+      } else {
+        setLoading(false);
+      }
     }
-  }, [currentState, loadSceneSchedules]);
+  };
+
+  // Keep refs in sync (outside callback to avoid expanding deps)
+  useEffect(() => { scenesRef.current = scenes; }, [scenes]);
+  useEffect(() => { channelsRef.current = channels; }, [channels]);
 
   // Listen to scene events via WebSocket
   useSceneEvents({
@@ -295,10 +357,9 @@ const Scenes = () => {
   });
 
   useEffect(() => {
-    // Load data immediately when component mounts
-    // Don't wait for WebSocket - it will update state when available
     loadData();
-  }, [loadData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentState]);
 
   // Handle WebSocket state updates when they arrive
   useEffect(() => {
