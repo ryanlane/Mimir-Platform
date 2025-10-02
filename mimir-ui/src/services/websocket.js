@@ -2,8 +2,10 @@ class WebSocketService {
   constructor() {
     this.ws = null;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 1000;
+  // Reconnection strategy
+  this.maxReconnectAttempts = Infinity; // allow infinite attempts
+  this.reconnectDelay = 1000; // base delay ms
+  this.maxReconnectDelay = 30000; // cap delay at 30s
     this.listeners = new Map();
     this.isConnected = false;
     
@@ -141,7 +143,8 @@ class WebSocketService {
         break;
         
       case 'ping':
-        console.log('💓 Received ping, sending pong');
+        // Server heartbeat; reset client heartbeat watchdog
+        this.resetHeartbeatWatchdog();
         this.sendPong(message.data.timestamp);
         break;
         
@@ -185,13 +188,17 @@ class WebSocketService {
 
   // Start heartbeat monitoring (client-side)
   startHeartbeat() {
-    // Clear any existing heartbeat
+    // Begin watchdog; actual resets happen on each ping
+    this.resetHeartbeatWatchdog();
+  }
+
+  resetHeartbeatWatchdog() {
     this.stopHeartbeat();
-    
-    // Monitor for server pings - if we don't receive one in 60 seconds, something's wrong
     this.heartbeatTimeout = setTimeout(() => {
-      console.warn('⚠️ No heartbeat received from server, connection may be stale');
+      console.warn('⚠️ No heartbeat (ping) from server within threshold; forcing reconnect');
       this.emit('heartbeat_timeout');
+      try { this.ws && this.ws.close(4000, 'Heartbeat timeout'); } catch {}
+      this.scheduleReconnect(true);
     }, 60000);
   }
 
@@ -218,13 +225,15 @@ class WebSocketService {
     return this.connectionId;
   }
 
-  scheduleReconnect() {
+  scheduleReconnect(force = false) {
+    if (this.isConnected && !force) return;
     this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
-    
-    console.log(`⏰ Scheduling WebSocket reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
-    
-    setTimeout(() => {
+    const rawDelay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    const delay = Math.min(rawDelay, this.maxReconnectDelay);
+    const attemptsStr = this.maxReconnectAttempts === Infinity ? `${this.reconnectAttempts}` : `${this.reconnectAttempts}/${this.maxReconnectAttempts}`;
+    console.log(`⏰ Scheduling WebSocket reconnect attempt ${attemptsStr} in ${delay}ms`);
+    clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = setTimeout(() => {
       if (!this.isConnected) {
         this.connect();
       }
