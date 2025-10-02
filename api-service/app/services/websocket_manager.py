@@ -193,7 +193,16 @@ class WebSocketManager:
     # ------------------------------------------------------------------
     # Generic event emitter
     # ------------------------------------------------------------------
-    async def emit_event(self, event: str, data: dict, *, audience: str = "all", display_ids: list[str] | None = None, include_sequence: bool = False):
+    async def emit_event(
+        self,
+        event: str,
+        data: dict,
+        *,
+        audience: str = "all",
+        display_ids: list[str] | None = None,
+        include_sequence: bool = False,
+        targets: list[WebSocket] | None = None,
+    ):
         payload: dict[str, Any] = {
             "event": event,
             "data": data,
@@ -201,6 +210,12 @@ class WebSocketManager:
         }
         if include_sequence:
             payload["sequence_id"] = self.next_sequence_id()
+        # Direct targeted send (explicit list of websockets) takes precedence
+        if targets:
+            msg = json.dumps(payload)
+            await self._broadcast_raw(targets, msg)
+            return
+
         if audience == "dashboards":
             await self.broadcast_dashboards(payload)
         elif audience == "displays":
