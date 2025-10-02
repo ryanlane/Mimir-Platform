@@ -1,348 +1,235 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings, RefreshCw, AlertCircle, Heart, Info } from 'lucide-react';
+import { RefreshCw, Info } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
-import { useWebSocket } from '../../hooks/useWebSocket';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
 import Header from '../../components/Header/Header';
+import Button from '../../components/Button/Button';
 import ChannelSettings from './ChannelSettings';
+import ChannelCard from './ChannelCard';
 import './Channels.css';
 
 // Legacy in-memory cache removed; persistent IndexedDB cache now used.
 
 const Channels = () => {
-  const [channels, setChannels] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showSettings, setShowSettings] = useState(false);
-  const [selectedChannel, setSelectedChannel] = useState(null);
+    const [channels, setChannels] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showSettings, setShowSettings] = useState(false);
+    const [selectedChannel, setSelectedChannel] = useState(null);
 
-  // v2.1 Feature detection and new state
-  const { 
-    supportsV21, 
-    supportsChannelHealth, 
-    supportsPluginSystem,
-    apiVersion
-  } = useFeatureDetection();
-  
-  const [channelHealth, setChannelHealth] = useState({});
-  const [manifest, setManifest] = useState([]);
+    const { supportsV21, supportsChannelHealth, supportsPluginSystem } = useFeatureDetection();
+    const [channelHealth, setChannelHealth] = useState({});
+    const [manifest, setManifest] = useState([]);
+  // const { isConnected: _isConnected } = useWebSocket(); // reserved for future realtime UI indicators
 
-  // WebSocket integration for real-time updates
-  const { isConnected } = useWebSocket();
+    const loadManifest = useCallback(async () => {
+      if (!featureDetection.supportsPluginSystem()) return;
+      try {
+        const response = await api.getChannelsManifest();
+        const manifestsMap = response.data || {};
+        const manifestData = Object.values(manifestsMap).filter(Boolean);
+        setManifest(manifestData);
+        // eslint-disable-next-line no-console
+        console.log('📋 Loaded channel manifest (aggregated):', manifestsMap);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Error loading channel manifest:', error);
+      }
+    }, []);
 
-  // v2.1: Load channel manifest
-  const loadManifest = useCallback(async () => {
-    if (!featureDetection.supportsPluginSystem()) {
-      return;
-    }
-    
-    try {
-      const response = await api.getChannelsManifest();
-      // New aggregated map structure: { data: { channelId: manifestObj } }
-      const manifestsMap = response.data || {};
-      const manifestData = Object.values(manifestsMap).filter(Boolean);
-      setManifest(manifestData);
-      console.log('📋 Loaded channel manifest (aggregated):', manifestsMap);
-    } catch (error) {
-      console.error('Error loading channel manifest:', error);
-    }
-  }, []);
-
-  const loadChannels = useCallback(async () => {
-    try {
-  const { data } = await persistentCache.getChannels({
-        onUpdate: (fresh) => {
-          if (Array.isArray(fresh.channels)) {
-            setChannels(fresh.channels);
-            if (featureDetection.supportsChannelHealth()) {
-              loadAllChannelHealth(fresh.channels);
+    const loadChannels = useCallback(async () => {
+      try {
+        const { data } = await persistentCache.getChannels({
+          onUpdate: (fresh) => {
+            if (Array.isArray(fresh.channels)) {
+              setChannels(fresh.channels);
+              if (featureDetection.supportsChannelHealth()) {
+                loadAllChannelHealth(fresh.channels);
+              }
             }
           }
+        });
+        const channelsData = data.channels || [];
+        setChannels(channelsData);
+        if (featureDetection.supportsChannelHealth()) {
+          loadAllChannelHealth(channelsData);
         }
-      });
-      const channelsData = data.channels || [];
-      setChannels(channelsData);
-      if (featureDetection.supportsChannelHealth()) {
-        loadAllChannelHealth(channelsData);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Error loading channels:', error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Error loading channels:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    }, []);
 
-  // Manual refresh function that bypasses cache
-  const refreshChannels = useCallback(async () => {
-    // Force bypass: directly call API then update persistent cache
-    setLoading(true);
-    try {
-      const resp = await api.getChannels();
-      const fresh = resp.data;
-      setChannels(fresh.channels || []);
-      // Write through to IDB for next load
-      // Reuse persistentCache internals by setting directly
-      // (Import idb if needed for fine control; here we rely on background refresh next visit.)
-    } catch (e) {
-      console.error('Manual refresh failed:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    const refreshChannels = useCallback(async () => {
+      setLoading(true);
+      try {
+        const resp = await api.getChannels();
+        const fresh = resp.data;
+        setChannels(fresh.channels || []);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error('Manual refresh failed:', e);
+      } finally {
+        setLoading(false);
+      }
+    }, []);
 
-  useEffect(() => {
-    const initializeChannels = async () => {
-      await loadChannels();
-      // Load v2.1 features if supported
-      await loadManifest();
-    };
-    
-    initializeChannels();
-  }, [loadChannels, loadManifest, channels.length]);
-  useEffect(() => {
-    const handleChannelUpdate = (event) => {
-      if (event.data?.type === 'channel_status_update') {
-        const { channelId, status } = event.data;
-        setChannels(prev => prev.map(channel => 
-          channel.id === channelId 
-            ? { ...channel, status: { ...channel.status, ...status } }
-            : channel
-        ));
+    // health loader separated to avoid re-definition each render of loadChannels
+    const loadAllChannelHealth = async (channelList) => {
+      try {
+        const healthPromises = channelList.map(async (channel) => {
+          try {
+            const health = await api.getChannelHealth(channel.id);
+            return { [channel.id]: health.data };
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.warn(`Health check failed for ${channel.id}:`, error);
+            return { [channel.id]: { healthy: false, error: error.message } };
+          }
+        });
+        const healthResults = await Promise.all(healthPromises);
+        const healthMap = healthResults.reduce((acc, result) => ({ ...acc, ...result }), {});
+        setChannelHealth(healthMap);
+        // eslint-disable-next-line no-console
+        console.log('💚 Loaded channel health:', healthMap);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Error loading channel health:', error);
       }
     };
 
-    window.addEventListener('websocket-message', handleChannelUpdate);
-    return () => window.removeEventListener('websocket-message', handleChannelUpdate);
-  }, []);
+    useEffect(() => {
+      const init = async () => {
+        await loadChannels();
+        await loadManifest();
+      };
+      init();
+    }, [loadChannels, loadManifest]);
 
-  // v2.1: Load health for all channels
-  const loadAllChannelHealth = async (channelList) => {
-    try {
-      const healthPromises = channelList.map(async (channel) => {
-        try {
-          const health = await api.getChannelHealth(channel.id);
-          return { [channel.id]: health.data };
-        } catch (error) {
-          console.warn(`Health check failed for ${channel.id}:`, error);
-          return { [channel.id]: { healthy: false, error: error.message } };
+    useEffect(() => {
+      const handleChannelUpdate = (event) => {
+        if (event.data?.type === 'channel_status_update') {
+          const { channelId, status } = event.data;
+          setChannels(prev => prev.map(channel => (
+            channel.id === channelId
+              ? { ...channel, status: { ...channel.status, ...status } }
+              : channel
+          )));
         }
-      });
-      
-      const healthResults = await Promise.all(healthPromises);
-      const healthMap = healthResults.reduce((acc, result) => ({ ...acc, ...result }), {});
-      setChannelHealth(healthMap);
-      console.log('💚 Loaded channel health:', healthMap);
-    } catch (error) {
-      console.error('Error loading channel health:', error);
-    }
-  };
-
-  const handleSettings = (channel) => {
-    setSelectedChannel(channel);
-    setShowSettings(true);
-  };
-
-  const getStatusInfo = (channel) => {
-    if (channel.status?.usingFallback) {
-      return {
-        type: 'warning',
-        text: 'Using fallback image'
       };
-    }
-    if (channel.status?.lastError) {
-      return {
-        type: 'error',
-        text: 'Error occurred'
-      };
-    }
-    return {
-      type: 'success',
-      text: 'Active'
+      window.addEventListener('websocket-message', handleChannelUpdate);
+      return () => window.removeEventListener('websocket-message', handleChannelUpdate);
+    }, []);
+
+    const handleSettings = (channel) => {
+      setSelectedChannel(channel);
+      setShowSettings(true);
     };
-  };
 
-  if (loading) {
+    const getStatusInfo = (channel) => {
+      if (channel.status?.usingFallback) {
+        return { type: 'warning', text: 'Using fallback image' };
+      }
+      if (channel.status?.lastError) {
+        return { type: 'error', text: 'Error occurred' };
+      }
+      return { type: 'success', text: 'Active' };
+    };
+
+    if (loading) {
+      return (
+        <div className="loading">
+          <div className="loading-spinner" />
+          <span>Loading channels...</span>
+        </div>
+      );
+    }
+
     return (
-      <div className="loading">
-        <div className="loading-spinner"></div>
-        <span>Loading channels...</span>
+      <div className="channels">
+        <div className="channels-header">
+          <Header
+            title="Channels"
+              icon="tv"
+              iconSize={36}
+              description="Manage channel configurations and settings"
+              actions={[
+                supportsPluginSystem() && (
+                  <Button
+                    key="manifest"
+                    variant="secondary"
+                    onClick={loadManifest}
+                    icon={<Info />}
+                    type="button"
+                  >
+                    Manifest
+                  </Button>
+                ),
+                <Button
+                  key="refresh"
+                  variant="primary"
+                  onClick={refreshChannels}
+                  icon={<RefreshCw />}
+                  type="button"
+                >
+                  Refresh
+                </Button>
+              ].filter(Boolean)}
+          />
+        </div>
+
+        {channels.length > 0 ? (
+          <div className="channels-grid">
+            {channels.map(channel => {
+              const statusInfo = getStatusInfo(channel);
+              const health = channelHealth[channel.id];
+              const manifestData = manifest.find(m => m.id === channel.id);
+              return (
+                <ChannelCard
+                  key={channel.id}
+                  channel={channel}
+                  statusInfo={statusInfo}
+                  health={health}
+                  manifestData={manifestData}
+                  v21Supported={supportsV21()}
+                  channelHealthSupported={supportsChannelHealth()}
+                  onOpenSettings={handleSettings}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-state">
+            <h3>No channels available</h3>
+            <p className="text-tertiary">
+              No channels were discovered. Make sure channels are properly installed in the channels directory.
+            </p>
+            <Button
+              variant="primary"
+              onClick={refreshChannels}
+              icon={<RefreshCw />}
+              type="button"
+            >
+              Refresh Channels
+            </Button>
+          </div>
+        )}
+
+        {showSettings && selectedChannel && (
+          <ChannelSettings
+            channel={selectedChannel}
+            onClose={() => {
+              setShowSettings(false);
+              setSelectedChannel(null);
+              loadChannels();
+            }}
+          />
+        )}
       </div>
     );
-  }
-
-  return (
-    <div className="channels">
-      <div className="channels-header">
-        <Header title="Channels" icon="tv" iconSize={36} description="Manage channel configurations and settings" />
-
-        <div className="header-actions">
-          {supportsPluginSystem() && (
-            <button className="btn btn-secondary" onClick={loadManifest}>
-              <Info size={18} />
-              Load Manifest
-            </button>
-          )}
-          <button className="btn btn-primary" onClick={refreshChannels}>
-            <RefreshCw size={18} />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-
-      {channels.length > 0 ? (
-        <div className="channels-grid">
-          {channels.map((channel) => {
-            const status = getStatusInfo(channel);
-            const health = channelHealth[channel.id];
-            const manifestData = manifest.find(m => m.id === channel.id);
-            
-            return (
-              <div key={channel.id} className="channel-card">
-                <div className="channel-card-header">
-                  <div className="channel-info">
-                    <h3>
-                      {channel.name}
-                      {supportsV21() && manifestData?.schemaVersion === '2.1' && (
-                        <span className="v21-badge">v2.1</span>
-                      )}
-                    </h3>
-                    <div className="channel-id">ID: {channel.id}</div>
-                    <p className="text-tertiary">{channel.description}</p>
-                  </div>
-                  <div className="status-indicators">
-                    <div className={`status-indicator status-${status.type}`}>
-                      {status.text}
-                    </div>
-                    {supportsChannelHealth() && health && (
-                      <div className={`health-indicator ${health.healthy ? 'healthy' : 'unhealthy'}`}>
-                        <Heart size={16} />
-                        {health.healthy ? 'Healthy' : 'Issues'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="channel-card-body">
-                  <div className="channel-details">
-                    {channel.version && (
-                    <div className="detail-item">
-                      <span>Version:</span>
-                      <span>{channel.version || 'Unknown'}</span>
-                    </div>
-                    )}
-                    {/* <div className="detail-item">
-                      <span>Settings Type:</span>
-                      <span className="settings-type">
-                        {channel.settingsType || 'simple'}
-                      </span>
-                    </div> */}
-                    {supportsV21() && manifestData && (
-                      <>
-                        {manifestData.hasUI && (
-                          <div className="detail-item">
-                            <span>UI Components:</span>
-                            <span className="ui-badge">
-                              {manifestData.ui?.length || 0} components
-                            </span>
-                          </div>
-                        )}
-                        {manifestData.permissions && (
-                          <div className="detail-item">
-                            <span>Permissions:</span>
-                            <span className="permissions">
-                              {manifestData.permissions.join(', ')}
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {channel.status?.lastUpdate && (
-                      <div className="detail-item">
-                        <span>Last Update:</span>
-                        <span className="last-update">
-                          {new Date(channel.status.lastUpdate).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {channel.status?.lastError && (
-                    <div className="error-message">
-                      <AlertCircle size={16} />
-                      <span>{channel.status.lastError}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="channel-card-footer">
-                  {/* <button
-                    className="btn btn-sm"
-                    onClick={() => handleTestImage(channel.id)}
-                  >
-                    <Image size={16} />
-                    Test Image
-                  </button>
-                  
-                  {supportsChannelTesting() && (
-                    <button
-                      className="btn btn-sm btn-secondary"
-                      onClick={() => testChannel(channel.id)}
-                    >
-                      <TestTube size={16} />
-                      Test Channel
-                    </button>
-                  )}
-                  
-                  {supportsChannelHealth() && (
-                    <button
-                      className="btn btn-sm btn-tertiary"
-                      onClick={() => refreshChannelHealth(channel.id)}
-                    >
-                      <Heart size={16} />
-                      Health Check
-                    </button>
-                  )} */}
-                  
-                  <button
-                    className="btn btn-sm btn-accent"
-                    onClick={() => handleSettings(channel)}
-                  >
-                    <Settings size={16} />
-                    Settings
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="empty-state">
-          <h3>No channels available</h3>
-          <p className="text-tertiary">
-            No channels were discovered. Make sure channels are properly installed in the channels directory.
-          </p>
-          <button className="btn btn-primary" onClick={refreshChannels}>
-            <RefreshCw size={18} />
-            Refresh Channels
-          </button>
-        </div>
-      )}
-
-      {showSettings && selectedChannel && (
-        <ChannelSettings
-          channel={selectedChannel}
-          onClose={() => {
-            setShowSettings(false);
-            setSelectedChannel(null);
-            loadChannels();
-          }}
-        />
-      )}
-      
-    </div>
-  );
-};
+  };
 
 export default Channels;
