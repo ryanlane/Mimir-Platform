@@ -83,9 +83,14 @@
      color: var(--color-text-on-dark);
 }
 
+.kind-command {
+	background: var(--color-warning);
+     color: var(--color-text-secondary);
+}
+
 .kind-other {
 	background: var(--color-active);
-     color: var(--color-text-on-dark);
+     color: var(--color-text-secondary);
 }
 
 .mqtt-feed .empty {

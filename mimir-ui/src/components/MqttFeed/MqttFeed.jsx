@@ -39,6 +39,7 @@ export default function MqttFeed({ feed, maxItems = 200, defaultShowHeartbeats =
     if (/\/status$/.test(t)) return 'status';
     if (/\/heartbeat$/.test(t)) return 'heartbeat';
     if (/\/evt$/.test(t)) return 'event';
+    if (/\/cmd$/.test(t)) return 'command';
     return 'other';
   };
 
