@@ -5,6 +5,7 @@
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.2s ease;
+  color: var(--color-text);
 }
 
 .channel-card:hover {
@@ -37,7 +38,7 @@
 .channel-id {
   font-family: var(--font-family-mono);
   font-size: 0.75rem;
-  color: var(--color-tertiary);
+  color: var(--color-text-tertiary);
 }
 
 .status-indicators {
@@ -109,7 +110,7 @@
 .last-update {
   font-family: var(--font-family-mono);
   font-size: 0.75rem;
-  color: var(--color-tertiary);
+  color: var(--color-text-tertiary);
 }
 
 .error-message {
