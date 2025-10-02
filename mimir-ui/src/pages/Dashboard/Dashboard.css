@@ -442,23 +442,6 @@
 .scene-chip .count { background: var(--color-primary); color: var(--color-background); padding: 2px 6px; border-radius: 999px; font-weight: 600; font-size: 0.65rem; }
 .scene-chip.secondary { background: var(--color-background); }
 
-/* Activity Feed */
-.activity-panel .activity-feed {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.75rem;
-}
-.activity-feed li { display: flex; gap: 8px; align-items: center; }
-.activity-feed li .ts { font-family: var(--font-family-mono); color: var(--color-tertiary); font-size: 0.65rem; }
-.activity-feed li.empty { color: var(--color-tertiary); font-style: italic; }
-
-/* Live Device Feed (reuses activity styles) */
-.activity-panel h3 svg { opacity: 0.85; }
-.activity-feed li strong { font-size: 0.65rem; text-transform: uppercase; letter-spacing: .05em; color: var(--color-tertiary); }
 
 /* Footer */
 .dashboard-footer {
