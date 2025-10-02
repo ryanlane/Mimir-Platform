@@ -178,6 +178,9 @@ class MqttPresenceService:
 
             mqtt_debug_stats.record_received(full_topic, payload_bytes)
 
+            # Verbose trace for diagnostics (INFO to surface during incident)
+            logger.info("[mqtt-presence] recv topic=%s bytes=%d", full_topic, len(payload_bytes))
+
             topic_parts = full_topic.split('/')
             # Expect at least mimir/<device>/<type>
             if len(topic_parts) < 3:
@@ -262,10 +265,13 @@ class MqttPresenceService:
             now = asyncio.get_event_loop().time()
             last = self._forward_last.get(topic)
             if last is not None and (now - last) < self._debounce_seconds:
+                # Log debounce suppression at INFO (low frequency per topic ~0.75s window)
+                logger.info("[mqtt-presence] debounce skip topic=%s delta_ms=%.1f window_ms=%.0f", topic, (now - last) * 1000.0, self._debounce_seconds * 1000.0)
                 return
             self._forward_last[topic] = now
             await forward_mqtt_message(topic=topic, payload_bytes=payload_bytes, qos=qos, retain=retain)
             mqtt_debug_stats.record_forwarded(topic, payload_bytes)
+            logger.info("[mqtt-presence] forwarded topic=%s", topic)
         except Exception as e:  # pragma: no cover - defensive
             logger.warning("MQTT presence bridge forward error: %s", e)
 
@@ -392,6 +398,30 @@ class MqttPresenceService:
             "offline_devices": offline_devices,
             "mqtt_connected": self.client is not None and self.is_running,
             "broker": f"{self.broker_host}:{self.broker_port}"
+        }
+
+    # ------------------------------------------------------------------
+    # Debug helpers (NOT part of public API; exposed via debug route only)
+    # ------------------------------------------------------------------
+    def get_forward_state(self, limit: int = 25) -> dict:
+        """Return snapshot of recent forward timings and debounce config.
+
+        Parameters
+        ----------
+        limit: int
+            Maximum number of topics to include from the internal forward map.
+        """
+        now = asyncio.get_event_loop().time()
+        items = []
+        for t, ts in list(self._forward_last.items())[:limit]:
+            items.append({
+                "topic": t,
+                "age_ms": round((now - ts) * 1000.0, 1)
+            })
+        return {
+            "debounce_seconds": self._debounce_seconds,
+            "tracked_topics": len(self._forward_last),
+            "sample": items,
         }
 
 
