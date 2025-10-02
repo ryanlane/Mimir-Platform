@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Monitor, Layers, Activity, Play } from 'lucide-react';
+import { Monitor, Layers, Activity } from 'lucide-react';
 import { api } from '../../services/api';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
 import './Dashboard.css';
@@ -26,6 +26,8 @@ const Dashboard = () => {
   const [sceneNextRuns, setSceneNextRuns] = useState({}); // sceneId -> timestamp (ms)
   const [nextGlobalRun, setNextGlobalRun] = useState(null); // earliest next run (ms)
   const [now, setNow] = useState(Date.now()); // ticking clock for countdowns
+  // Distribution overview (minimal subset migrated from deprecated Distribution page)
+  const [distributionOverview, setDistributionOverview] = useState(null);
 
   const { isConnected, currentState } = useEnsureFreshState();
 
@@ -113,6 +115,32 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => { refreshChannels(); }, [refreshChannels]);
+
+  // Lightweight distribution overview loader (non-blocking)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await api.getDistributionOverview().catch(e => {
+          // Treat missing endpoint as non-fatal (feature may be disabled)
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug('[Dashboard] Distribution overview unavailable:', e?.message);
+          }
+          return { data: null };
+        });
+        if (!cancelled) {
+          setDistributionOverview(resp.data || null);
+        }
+      } catch (e) {/* silent */}
+    })();
+    // refresh every 60s if present
+    const interval = setInterval(() => {
+      api.getDistributionOverview().then(r => {
+        if (!cancelled) setDistributionOverview(r.data || null);
+      }).catch(() => {/* silent */});
+    }, 60000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
 
   // recompute channel usage whenever scenes or channels change
   useEffect(() => {
@@ -354,6 +382,16 @@ const Dashboard = () => {
         <div className="metric"><span className="metric-label">Unassigned</span><span className="metric-value warning">{unassignedDisplays.length}</span></div>
       </div>
       <GlobalNextRefresh />
+
+      {/* Distribution Mini Stats (if available) */}
+      {distributionOverview && (
+        <div className="summary-bar distribution-mini">
+          <div className="metric"><span className="metric-label">Queues</span><span className="metric-value">{distributionOverview.total_queue_items ?? 0}</span></div>
+          <div className="metric"><span className="metric-label">Active Leases</span><span className="metric-value">{distributionOverview.active_leases ?? 0}</span></div>
+          <div className="metric"><span className="metric-label">Dist Sys</span><span className={`metric-value ${distributionOverview.distribution_available ? 'success' : 'danger'}`}>{distributionOverview.distribution_available ? 'Active' : 'Down'}</span></div>
+          <div className="metric"><span className="metric-label">Redis</span><span className={`metric-value ${distributionOverview.redis_available ? 'success' : 'danger'}`}>{distributionOverview.redis_available ? 'Up' : 'Down'}</span></div>
+        </div>
+      )}
 
       {/* Active Displays Grid */}
       <section className="panel">

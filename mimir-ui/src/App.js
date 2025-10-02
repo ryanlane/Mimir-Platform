@@ -7,7 +7,6 @@ import Scenes from './pages/Scenes/Scenes';
 import Channels from './pages/Channels/Channels';
 import Settings from './pages/Settings/Settings';
 import Displays from './pages/Displays/Displays';
-import Distribution from './pages/Distribution/Distribution';
 import { ErrorBoundary, useToast, ToastContainer, NetworkStatus } from './components/ErrorHandling/ErrorHandling';
 import CacheDebug from './utils/cacheDebug';
 import './styles/theme.css';
@@ -106,7 +105,6 @@ function AppContent() {
             <Route path="/scenes" element={<Scenes />} />
             <Route path="/channels" element={<Channels />} />
             <Route path="/displays" element={<Displays />} />
-            <Route path="/distribution" element={<Distribution />} />
             <Route path="/settings" element={<Settings />} />
             {/* Catch-all route for unmatched paths */}
             <Route path="*" element={<Dashboard />} />
