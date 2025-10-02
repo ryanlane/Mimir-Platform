@@ -22,6 +22,12 @@ const sampleFeed = [
     payload: { topic: 'mimir/scenes/rotation/evt', payload: { scene: 'Announcements', action: 'activated' } }
   },
   {
+    ts: mkTs(7_000),
+    type: 'mqtt',
+    payload: { topic: 'mimir/display-03/cmd', payload: {"type": "display_image", "image_url": "http://oak.local:5000/media/swap/45510da1-68cc-4c30-b66d-fe21a9a988ae/colorframe05/ac669a8cc2d94d99a6aa85bbb4a13746.jpg", "assignment_id": "display-colorf-1759423369", "timestamp": "2025-10-02T16:42:49.416536+00:00", "image_format": "jpeg"}
+ }
+  },
+  {
     ts: mkTs(12_000),
     type: 'mqtt',
     payload: { topic: 'mimir/displays/display-03/status', payload: { online: false, last_seen: new Date(now - 65_000).toISOString() } }
@@ -82,7 +88,9 @@ export const ManyItems = {
           ? `mimir/displays/display-${(i%10)+1}/heartbeat`
           : i % 7 === 0
             ? `mimir/scenes/scene-${(i%6)+1}/evt`
-            : `mimir/displays/display-${(i%10)+1}/status`,
+            : i % 3 === 0
+              ? `mimir/scenes/scene-${(i%6)+1}/cmd`
+              : `mimir/displays/display-${(i%4)+1}/status`,
         payload: { index: i, value: Math.random(), flag: i % 3 === 0 }
       }
     })),

@@ -85,7 +85,7 @@
 
 .kind-command {
 	background: var(--color-warning);
-     color: var(--color-text-secondary);
+     color: var(--color-text-on-dark);
 }
 
 .kind-other {
