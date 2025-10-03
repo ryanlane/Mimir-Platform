@@ -1,20 +1,17 @@
+"""Display Client API Routes.
+
+Provides endpoints to query and manage display clients (registered & discovered).
 """
-Display Client API Routes
-Streamlined FastAPI router for display client management
-"""
+from pathlib import Path
+import uuid
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from sqlalchemy import or_
-from datetime import datetime, timezone
-from typing import Optional
-import uuid
 
 from app.db.base import SessionLocal
-from app.db.models import DisplayClient, Scene
+from app.db.models import DisplayClient, DisplaySceneImage
 from app.schemas.displays import (
-    DisplayClientRegistration, 
-    DisplayClientResponse, 
+    DisplayClientResponse,
     DisplayClientUpdate,
     DisplayClientListResponse,
 )
@@ -22,17 +19,15 @@ from app.schemas.common import PaginationMeta
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt.publisher import mqtt_scene_service, mqtt_scene_assignment
 from app.services.display_last_image import display_last_image_store
-from app.config import settings
-from pathlib import Path
-from app.db.models import DisplaySceneImage
 from app.services.display_image_persistence import DisplayImagePersistenceService
+from app.config import settings
 
 
 router = APIRouter(prefix="/displays", tags=["displays"])
 
 class AssignSceneBody(BaseModel):
     scene_id: str
-    subchannel_id: Optional[str] = None
+    subchannel_id: str | None = None
 
 def get_db():
     """Database dependency"""
@@ -41,6 +36,126 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _parse_resolution(discovered) -> tuple[int, int]:
+    """Attempt to derive width/height from multiple possible sources.
+
+    Sources in priority order:
+    1. discovered.properties['resolution'] as 'WIDTHxHEIGHT'
+    2. discovered.resolution string 'WIDTHxHEIGHT'
+    3. discovered.properties JSON-style arrays (res or native_resolution) serialized
+    4. capability style arrays in properties (res, native_resolution) comma/space separated
+    5. Fallback to 800x480
+    """
+    candidates: list[tuple[int, int]] = []
+    props = getattr(discovered, 'properties', {}) or {}
+
+    def parse_pair(obj):
+        try:
+            if isinstance(obj, (list, tuple)) and len(obj) == 2:
+                return int(obj[0]), int(obj[1])
+            if isinstance(obj, str):
+                # strip brackets if present
+                cleaned = obj.strip().strip('[]')
+                if 'x' in cleaned.lower():
+                    parts = cleaned.lower().split('x')
+                else:
+                    # allow comma or space separated
+                    cleaned = cleaned.replace(',', ' ')
+                    parts = [p for p in cleaned.split() if p]
+                if len(parts) == 2:
+                    return int(parts[0]), int(parts[1])
+        except (ValueError, TypeError):
+            return None
+        return None
+
+    # 1 & 2 string forms
+    if props.get('resolution'):
+        r = parse_pair(props.get('resolution'))
+        if r:
+            candidates.append(r)
+    if hasattr(discovered, 'resolution') and discovered.resolution:
+        r = parse_pair(discovered.resolution)
+        if r:
+            candidates.append(r)
+    # heartbeat style arrays possibly stored
+    for key in ('res', 'native_resolution'):
+        if key in props:
+            r = parse_pair(props[key])
+            if r:
+                candidates.append(r)
+
+    for w, h in candidates:
+        if w > 0 and h > 0:
+            return w, h
+    return 800, 480
+
+
+def _extract_supported_formats(discovered) -> list[str] | None:
+    """Extract supported image formats from discovered properties.
+
+    Looks at multiple possible keys:
+    - properties['formats'] (list or comma/space string)
+    - properties['supported_formats']
+    - capability style arrays in heartbeat
+    """
+    props = getattr(discovered, 'properties', {}) or {}
+    for key in ('formats', 'supported_formats', 'supportedFormats'):
+        if key in props and props[key]:
+            val = props[key]
+            if isinstance(val, (list, tuple)):
+                return [str(v) for v in val]
+            if isinstance(val, str):
+                # try JSON list
+                import json
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, list):
+                        return [str(v) for v in parsed]
+                except (ValueError, TypeError):
+                    pass
+                # fallback split
+                parts = [p.strip() for p in val.replace(';', ',').replace(' ', ',').split(',') if p.strip()]
+                if parts:
+                    return parts
+    return None
+
+
+def _build_discovered_display_response(discovered):
+    """Build dict for DisplayClientResponse from discovered display object."""
+    width, height = _parse_resolution(discovered)
+    assigned_scene = None
+    if getattr(discovered, 'assigned_scene_id', None):
+        assigned_scene = {
+            'id': discovered.assigned_scene_id,
+            'subchannel_id': getattr(discovered, 'assigned_subchannel_id', None)
+        }
+    supported_formats = _extract_supported_formats(discovered)
+    return {
+        'id': discovered.display_id,
+        'name': discovered.display_name,
+        'location': discovered.location,
+        'hostname': discovered.hostname,
+        'webhook_port': discovered.webhook_port,
+        'client_version': discovered.client_version or 'unknown',
+        'display_type': 'discovered',
+        'discovery_method': 'mdns',
+        'auto_discovered': True,
+        'width': width,
+        'height': height,
+        'orientation': (getattr(discovered, 'properties', {}) or {}).get('orientation') or (getattr(discovered, 'properties', {}) or {}).get('ori', 'landscape'),
+        'supported_formats': supported_formats,
+        'redis_distribution': ((getattr(discovered, 'properties', {}) or {}).get('redis_distribution') == 'true') or ((getattr(discovered, 'properties', {}) or {}).get('redisDistribution') == 'true'),
+        'content_claiming': ((getattr(discovered, 'properties', {}) or {}).get('content_claiming') == 'true') or ((getattr(discovered, 'properties', {}) or {}).get('contentClaiming') == 'true'),
+        'is_online': discovered.is_online,
+        'last_seen': discovered.last_seen,
+        'assigned_scene_id': assigned_scene,
+        'current_content_hash': None,
+        'created_at': discovered.discovered_at,
+        'updated_at': discovered.last_seen,
+        'tags': []
+    }
 
 
 @router.get("/status", response_model=dict)
@@ -95,7 +210,7 @@ async def get_displays_status(db: Session = Depends(get_db)):
 
 # @router.post("/register", response_model=DisplayClientResponse)
 # async def register_display_client(
-#     registration: DisplayClientRegistration, 
+#     registration: DisplayClientRegistration,
 #     db: Session = Depends(get_db)
 # ):
 #     """Register a new display client"""
@@ -235,10 +350,11 @@ async def list_display_clients(
                     discovered_response = DisplayClientResponse.model_validate(discovered_dict)
                     display_responses.append(discovered_response)
                     
-                except Exception as e:
-                    # Log error but continue
+                except Exception as e:  # pragma: no cover - defensive logging
                     import logging
-                    logging.getLogger(__name__).warning(f"Error adding discovered display {discovered.display_name}: {e}")
+                    logging.getLogger(__name__).warning(
+                        "Error adding discovered display %s: %s", getattr(discovered, 'display_name', 'unknown'), e
+                    )
     
     # Get total count including potential discovered displays
     total_db = db.query(DisplayClient).count()
@@ -295,7 +411,7 @@ async def get_last_image(device_id: str):
 async def get_persisted_last_image(
     display_id: str,
     scene_id: str,
-    subchannel_id: Optional[str] = None,
+    subchannel_id: str | None = None,
     db: Session = Depends(get_db)
 ):
     """Return the persisted last image metadata for a display+scene (+optional subchannel).
@@ -358,7 +474,7 @@ async def get_last_images_all_scenes(
     return {"display_id": display_id, "scenes": result}
 
 
-def _build_thumbnail_url(rec: DisplaySceneImage) -> Optional[str]:  # helper kept at bottom
+def _build_thumbnail_url(rec: DisplaySceneImage) -> str | None:  # helper kept at bottom
     # If we stored a thumbnail path and it is under the configured root, map to public URL.
     if not rec.thumbnail_path:
         return None
@@ -372,7 +488,7 @@ def _build_thumbnail_url(rec: DisplaySceneImage) -> Optional[str]:  # helper kep
         try:
             rel = path_obj.relative_to(Path.cwd())
             return f"{public_base}/{rel.as_posix()}" if public_base else f"/{rel.as_posix()}"
-        except Exception:  # noqa: BLE001
+        except (ValueError, RuntimeError):
             return rec.thumbnail_path
     return f"{public_base}/{rec.thumbnail_path}" if public_base else f"/{rec.thumbnail_path}"
 

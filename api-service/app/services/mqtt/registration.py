@@ -4,8 +4,9 @@ Handles device registration requests via MQTT
 """
 import json
 import asyncio
+import secrets
 from datetime import datetime, timezone
-from typing import Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from app.core.logging import get_logger
 from app.db.models import DisplayClient
@@ -25,7 +26,7 @@ def get_db():
     """Database dependency"""
     return SessionLocal()
 
-db = get_db()  
+db = get_db()
 
 logger = get_logger(__name__)
 
@@ -33,6 +34,11 @@ class AutoRegistrationService:
     def __init__(self):
         self.mqtt_client = None
         self.running = False
+        # Topics
+        self._registry_topics = [
+            "mimir/registry/register",          # legacy path (temporary)
+            "mimir/registry/v1/register",       # versioned path
+        ]
 
     async def start(self):
         """Start the auto-registration service with MQTT client"""
@@ -151,8 +157,12 @@ class AutoRegistrationService:
     async def _listen_for_acks(self):
         """Listen for acknowledgment responses from displays"""
         try:
+            # Presence / event / legacy flows
             await self.mqtt_client.subscribe("mimir/+/evt")
             await self.mqtt_client.subscribe("mimir/+/registration/reply")
+            # New proactive registration channels
+            for t in self._registry_topics:
+                await self.mqtt_client.subscribe(t)
             
             async for message in self.mqtt_client.messages:
                 if not self.running:
@@ -168,19 +178,169 @@ class AutoRegistrationService:
 
     async def _handle_display_response(self, message):
         """Handle responses from displays"""
-        topic_parts = message.topic.value.split('/')
+        full_topic = message.topic.value
+        payload_raw = message.payload.decode()
+        topic_parts = full_topic.split('/')
+        data: dict[str, object]
+        try:
+            data = json.loads(payload_raw)
+        except json.JSONDecodeError:
+            logger.warning("Non-JSON payload on %s", full_topic)
+            return
+
+        # Registration bus (new proactive)
+        if full_topic in self._registry_topics:
+            await self._handle_registry_request(data, full_topic)
+            return
+
+        # Per-device channels (legacy / reply / events)
+        if len(topic_parts) < 3:
+            return
         device_id = topic_parts[1]
         channel = topic_parts[2]
-        data = json.loads(message.payload.decode())
 
         if channel == "evt":
             if data.get("type") == "ack":
                 logger.info(f"ACK from {device_id}: {data}")
-
         elif channel == "registration" and len(topic_parts) > 3 and topic_parts[3] == "reply":
             await self._process_registration_reply(device_id, data)
 
-    async def _process_registration_reply(self, hostname: str, registration_data: Dict[str, Any]):
+    # -------- New proactive registration flow --------
+    async def _handle_registry_request(self, data: dict[str, object], topic: str):
+        """Process a proactive registration frame from a device.
+
+        Expected shape:
+          device_id: str
+          capabilities: {...}
+          metadata: {...}
+          reply_to: mqtt topic for reply
+          timestamp: client supplied (optional)
+        """
+        device_id = data.get("device_id")
+        reply_to = data.get("reply_to")
+        if not device_id or not reply_to:
+            logger.warning("Malformed registration payload (missing device_id or reply_to) topic=%s data=%s", topic, data)
+            return
+
+        capabilities = data.get("capabilities") or {}
+        metadata = data.get("metadata") or {}
+        resolution = capabilities.get("resolution") or capabilities.get("native_resolution") or [800, 480]
+        orientation = capabilities.get("orientation", "landscape")
+        client_version = metadata.get("client_version", "unknown")
+        hostname = metadata.get("hostname") or device_id
+        tags = metadata.get("tags") or []
+
+        # Upsert DB row idempotently (match on hostname OR device_id stored in hostname field for now)
+        db = SessionLocal()
+        created = False
+        display_obj: DisplayClient | None = None
+        try:
+            display_obj = db.query(DisplayClient).filter(DisplayClient.hostname == hostname).first()
+            if not display_obj:
+                display_obj = DisplayClient(
+                    name=metadata.get("name", hostname),
+                    description=metadata.get("description", "Proactive registered display"),
+                    location=metadata.get("location", "Unknown"),
+                    hostname=hostname,
+                    is_online=True,
+                    last_seen=datetime.now(timezone.utc),
+                    client_version=client_version,
+                    resolution=resolution,
+                    orientation=orientation,
+                    refresh_rate_hz=capabilities.get("refresh_rate_hz", 1),
+                    tags=tags,
+                )
+                db.add(display_obj)
+                db.commit()
+                db.refresh(display_obj)
+                created = True
+            else:
+                # Update key fields if changed
+                changed = False
+                if display_obj.client_version != client_version:
+                    display_obj.client_version = client_version
+                    changed = True
+                if display_obj.resolution != resolution:
+                    display_obj.resolution = resolution
+                    changed = True
+                if display_obj.orientation != orientation:
+                    display_obj.orientation = orientation
+                    changed = True
+                if changed:
+                    display_obj.last_seen = datetime.now(timezone.utc)
+                    db.commit()
+            logger.info("%s proactive registration for device_id=%s display_id=%s created=%s", "Accepted", device_id, display_obj.id, created)
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            logger.error("DB error handling registration for %s: %s", device_id, e)
+            await self._publish_registration_reply(reply_to, assigned_id=device_id, status="error", error=str(e))
+            db.close()
+            return
+        finally:
+            db.close()
+
+        # Publish reply (assigned_id echoes device_id for now)
+        await self._publish_registration_reply(
+            reply_to,
+            assigned_id=device_id,
+            status="accepted",
+            display_id=str(display_obj.id),
+            created=created,
+            capabilities=capabilities,
+        )
+
+        # Immediately send finalize command with registration key (random secret)
+        reg_key = secrets.token_hex(16)
+        await self._send_finalize_command(device_id=device_id, display_id=str(display_obj.id), registration_key=reg_key)
+
+    async def _publish_registration_reply(
+        self,
+        reply_to: str,
+        *,
+        assigned_id: str,
+        status: str,
+        display_id: str | None = None,
+        created: bool | None = None,
+        capabilities: dict[str, object] | None = None,
+        error: str | None = None,
+    ):
+        if not self.mqtt_client:
+            return
+        payload = {
+            "assigned_id": assigned_id,
+            "status": status,
+            "display_id": display_id,
+            "created": created,
+            "server_time": datetime.now(timezone.utc).isoformat(),
+            "capabilities_echo": capabilities,
+        }
+        if error:
+            payload["error"] = error
+        try:
+            await self.mqtt_client.publish(reply_to, json.dumps(payload), qos=1)
+            logger.info("Published registration reply to %s for %s status=%s", reply_to, assigned_id, status)
+        except Exception as e:  # noqa: BLE001
+            logger.error("Failed publishing registration reply to %s: %s", reply_to, e)
+
+    async def _send_finalize_command(self, *, device_id: str, display_id: str, registration_key: str):
+        """Send finalize_registration command to device's /cmd topic."""
+        if not self.mqtt_client:
+            return
+        cmd_topic = f"mimir/{device_id}/cmd"
+        payload = {
+            "type": "finalize_registration",
+            "display_id": display_id,
+            "registration_key": registration_key,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": 1,
+        }
+        try:
+            await self.mqtt_client.publish(cmd_topic, json.dumps(payload), qos=1)
+            logger.info("Sent finalize_registration to %s display_id=%s", device_id, display_id)
+        except Exception as e:  # noqa: BLE001
+            logger.error("Failed to send finalize command to %s: %s", device_id, e)
+
+    async def _process_registration_reply(self, hostname: str, registration_data: dict[str, object]):
         """Process registration details from a display and create database entry"""
         try:
             capabilities = registration_data.get("capabilities", {})
