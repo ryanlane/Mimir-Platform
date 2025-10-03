@@ -247,31 +247,6 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             )}
           </div>
 
-          <div className="display-actions">
-            
-            {display.displayType === 'discovered' && (
-              <div className="discovered-actions">
-                <Button
-                  size="sm"
-                  variant="success"
-                  icon="Check"
-                  iconSize={14}
-                  onClick={() => onEdit && onEdit(display, 'approve')}
-                >
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  icon="X"
-                  iconSize={14}
-                  onClick={() => onEdit && onEdit(display, 'reject')}
-                >
-                  Reject
-                </Button>
-              </div>
-            )}
-          </div>
         </div>
         {display.cap || display.capabilities ? (
           <div className="capabilities-row">
