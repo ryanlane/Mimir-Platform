@@ -438,6 +438,9 @@ export const api = {
   generateDisplayImage: (displayId) => apiClient.post(`/displays/${displayId}/generate-image`),
   updateDisplay: (displayId, updates) => apiClient.put(`/displays/${displayId}`, updates),
   deleteDisplay: (displayId) => apiClient.delete(`/displays/${displayId}`),
+  // Discovery approval actions
+  approveDiscoveredDisplay: (deviceId) => apiClient.post(`/displays/discovery/${encodeURIComponent(deviceId)}/approve`),
+  rejectDiscoveredDisplay: (deviceId) => apiClient.post(`/displays/discovery/${encodeURIComponent(deviceId)}/reject`),
 
   // Helper function for display image URLs
   getDisplayImageUrl: (displayId) => `${getApiBaseUrl()}/displays/${displayId}/current_image_file`,

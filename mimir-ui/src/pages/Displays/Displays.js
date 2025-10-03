@@ -639,33 +639,46 @@ const Displays = () => {
                   setShowSceneAssignment(true);
                 }}
                 onEdit={(display, action) => {
-                if (action === 'register' && display.displayType === 'discovered') {
-                  // Optional registration for discovered display
-                  setSelectedDisplay({
-                    ...display,
-                    // Convert discovered display to registration format
-                    name: display.name || display.service_name,
-                    ip_address: display.addresses?.[0] || display.ip_address,
-                    port: display.webhook_port || display.port,
-                    resolution: display.resolution || [display.width, display.height],
-                    orientation: display.orientation || 'landscape'
-                  });
-                
-                } else if (display.displayType === 'registered') {
-                  // Edit registered display
-                  console.log('Edit registered display:', display);
-                  // TODO: Implement display editing for registered displays
-                } else {
-                  // Direct interaction with discovered display (no registration needed)
-                  console.log('Interact with discovered display:', display);
-                  // TODO: Implement direct display interaction
-                }
-              }}
-              onDelete={handleDeleteDisplay}
-              onRefresh={refreshDisplays}
-            />
-          );
-        })}
+                  if (action === 'approve' && display.displayType === 'discovered') {
+                    // Optimistic state update
+                    setDisplays(prev => prev.map(d => d.id === display.id ? { ...d, approving: true } : d));
+                    api.approveDiscoveredDisplay(display.id)
+                      .then(() => refreshDisplays())
+                      .catch(err => {
+                        console.error('Approve failed', err);
+                        setDisplays(prev => prev.map(d => d.id === display.id ? { ...d, approving: false, approve_error: err.message } : d));
+                      });
+                  } else if (action === 'reject' && display.displayType === 'discovered') {
+                    // Optimistic removal
+                    const original = displays;
+                    setDisplays(prev => prev.filter(d => d.id !== display.id));
+                    api.rejectDiscoveredDisplay(display.id)
+                      .then(() => refreshDisplays())
+                      .catch(err => {
+                        console.error('Reject failed', err);
+                        // Revert on failure
+                        setDisplays(original);
+                      });
+                  } else if (action === 'register' && display.displayType === 'discovered') {
+                    setSelectedDisplay({
+                      ...display,
+                      name: display.name || display.service_name,
+                      ip_address: display.addresses?.[0] || display.ip_address,
+                      port: display.webhook_port || display.port,
+                      resolution: display.resolution || [display.width, display.height],
+                      orientation: display.orientation || 'landscape'
+                    });
+                  } else if (display.displayType === 'registered') {
+                    console.log('Edit registered display:', display);
+                  } else {
+                    console.log('Interact with discovered display:', display);
+                  }
+                }}
+                onDelete={handleDeleteDisplay}
+                onRefresh={refreshDisplays}
+              />
+            );
+          })}
         </div>
       )}
 

@@ -249,8 +249,53 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
 
           <div className="display-actions">
             
+            {display.displayType === 'discovered' && (
+              <div className="discovered-actions">
+                <Button
+                  size="sm"
+                  variant="success"
+                  icon="Check"
+                  iconSize={14}
+                  onClick={() => onEdit && onEdit(display, 'approve')}
+                >
+                  Approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon="X"
+                  iconSize={14}
+                  onClick={() => onEdit && onEdit(display, 'reject')}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
           </div>
         </div>
+        {display.cap || display.capabilities ? (
+          <div className="capabilities-row">
+            {(() => { const cap = display.cap || display.capabilities || {}; return (
+              <>
+                {Array.isArray(cap.res) && cap.res.length === 2 && (
+                  <span className="cap-badge" title="Resolution">{cap.res[0]}×{cap.res[1]}</span>
+                )}
+                {cap.ori && (
+                  <span className="cap-badge" title="Orientation">{cap.ori}</span>
+                )}
+                {cap.client_version && (
+                  <span className="cap-badge" title="Client Version">v{cap.client_version}</span>
+                )}
+                {cap.redis_distribution && (
+                  <span className="cap-flag" title="Redis Distribution Enabled">redis</span>
+                )}
+                {cap.content_claiming && (
+                  <span className="cap-flag" title="Content Claiming Enabled">claim</span>
+                )}
+              </>
+            ); })()}
+          </div>
+        ) : null}
 
         {/* Inline Thumbnail */}
         <div className="display-thumbnail-wrapper">
