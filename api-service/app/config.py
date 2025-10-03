@@ -193,6 +193,33 @@ class Settings(BaseSettings):
     mqtt_password: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_PASSWORD", "MQTT_PASS"))
     mqtt_client_id_prefix: str = Field("mimir", validation_alias=AliasChoices("MQTT_CLIENT_ID_PREFIX",))
 
+    # --- MQTT Discovery (hybrid Redis) ---
+    mqtt_discovery_enabled: bool = Field(
+        True,
+        validation_alias=AliasChoices("MQTT_DISCOVERY_ENABLED",),
+        description="Enable heartbeat-based MQTT discovery for non-mDNS displays.",
+    )
+    mqtt_discovery_expiry_seconds: int = Field(
+        600,
+        validation_alias=AliasChoices("MQTT_DISCOVERY_EXPIRY_SECONDS",),
+        description="Seconds before a DISCOVERED device without capabilities expires.",
+    )
+    mqtt_discovery_preregistered_expiry_seconds: int = Field(
+        86400,
+        validation_alias=AliasChoices("MQTT_DISCOVERY_PREREGISTERED_EXPIRY_SECONDS",),
+        description="Seconds before a PRE_REGISTERED (not approved) device expires.",
+    )
+    mqtt_discovery_offline_grace_seconds: int = Field(
+        120,
+        validation_alias=AliasChoices("MQTT_DISCOVERY_OFFLINE_GRACE_SECONDS",),
+        description="Heartbeat silence interval to mark device OFFLINE.",
+    )
+    mqtt_discovery_ws_debounce_seconds: float = Field(
+        1.5,
+        validation_alias=AliasChoices("MQTT_DISCOVERY_WS_DEBOUNCE_SECONDS",),
+        description="Minimum seconds between websocket broadcast updates per device.",
+    )
+
     # --- Push / Scene Refresh Tunables ---
     push_debounce_seconds: float = Field(
         5.0,

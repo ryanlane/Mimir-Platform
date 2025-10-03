@@ -11,16 +11,13 @@ Key responsibilities:
 - Track execution status and handle failures
 """
 import asyncio
-import uuid
-import logging
-from typing import Dict, Any, Optional
 import base64
-import os  # May be used elsewhere; keep if referenced
+import logging
 import time
-from datetime import UTC, datetime
-from typing import Dict, List, Optional, Any, Tuple
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from functools import partial
+from typing import Any
 
 # Removed unused sqlalchemy imports (Session, and_) to reduce dependencies
 
@@ -33,7 +30,6 @@ from ..services.mqtt.publisher import mqtt_scene_service
 from ..services.plugin_discovery import plugin_discovery_service
 from ..config import settings
 from ..services.display_last_image import display_last_image_store
-from ..db.base import SessionLocal as _PersistenceSessionLocal
 from ..services.display_image_persistence import DisplayImagePersistenceService
 from ..services.scene_refresh_service import scene_refresh_service, SceneRefreshResult
 from ..services.image_swap import save_swap_image, prune_swap
@@ -43,7 +39,7 @@ logger = logging.getLogger(__name__)
 # Track last content hash per scene/subchannel across runs to avoid re-sending
 # identical images when channel instances are re-created and report distribution_mode="new".
 # Key: f"{scene_id}:{subchannel_id or ''}"
-_last_scene_content_hash: Dict[str, str] = {}
+_last_scene_content_hash: dict[str, str] = {}
 
 
 # -----------------------------------------------------
@@ -61,7 +57,7 @@ class DistributionError(Exception):
     """Raised when distributing image data to displays encounters a non-recoverable issue."""
 
 
-def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
+def _convert_image_to_url(image_info: dict[str, Any]) -> str | None:
     """
     Convert image information from a channel to a publicly accessible URL.
     
@@ -108,7 +104,7 @@ def _convert_image_to_url(image_info: Dict[str, Any]) -> Optional[str]:
         return None
 
 
-def _save_base64_and_get_url(image_info: Dict[str, Any], base_url: str) -> Optional[str]:
+def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str | None:
     """
     Save base64 image data to a file and return the URL to access it.
     
@@ -255,7 +251,7 @@ class SchedulerWorker:
         
     async def _worker_loop(self):
         """Main worker loop that processes due jobs"""
-        logger.info(f"Scheduler worker loop started (polling every {self.poll_interval}s)")
+        logger.info("Scheduler worker loop started (polling every %ss)", self.poll_interval)
         
         while self.running:
             # Guardrail: we intentionally keep a loop-level exception barrier so a single
@@ -288,7 +284,7 @@ class SchedulerWorker:
                     # Fetch a small sample of upcoming jobs to compute earliest next_run_at
                     upcoming = (
                         db.query(SchedulerJob)
-                        .filter(SchedulerJob.enabled == True)
+                        .filter(SchedulerJob.enabled)
                         .order_by(SchedulerJob.next_run_at.asc())
                         .limit(5)
                         .all()
@@ -297,7 +293,7 @@ class SchedulerWorker:
                         earliest = upcoming[0].next_run_at
                         total_enabled = (
                             db.query(SchedulerJob)
-                            .filter(SchedulerJob.enabled == True)
+                            .filter(SchedulerJob.enabled)
                             .count()
                         )
                         logger.debug(
@@ -334,7 +330,7 @@ class SchedulerWorker:
         *,
         trigger_reason: TriggerReason = TriggerReason.SCHEDULED,
         worker_id: str = "scheduler-worker"
-    ) -> Optional[str]:
+    ) -> str | None:
         """Execute a single scheduler job.
 
         Returns the execution_id created for this run (or None if lock failed).
@@ -394,7 +390,7 @@ class SchedulerWorker:
         *,
         trigger_reason: TriggerReason = TriggerReason.MANUAL,
         force: bool = False,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Convenience method to execute a job immediately bypassing the poll delay.
 
         Returns execution_id on success, or None if job not found / not permitted.
@@ -438,8 +434,7 @@ class SchedulerWorker:
         temp_root = Path(temp_root_raw).resolve()
         if not temp_root.exists() or not temp_root.is_dir():
             return
-
-        cutoff_ts = datetime.now(UTC).timestamp() - (max_age_min * 60)
+        cutoff_ts = datetime.now(timezone.utc).timestamp() - (max_age_min * 60)
         removed = 0
         inspected = 0
         try:
@@ -501,7 +496,7 @@ class SchedulerWorker:
             return
 
         try:
-            with _PersistenceSessionLocal() as db:
+            with SessionLocal() as db:
                 svc = DisplayImagePersistenceService(db)
                 deleted = svc.prune_retention(max_per_pair=max_per_pair)
                 if deleted:
@@ -515,7 +510,7 @@ class SchedulerWorker:
         except Exception as e:  # noqa: BLE001
             logger.debug("persist.images.retention.error err=%s", e)
     
-    async def _execute_refresh_scene(self, job: SchedulerJob, scheduler_service: SchedulerService) -> Dict[str, Any]:
+    async def _execute_refresh_scene(self, job: SchedulerJob, scheduler_service: SchedulerService) -> dict[str, Any]:
         """Execute a refresh_scene action"""
         try:
             # Get scene assignments for this job
@@ -536,8 +531,10 @@ class SchedulerWorker:
                     results.append(scene_result)
                     if scene_result.get("success"):
                         affected_scenes.append(assignment.scene_id)
-                except Exception as e:
-                    logger.error(f"Failed to refresh scene {assignment.scene_id}: {e}")
+                except Exception as e:  # noqa: BLE001
+                    logger.error(
+                        "refresh_scene.assignment_failed scene_id=%s err=%s", assignment.scene_id, e
+                    )
                     results.append({
                         "scene_id": assignment.scene_id,
                         "success": False,
@@ -568,7 +565,7 @@ class SchedulerWorker:
                 "error": str(e)
             }
     
-    async def _refresh_single_scene(self, assignment: SchedulerJobSceneAssignment) -> Dict[str, Any]:
+    async def _refresh_single_scene(self, assignment: SchedulerJobSceneAssignment) -> dict[str, Any]:
         """Refresh a single scene delegating to SceneRefreshService.
 
         Returns legacy dict structure for backward compatibility with existing
@@ -595,12 +592,12 @@ class SchedulerWorker:
     async def _request_channel_image(
         self,
         channel_id: str,
-        subchannel_id: Optional[str] = None,
-        refresh_method: str = "content_refresh",
+        subchannel_id: str | None = None,
+    _refresh_method: str = "content_refresh",  # unused legacy parameter (kept for backward compat)
         *,
-        resolution: Optional[List[int]] = None,
-        orientation: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        resolution: list[int] | None = None,
+        orientation: str | None = None,
+    ) -> dict[str, Any]:
         """Request an image from a channel using the plugin system"""
         try:
             # Get the channel plugin
@@ -614,7 +611,7 @@ class SchedulerWorker:
             # Prepare request data
             res = resolution if (resolution and len(resolution) == 2) else [800, 600]
             orient = orientation or "landscape"
-            request_data: Dict[str, Any] = {
+            request_data: dict[str, Any] = {
                 "settings": {
                     "resolution": res,
                     "orientation": orient,
@@ -646,26 +643,22 @@ class SchedulerWorker:
             else:
                 return {
                     "success": False,
-                    "error": f"Channel returned unsuccessful response: {image_response}"
+                    "error": f"Channel returned unsuccessful response: {image_response}"  # noqa: E501
                 }
                 
         except Exception as e:  # noqa: BLE001
             # Wrap in domain-specific error so caller can classify
             raise ChannelRequestError(str(e)) from e
-            return {
-                "success": False,
-                "error": str(e)
-            }
 
     # ----------------------------------------------
     # Display collection & grouping helpers
     # ----------------------------------------------
-    def _collect_assigned_displays(self, scene: Scene) -> List[Dict[str, Any]]:
+    def _collect_assigned_displays(self, scene: Scene) -> list[dict[str, Any]]:
         """Gather displays (discovered + DB) assigned to a scene with resolution & orientation.
 
         Returns list of dicts: {device_id, width, height, orientation}
         """
-        collected: Dict[str, Dict[str, Any]] = {}
+        collected: dict[str, dict[str, Any]] = {}
 
         # mDNS discovered displays
         if mdns_discovery_service.is_running:
@@ -703,7 +696,7 @@ class SchedulerWorker:
         return list(collected.values())
 
     @staticmethod
-    def _parse_resolution_string(res_str: Optional[str]) -> Tuple[int, int]:
+    def _parse_resolution_string(res_str: str | None) -> tuple[int, int]:
         if not res_str or "x" not in res_str:
             return 800, 600
         try:
@@ -716,7 +709,7 @@ class SchedulerWorker:
         except ValueError:
             return 800, 600
     
-    async def _distribute_to_displays(self, scene: Scene, image_response: Dict[str, Any]) -> Dict[str, Any]:
+    async def _distribute_to_displays(self, scene: Scene, image_response: dict[str, Any]) -> dict[str, Any]:
         """Distribute the generated image to displays assigned to this scene"""
         try:
             displays_updated = 0
@@ -755,19 +748,21 @@ class SchedulerWorker:
                         })
             
             if not assigned_displays:
-                logger.info(f"No displays assigned to scene {scene.id}")
+                logger.info("No displays assigned to scene %s", scene.id)
                 return {
                     "displays_updated": 0,
                     "errors": ["No displays assigned to scene"]
                 }
             
-            logger.info(f"Distributing to {len(assigned_displays)} displays for scene {scene.id}")
+            logger.info(
+                "Distributing to %d displays for scene %s", len(assigned_displays), scene.id
+            )
             
             # Extract image information; new pipeline may provide raw bytes directly under image_response["image"]["bytes"]
             image_info = image_response.get("image", {})
             distribution_mode = image_info.get("distribution_mode")
             # Prefer nested sha256; fall back to top-level if provided
-            candidate_hash: Optional[str] = None
+            candidate_hash: str | None = None
             try:
                 candidate_hash = (
                     (image_info or {}).get("sha256")
@@ -784,9 +779,10 @@ class SchedulerWorker:
                 content_type = image_info.get("content_type") or image_info.get("mime_type")
 
             # We will build a per-display mapping of URLs so each display has its own path (avoids overwrite collisions)
-            per_display_urls: Dict[str, str] = {}
-            base_seed_url: Optional[str] = None
+            per_display_urls: dict[str, str] = {}
+            base_seed_url: str | None = None
 
+            swap_path = None  # ensure defined for later image_path usage
             if raw_bytes:
                 # We'll defer writing until after deciding distribution necessity; capture bytes length for logs
                 base_seed_url = "bytes://pending"  # marker for diagnostics
@@ -821,7 +817,9 @@ class SchedulerWorker:
                     # New content available - distribute
                     should_distribute = True
                     logger.info(
-                        f"New content available for scene {scene.id}, distributing to {len(assigned_displays)} displays"
+                        "New content available for scene %s distributing to %d displays",
+                        scene.id,
+                        len(assigned_displays),
                     )
             elif distribution_mode in ["existing", "cached"]:
                 # No new content, check if any displays need scene assignment updates
@@ -830,11 +828,13 @@ class SchedulerWorker:
                     target_scene = str(scene.id)
                     if current_scene != target_scene and current_scene != scene.id:
                         should_distribute = True
-                        logger.info(f"Display {display['id']} needs scene assignment update")
+                        logger.info("Display %s needs scene assignment update", display["id"])
                         break
                 
                 if not should_distribute:
-                    logger.info(f"No new content and all displays have correct scene assignment, skipping distribution")
+                    logger.info(
+                        "No new content and all displays have correct scene assignment; skipping distribution"
+                    )
                     return {
                         "displays_updated": 0,
                         "errors": [],
@@ -843,7 +843,9 @@ class SchedulerWorker:
             else:
                 # Unknown distribution mode, be conservative and distribute
                 should_distribute = True
-                logger.warning(f"Unknown distribution mode '{distribution_mode}', distributing to be safe")
+                logger.warning(
+                    "Unknown distribution mode '%s', distributing to be safe", distribution_mode
+                )
             
             # Send display_image commands to each display via MQTT
             for display in assigned_displays:
@@ -881,7 +883,9 @@ class SchedulerWorker:
                         
                         if success:
                             displays_updated += 1
-                            logger.debug(f"Sent display_image command to display {display['id']}")
+                            logger.debug(
+                                "Sent display_image command to display %s", display["id"]
+                            )
                             # Record last image metadata (width/height unknown here unless channel provided)
                             display_last_image_store.update(
                                 device_id=device_id,
@@ -903,7 +907,7 @@ class SchedulerWorker:
                                     assignment_id,
                                     use_url,
                                 )
-                                with _PersistenceSessionLocal() as p_db:
+                                with SessionLocal() as p_db:
                                     persistence = DisplayImagePersistenceService(p_db)
                                     rec = persistence.store_distribution_image(
                                         display_id=device_id,
@@ -932,10 +936,9 @@ class SchedulerWorker:
                     else:
                         errors.append("MQTT service not connected")
                         
-                except Exception as e:
-                    error_msg = f"Error sending to display {display['id']}: {str(e)}"
-                    errors.append(error_msg)
-                    logger.error(error_msg)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"Error sending to display {display['id']}: {e}")
+                    logger.error("distribution.send_error display=%s err=%s", display["id"], e)
             
             # After distribution, optionally prune swap directory (best-effort)
             if getattr(settings, "display_swap_enabled", True):

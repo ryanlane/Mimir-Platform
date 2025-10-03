@@ -31,6 +31,7 @@ from app.api.routes.displays import router as displays_router
 from app.api.routes.display_scene import router as display_scene_router
 from app.api.routes.websockets import router as websockets_router
 from app.api.routes.debug_mqtt import router as debug_mqtt_router
+from app.api.routes.discovery import router as discovery_router
 from app.api.routes.admin import health_router, admin_router
 from app.api.routes.scheduler import router as scheduler_router
 from fastapi.responses import JSONResponse
@@ -56,9 +57,9 @@ async def lifespan(app: FastAPI):
     
     # Setup and start scheduler
     if scheduler_service.setup_scheduler():
-        await scheduler_service.start() 
+        await scheduler_service.start()
         logger.info("⏰ APScheduler started with background jobs")
-        
+
         # Start scheduler worker for job execution
         app.state.scheduler_worker = SchedulerWorker()
         await app.state.scheduler_worker.start()
@@ -72,7 +73,7 @@ async def lifespan(app: FastAPI):
     
     # Report service status
     logger.info(f"📊 Database: {settings.database_url}")
-    logger.info(f"🌐 CORS Origins: {len(settings.cors_origins)} configured") 
+    logger.info(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
     logger.info(f"📁 Channels Directory: {settings.channels_directory}")
     logger.info(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
     
@@ -101,6 +102,14 @@ async def lifespan(app: FastAPI):
         # Also bring up the scene listener + publisher
         await setup_mqtt_scene_assignment()
         MQTTSceneAssignmentPublisher.initialize(client_id="mimir-scenes")
+        # Start discovery registry sweeper (hybrid Redis) if enabled
+        if getattr(settings, "mqtt_discovery_enabled", False):
+            try:
+                from app.services.mqtt.discovery_registry import mqtt_discovery_registry
+                await mqtt_discovery_registry.start()
+                logger.info("🔍 MQTT discovery registry started (hybrid Redis)")
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"Failed to start discovery registry: {e}")
         # Eagerly start the async publisher loop so the first refresh does not race the lazy start
         try:  # defensive – publisher start should not block overall startup
             publisher_instance = MQTTSceneAssignmentPublisher.get()
@@ -293,6 +302,8 @@ def create_app() -> FastAPI:
     app.include_router(channels_router, prefix=settings.api_prefix, tags=["channels"])
     app.include_router(scenes_router, prefix=settings.api_prefix, tags=["scenes"])
     app.include_router(displays_router, prefix=settings.api_prefix, tags=["displays"])
+    # Discovery (new) under same /displays namespace
+    app.include_router(discovery_router, prefix=settings.api_prefix, tags=["discovery"])
     app.include_router(display_scene_router, prefix=settings.api_prefix, tags=["display-scene"])
     app.include_router(scheduler_router, prefix=settings.api_prefix, tags=["scheduler"])
     app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])

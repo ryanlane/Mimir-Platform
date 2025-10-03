@@ -4,13 +4,15 @@ Implements instant online/offline detection using MQTT Last Will & Testament (LW
 Replaces polling-based timeout detection with event-driven presence
 """
 import asyncio
+import contextlib
 import json
 import socket
-from typing import TYPE_CHECKING  # retained for future type-only hints
 from collections.abc import Callable
 from datetime import datetime, timezone
-from app.services.mqtt_ws_bridge import forward_mqtt_message
+from typing import TYPE_CHECKING  # retained for future type-only hints
+
 from app.services.mqtt_debug_stats import mqtt_debug_stats
+from app.services.mqtt_ws_bridge import forward_mqtt_message
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -23,6 +25,7 @@ except ImportError:
 
 from app.config import settings
 from app.core.logging import get_logger
+from app.services.mqtt.discovery_registry import mqtt_discovery_registry
 
 # Import metrics for instrumentation
 try:
@@ -36,7 +39,7 @@ logger = get_logger(__name__)
 
 class MqttPresenceService:
     """MQTT-based presence detection service using Last Will & Testament"""
-    
+
     def __init__(self):
         self.broker_host = getattr(settings, 'mqtt_broker_host', 'localhost')
         self.broker_port = getattr(settings, 'mqtt_broker_port', 1883)
@@ -55,8 +58,9 @@ class MqttPresenceService:
         # Simple per-topic debounce (topic -> last_forward_ts)
         self._forward_last: dict[str, float] = {}
         self._debounce_seconds: float = float(getattr(settings, "mqtt_ws_debounce_seconds", 0.75))
-        
-        logger.info(f"MQTT Presence Service initialized - Broker: {self.broker_host}:{self.broker_port}")
+        logger.info("MQTT Presence Service initialized - Broker: %s:%s", self.broker_host, self.broker_port)
+        # Initialized here for attribute definition clarity
+        self._loop_task: asyncio.Task | None = None
     
     def add_presence_callback(self, callback: Callable):
         """Add callback for presence events (device_id, event_type, metadata)"""
@@ -71,8 +75,8 @@ class MqttPresenceService:
         for callback in self.presence_callbacks:
             try:
                 callback(device_id, event_type, metadata or {})
-            except Exception as e:
-                logger.error(f"Error in presence callback: {e}")
+            except Exception as e:  # pragma: no cover - callback isolation (user supplied)
+                logger.error("Error in presence callback: %s", e)
     
     async def start(self):
         """Start the MQTT presence monitoring service"""
@@ -91,8 +95,8 @@ class MqttPresenceService:
             logger.info("MQTT presence service started")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to start MQTT presence service: {e}")
+        except (RuntimeError, OSError) as e:  # pragma: no cover - startup failure fallback
+            logger.error("Failed to start MQTT presence service: %s", e)
             self.is_running = False
             return False
 
@@ -110,10 +114,8 @@ class MqttPresenceService:
             except asyncio.CancelledError:
                 pass
         if self.client:
-            try:
+            with contextlib.suppress(Exception):  # pragma: no cover - best effort disconnect
                 await self.client.disconnect()
-            except Exception:
-                pass
         logger.info("MQTT presence service stopped")
 
     
@@ -155,12 +157,12 @@ class MqttPresenceService:
                         await self._handle_mqtt_message(message)
                         
             except MqttError as e:
-                logger.error(f"MQTT connection error: {e}")
+                logger.error("MQTT connection error: %s", e)
                 if METRICS_AVAILABLE:
                     metrics.redis_operation("mqtt_connect", 0.0, False)
                     
-            except Exception as e:
-                logger.error(f"Unexpected error in MQTT client loop: {e}")
+            except Exception as e:  # pragma: no cover - defensive loop catch
+                logger.error("Unexpected error in MQTT client loop: %s", e)
                 
             # Wait before reconnecting
             if self.is_running:
@@ -173,7 +175,7 @@ class MqttPresenceService:
             full_topic = message.topic.value
             payload_bytes = message.payload
             if not payload_bytes:
-                logger.warning(f"Received empty MQTT payload on topic {full_topic}")
+                logger.warning("Received empty MQTT payload on topic %s", full_topic)
                 return
 
             mqtt_debug_stats.record_received(full_topic, payload_bytes)
@@ -195,7 +197,7 @@ class MqttPresenceService:
 
             try:
                 payload = json.loads(payload_bytes.decode())
-            except Exception:
+            except json.JSONDecodeError:
                 # Non JSON payloads still forwarded; skip presence semantics
                 payload = None
 
@@ -209,8 +211,8 @@ class MqttPresenceService:
             elif payload and message_type == "evt":
                 await self._handle_event_message(device_id, payload)
 
-        except Exception as e:
-            logger.error(f"Error handling MQTT message: {e}")
+        except Exception as e:  # pragma: no cover - top-level guard
+            logger.error("Error handling MQTT message: %s", e)
     
     async def _handle_status_message(self, device_id: str, payload: dict):
         """Handle device status messages (online/offline)"""
@@ -227,7 +229,7 @@ class MqttPresenceService:
                     **payload
                 }
                 
-                logger.info(f"Device came online: {device_id}")
+                logger.info("Device came online: %s", device_id)
                 self._notify_presence_callbacks(device_id, "online", self.device_metadata[device_id])
                 
                 # Record metrics
@@ -252,7 +254,7 @@ class MqttPresenceService:
                         "offline_reason": payload.get("reason", "graceful_disconnect")
                     })
                 
-                logger.info(f"Device went offline: {device_id} (reason: {payload.get('reason', 'unknown')})")
+                logger.info("Device went offline: %s (reason: %s)", device_id, payload.get('reason', 'unknown'))
                 self._notify_presence_callbacks(device_id, "offline", self.device_metadata.get(device_id, {}))
                 
                 # Record metrics
@@ -278,7 +280,7 @@ class MqttPresenceService:
 
     async def _handle_heartbeat_message(self, device_id: str, payload: dict):
         """Handle device heartbeat messages"""
-        logger.info(f"Received heartbeat from device {device_id}: {payload}")
+        logger.info("Received heartbeat from device %s: %s", device_id, payload)
         
         timestamp_str = payload.get("timestamp")
         if timestamp_str:
@@ -292,21 +294,33 @@ class MqttPresenceService:
         if device_id in self.device_metadata:
             self.device_metadata[device_id]["last_heartbeat"] = timestamp.isoformat()
             self.device_metadata[device_id]["heartbeat_data"] = payload
+
+        # Feed into discovery registry (hybrid Redis) for non-mDNS displays
+        try:
+            rec = await mqtt_discovery_registry.upsert_from_heartbeat(device_id, payload)
+            logger.info(
+                "[mqtt-discovery] upsert device_id=%s state=%s display_id=%s",
+                device_id,
+                rec.get("state"),
+                rec.get("display_id"),
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            logger.error("Discovery registry heartbeat error for %s: %s", device_id, e)
         
         # Bridge to discovery service for heartbeat updates
         try:
             from app.services.mdns_discovery import mdns_discovery_service
-            logger.info(f"Bridging heartbeat to discovery service for device {device_id}")
+            logger.info("Bridging heartbeat to discovery service for device %s", device_id)
             mdns_discovery_service.update_display_heartbeat(device_id, timestamp, payload)
-            logger.info(f"Successfully bridged heartbeat for device {device_id}")
-        except Exception as e:
-            logger.error(f"Failed to bridge heartbeat to discovery service for device {device_id}: {e}", exc_info=True)
+            logger.info("Successfully bridged heartbeat for device %s", device_id)
+        except Exception as e:  # pragma: no cover - external integration
+            logger.error("Failed to bridge heartbeat to discovery service for device %s: %s", device_id, e, exc_info=True)
         
         # Heartbeats indicate the device is active
         if device_id not in self.online_devices:
             # Device sent heartbeat but wasn't marked online - mark it online
             self.online_devices.add(device_id)
-            logger.info(f"Device marked online via heartbeat: {device_id}")
+            logger.info("Device marked online via heartbeat: %s", device_id)
             self._notify_presence_callbacks(device_id, "heartbeat_online", {"timestamp": timestamp.isoformat()})
     
     async def _handle_event_message(self, device_id: str, payload: dict):
@@ -346,7 +360,14 @@ class MqttPresenceService:
                 from app.services.mdns_discovery import mdns_discovery_service
                 mdns_discovery_service.update_display_heartbeat(device_id, timestamp, scene_data)
                 
-                logger.info(f"Updated scene assignment from event for {device_id}: scene_id={scene_id}, subchannel_id={subchannel_id}")
+                logger.info("Updated scene assignment from event for %s: scene_id=%s subchannel_id=%s", device_id, scene_id, subchannel_id)
+        # Finalize registration acknowledgment
+        elif event_type == "finalize_ack" or (payload.get("type") == "finalize_ack"):
+            try:
+                await mqtt_discovery_registry.acknowledge_finalize(device_id)
+                logger.info("Device %s acknowledged finalize registration", device_id)
+            except Exception as e:  # pragma: no cover
+                logger.warning("Finalize ack handling failed for %s err=%s", device_id, e)
     
     async def publish_device_status(self, device_id: str, status: str, metadata: dict | None = None):
         """Publish status for a device (useful for testing or manual control)"""
@@ -363,11 +384,11 @@ class MqttPresenceService:
             }
             
             await self.client.publish(topic, json.dumps(payload), qos=1, retain=True)
-            logger.debug(f"Published status for {device_id}: {status}")
+            logger.debug("Published status for %s: %s", device_id, status)
             return True
             
-        except Exception as e:
-            logger.error(f"Error publishing device status: {e}")
+        except Exception as e:  # pragma: no cover - publish failure
+            logger.error("Error publishing device status: %s", e)
             return False
     
     def get_online_devices(self) -> set[str]:
@@ -445,24 +466,24 @@ async def setup_mqtt_integration():
             
         return success
         
-    except Exception as e:
-        logger.error(f"Failed to setup MQTT integration: {e}")
+    except Exception as e:  # pragma: no cover - integration setup
+        logger.error("Failed to setup MQTT integration: %s", e)
         return False
 
 
-def _bridge_to_discovery_system(device_id: str, event_type: str, metadata: dict):
+def _bridge_to_discovery_system(device_id: str, event_type: str, metadata: dict):  # noqa: D401
     """Bridge MQTT presence events to existing discovery system"""
     try:
         # Import here to avoid circular imports
     # (Import of mdns_discovery_service intentionally omitted to avoid circular + unused warning)
         
         if event_type == "online":
-            logger.info(f"MQTT: Device {device_id} came online - notifying discovery system")
+            logger.info("MQTT: Device %s came online - notifying discovery system", device_id)
             # You can extend this to update the mDNS discovery service state
             
         elif event_type == "offline":
-            logger.info(f"MQTT: Device {device_id} went offline - notifying discovery system")
+            logger.info("MQTT: Device %s went offline - notifying discovery system", device_id)
             # You can extend this to update the mDNS discovery service state
             
     except Exception as e:  # pragma: no cover - defensive
-        logger.error(f"Error bridging MQTT presence to discovery system: {e}")
+        logger.error("Error bridging MQTT presence to discovery system: %s", e)

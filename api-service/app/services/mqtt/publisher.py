@@ -649,6 +649,29 @@ class MQTTSceneAssignmentPublisher:
         logger.debug("Sending display_image command to %s", device_id)
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
+    # Convenience helper: finalize registration (assign persistent key + display id)
+    async def finalize_registration(
+        self,
+        device_id: str,
+        display_id: str,
+        registration_key: str,
+        *,
+        sequence: int = 1,
+    ) -> bool:
+        """Send finalize_registration command to device.
+
+        Device is expected to persist the registration_key and begin including
+        registration_state=finalized + display_id in heartbeat frames.
+        """
+        payload = {
+            "type": "finalize_registration",
+            "sequence": sequence,
+            "display_id": display_id,
+            "registration_key": registration_key,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        return await self.publish_command(device_id, payload, qos=1, retain=False)
+
     # ---------- Worker / connection loop ----------
     async def _run(self) -> None:
         """Maintain a connection and flush the publish queue."""
