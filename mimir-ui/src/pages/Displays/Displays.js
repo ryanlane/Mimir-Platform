@@ -298,30 +298,119 @@ const Displays = () => {
 
   // WebSocket event handlers for real-time updates
   useEffect(() => {
+    const HEARTBEAT_TOPIC_REGEX = /^mimir\/(.+?)\/heartbeat$/;
+    const STATUS_TOPIC_REGEX = /^mimir\/(.+?)\/status$/;
+    const EVENT_TOPIC_REGEX = /^mimir\/(.+?)\/evt$/;
+
+    const mergeDisplayUpdate = (deviceId, partial) => {
+      setDisplays(prev => {
+        let found = false;
+        const updated = prev.map(d => {
+          // Match on either display.id or device_id (fallback for discovered)
+          const idMatch = d.id === deviceId || d.device_id === deviceId;
+            if (idMatch) {
+              found = true;
+              return { ...d, ...partial };
+            }
+            return d;
+        });
+        if (!found) {
+          // Create provisional discovered entry
+          updated.push({
+            id: deviceId, // temporary key until registration provides display_id
+            device_id: deviceId,
+            name: deviceId,
+            displayType: 'discovered',
+            is_online: partial.is_online ?? true,
+            last_seen: partial.last_seen || partial.timestamp || new Date().toISOString(),
+            ...partial
+          });
+        }
+        return updated;
+      });
+    };
+
     const handleDisplayEvent = (event) => {
-      if (!event.data) return;
-      
-      switch (event.data.type) {
-        case 'display_client_registered':
-          console.log('🖥️ New display registered:', event.data);
-          refreshDisplays();
-          break;
-        case 'display_scene_assigned':
-        case 'display_scene_unassigned':
-          console.log('🎬 Display scene assignment changed:', event.data);
-          refreshDisplays();
-          break;
-        case 'display_image_updated':
-          console.log('🖼️ Display image updated:', event.data);
-          // Update specific display without full refresh
-          setDisplays(prev => prev.map(display => 
-            display.id === event.data.displayId 
-              ? { ...display, current_image_url: event.data.imageUrl }
-              : display
-          ));
-          break;
-        default:
-          break;
+      if (!event.detail && !event.data) return;
+      const payload = event.detail || event.data; // Some dispatchers use detail
+      // If this is a structured internal event (legacy types)
+      if (payload?.type) {
+        switch (payload.type) {
+          case 'display_client_registered':
+            console.log('🖥️ New display registered:', payload);
+            refreshDisplays();
+            return;
+          case 'display_scene_assigned':
+          case 'display_scene_unassigned':
+            console.log('🎬 Display scene assignment changed:', payload);
+            refreshDisplays();
+            return;
+          case 'display_image_updated':
+            console.log('🖼️ Display image updated:', payload);
+            setDisplays(prev => prev.map(display => display.id === payload.displayId ? { ...display, current_image_url: payload.imageUrl } : display));
+            return;
+          default:
+            break; // fall through to topic-based parsing if available
+        }
+      }
+
+      // Topic-based forwarding (WS layer should include mqttTopic + mqttPayload)
+      const mqttTopic = payload.mqttTopic || payload.topic;
+      const mqttPayload = payload.mqttPayload || payload.payload;
+      if (!mqttTopic || !mqttPayload) return;
+
+      try {
+        // mqttPayload may already be an object
+        const obj = typeof mqttPayload === 'string' ? JSON.parse(mqttPayload) : mqttPayload;
+        let match;
+        if ((match = HEARTBEAT_TOPIC_REGEX.exec(mqttTopic))) {
+          const deviceId = match[1];
+          const cap = obj.cap || obj.capabilities || {};
+          const resolution = Array.isArray(cap.res) ? cap.res : (obj.res || null);
+          const orientation = cap.ori || obj.ori || obj.rotation || null;
+          const registration_state = obj.registration_state;
+          const display_id = obj.display_id || null;
+          const last_seen = obj.timestamp || obj.t || new Date().toISOString();
+          mergeDisplayUpdate(deviceId, {
+            cap: cap,
+            capabilities: cap,
+            resolution,
+            orientation,
+            registration_state,
+            display_id,
+            last_seen,
+            is_online: true,
+            hardware_fingerprint: obj.hardware_fingerprint || undefined,
+            displayType: display_id ? 'registered' : 'discovered'
+          });
+          return;
+        }
+        if ((match = STATUS_TOPIC_REGEX.exec(mqttTopic))) {
+          const deviceId = match[1];
+          const statusOnline = obj.status === 'online';
+          mergeDisplayUpdate(deviceId, {
+            is_online: statusOnline,
+            last_seen: obj.timestamp || obj.time || new Date().toISOString(),
+          });
+          return;
+        }
+        if ((match = EVENT_TOPIC_REGEX.exec(mqttTopic))) {
+          const deviceId = match[1];
+          if (obj.type === 'finalize_ack') {
+            mergeDisplayUpdate(deviceId, {
+              registration_state: 'finalized',
+              // display_id will appear in subsequent heartbeat; keep provisional
+            });
+          }
+          if (obj.type === 'error') {
+            mergeDisplayUpdate(deviceId, {
+              last_error: { code: obj.error || obj.code, detail: obj.detail || obj.message, ts: obj.timestamp || obj.t }
+            });
+          }
+          return;
+        }
+      } catch (e) {
+        console.warn('WS payload parse failed', e);
       }
     };
 
