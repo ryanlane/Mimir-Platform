@@ -107,7 +107,11 @@ def _extract_orientation(discovered, width: int | None = None, height: int | Non
     for key in ("orientation", "ori", "orientation_mode", "orientationMode"):
         val = props.get(key)
         if val:
-            return str(val).strip().lower()
+            # Capture candidate but still allow square override below if dims match
+            candidate = str(val).strip().lower()
+            if width is not None and height is not None and width == height:
+                return 'square'
+            return candidate
 
     # If width/height not supplied, attempt to derive
     if width is None or height is None:
