@@ -92,6 +92,39 @@ def _parse_resolution(discovered) -> tuple[int, int]:
     return 800, 480
 
 
+def _extract_orientation(discovered, width: int | None = None, height: int | None = None) -> str:
+    """Determine orientation for a discovered display.
+
+    Precedence:
+    1. Explicit property keys (orientation, ori, orientation_mode, orientationMode)
+    2. Infer from provided width/height (or parse from resolution attributes if not passed)
+       - width == height -> square
+       - height > width  -> portrait
+       - else -> landscape
+    3. Fallback default 'landscape'
+    """
+    props = getattr(discovered, 'properties', {}) or {}
+    for key in ("orientation", "ori", "orientation_mode", "orientationMode"):
+        val = props.get(key)
+        if val:
+            return str(val).strip().lower()
+
+    # If width/height not supplied, attempt to derive
+    if width is None or height is None:
+        try:
+            w, h = _parse_resolution(discovered)
+        except Exception:  # pragma: no cover - defensive
+            w, h = 800, 480
+    else:
+        w, h = width, height
+
+    if w == h:
+        return 'square'
+    if h > w:
+        return 'portrait'
+    return 'landscape'
+
+
 def _extract_supported_formats(discovered) -> list[str] | None:
     """Extract supported image formats from discovered properties.
 
@@ -144,7 +177,7 @@ def _build_discovered_display_response(discovered):
         'auto_discovered': True,
         'width': width,
         'height': height,
-        'orientation': (getattr(discovered, 'properties', {}) or {}).get('orientation') or (getattr(discovered, 'properties', {}) or {}).get('ori', 'landscape'),
+        'orientation': _extract_orientation(discovered, width, height),
         'supported_formats': supported_formats,
         'redis_distribution': ((getattr(discovered, 'properties', {}) or {}).get('redis_distribution') == 'true') or ((getattr(discovered, 'properties', {}) or {}).get('redisDistribution') == 'true'),
         'content_claiming': ((getattr(discovered, 'properties', {}) or {}).get('content_claiming') == 'true') or ((getattr(discovered, 'properties', {}) or {}).get('contentClaiming') == 'true'),
@@ -305,51 +338,7 @@ async def list_display_clients(
         for discovered in discovered_displays:
             if discovered.hostname not in db_hostnames:
                 try:
-                    # Parse resolution
-                    width, height = 800, 480  # defaults
-                    if discovered.resolution:
-                        try:
-                            width, height = map(int, discovered.resolution.split("x"))
-                        except ValueError:
-                            pass
-                    
-                    # Create assigned scene object if scene data is available
-                    assigned_scene = None
-                    if discovered.assigned_scene_id:
-                        assigned_scene = {
-                            "id": discovered.assigned_scene_id,
-                            "subchannel_id": discovered.assigned_subchannel_id
-                        }
-
-                    # Create a dict that matches DisplayClientResponse structure
-                    discovered_dict = {
-                        "id": discovered.display_id,
-                        "name": discovered.display_name,
-                        "location": discovered.location,
-                        "hostname": discovered.hostname,
-                        "webhook_port": discovered.webhook_port,
-                        "client_version": discovered.client_version or "unknown",
-                        "display_type": "discovered",
-                        "discovery_method": "mdns",
-                        "auto_discovered": True,
-                        "width": width,
-                        "height": height,
-                        "orientation": discovered.properties.get("orientation", "landscape"),
-                        "redis_distribution": discovered.properties.get("redis_distribution") == "true",
-                        "content_claiming": discovered.properties.get("content_claiming") == "true",
-                        "is_online": discovered.is_online,
-                        "last_seen": discovered.last_seen,
-                        "assigned_scene_id": assigned_scene,
-                        "current_content_hash": None,
-                        "created_at": discovered.discovered_at,
-                        "updated_at": discovered.last_seen,
-                        "tags": []
-                    }
-                    
-                    # Create DisplayClientResponse from dict
-                    discovered_response = DisplayClientResponse.model_validate(discovered_dict)
-                    display_responses.append(discovered_response)
-                    
+                    display_responses.append(DisplayClientResponse.model_validate(_build_discovered_display_response(discovered)))
                 except Exception as e:  # pragma: no cover - defensive logging
                     import logging
                     logging.getLogger(__name__).warning(
@@ -554,46 +543,7 @@ async def get_display_client(display_id: str, db: Session = Depends(get_db)):
         discovered_displays = mdns_discovery_service.get_discovered_displays()
         for discovered in discovered_displays:
             if discovered.display_id == display_id:
-                # Parse resolution
-                width, height = 800, 480  # defaults
-                if discovered.resolution:
-                    try:
-                        width, height = map(int, discovered.resolution.split("x"))
-                    except ValueError:
-                        pass
-
-                # Create assigned scene object if scene data is available
-                assigned_scene = None
-                if discovered.assigned_scene_id:
-                    assigned_scene = {
-                        "id": discovered.assigned_scene_id,
-                        "subchannel_id": discovered.assigned_subchannel_id
-                    }
-
-                discovered_dict = {
-                    "id": discovered.display_id,
-                    "name": discovered.display_name,
-                    "location": discovered.location,
-                    "hostname": discovered.hostname,
-                    "webhook_port": discovered.webhook_port,
-                    "client_version": discovered.client_version or "unknown",
-                    "display_type": "discovered",
-                    "discovery_method": "mdns",
-                    "auto_discovered": True,
-                    "width": width,
-                    "height": height,
-                    "orientation": discovered.properties.get("orientation", "landscape"),
-                    "redis_distribution": discovered.properties.get("redis_distribution") == "true",
-                    "content_claiming": discovered.properties.get("content_claiming") == "true",
-                    "is_online": discovered.is_online,
-                    "last_seen": discovered.last_seen,
-                    "assigned_scene_id": assigned_scene,
-                    "current_content_hash": None,
-                    "created_at": discovered.discovered_at,
-                    "updated_at": discovered.last_seen,
-                    "tags": []
-                }
-                return DisplayClientResponse.model_validate(discovered_dict)
+                return DisplayClientResponse.model_validate(_build_discovered_display_response(discovered))
 
     raise HTTPException(status_code=404, detail="Display client not found")
 
