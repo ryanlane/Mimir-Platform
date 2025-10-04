@@ -616,7 +616,14 @@ class SchedulerWorker:
                     "resolution": res,
                     "orientation": orient,
                     "distribution": "new",  # scheduler always requests fresh content per group
-                }
+                },
+                # Provide explicit options so channels that only read options.* receive correct dims
+                "options": {
+                    "width": res[0],
+                    "height": res[1],
+                    # Let channel infer layout unless square explicit
+                    "layout": ("auto" if orient != "square" else "auto"),
+                },
             }
             
             # Add subchannel/gallery information if specified
