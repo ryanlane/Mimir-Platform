@@ -657,6 +657,7 @@ class SchedulerWorker:
             # Wrap in domain-specific error so caller can classify
             raise ChannelRequestError(str(e)) from e
 
+
     # ----------------------------------------------
     # Display collection & grouping helpers
     # ----------------------------------------------
