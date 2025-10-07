@@ -27,7 +27,6 @@ from ..schemas.scheduler import ExecutionStatus, TriggerReason
 from ..services.scheduler_service import SchedulerService
 from ..services.mdns_discovery import mdns_discovery_service
 from ..services.mqtt.publisher import mqtt_scene_service
-from ..services.plugin_discovery import plugin_discovery_service
 from ..config import settings
 from ..services.display_last_image import display_last_image_store
 from ..services.display_image_persistence import DisplayImagePersistenceService
@@ -598,64 +597,47 @@ class SchedulerWorker:
         resolution: list[int] | None = None,
         orientation: str | None = None,
     ) -> dict[str, Any]:
-        """Request an image from a channel using the plugin system"""
+        """Request an image from a channel using the unified render helper.
+
+        Returns dict with success flag and normalized image structure under 'image'.
+        """
+        from app.services.channel_render_shared import request_channel_image_unified, ChannelRenderError
+
+        # Build base payload; scheduler requests should mark distribution=new to force fresh renders
+        res = resolution if (resolution and len(resolution) == 2) else [800, 600]
+        base_payload: dict[str, Any] = {
+            "settings": {
+                "resolution": res,
+                "orientation": orientation or None,  # let helper infer if None
+                "distribution": "new",
+            },
+        }
+        if subchannel_id:
+            # Accept multiple keys; helper will normalize
+            base_payload["gallery_id"] = subchannel_id
+            base_payload.setdefault("settings", {})["subChannelId"] = subchannel_id
+
         try:
-            # Get the channel plugin
-            plugin = plugin_discovery_service.get_plugin(channel_id)
-            if not plugin or not plugin.instance:
-                return {
-                    "success": False,
-                    "error": f"Channel plugin {channel_id} not found or not loaded"
-                }
-            
-            # Prepare request data
-            res = resolution if (resolution and len(resolution) == 2) else [800, 600]
-            orient = orientation or "landscape"
-            request_data: dict[str, Any] = {
-                "settings": {
-                    "resolution": res,
-                    "orientation": orient,
-                    "distribution": "new",  # scheduler always requests fresh content per group
-                },
-                # Provide explicit options so channels that only read options.* receive correct dims
-                "options": {
-                    "width": res[0],
-                    "height": res[1],
-                    # Let channel infer layout unless square explicit
-                    "layout": ("auto" if orient != "square" else "auto"),
-                },
-            }
-            
-            # Add subchannel/gallery information if specified
-            if subchannel_id:
-                request_data["gallery_id"] = subchannel_id
-                request_data["settings"]["subChannelId"] = subchannel_id
-            
-            # Call the channel's request_image method
-            logger.info(
-                "channel.request group channel=%s subchannel=%s resolution=%sx%s orientation=%s",
-                channel_id,
-                subchannel_id,
-                res[0],
-                res[1],
-                orient,
-            )
-            image_response = await plugin.instance.request_image(request_data)
-            
-            if image_response and image_response.get("success"):
-                return {
-                    "success": True,
-                    "image": image_response
-                }
-            else:
-                return {
-                    "success": False,
-                    "error": f"Channel returned unsuccessful response: {image_response}"  # noqa: E501
-                }
-                
+            unified = await request_channel_image_unified(channel_id, base_payload)
+        except ChannelRenderError as ce:  # noqa: BLE001
+            raise ChannelRequestError(str(ce)) from ce
         except Exception as e:  # noqa: BLE001
-            # Wrap in domain-specific error so caller can classify
             raise ChannelRequestError(str(e)) from e
+
+        # Adapt unified structure to legacy caller expectation
+        return {
+            "success": True,
+            "image": {
+                "bytes": unified.get("bytes"),
+                "content_type": unified.get("content_type"),
+                "width": unified.get("width"),
+                "height": unified.get("height"),
+                "orientation": unified.get("orientation"),
+                "distribution_mode": unified.get("distribution_mode"),
+                "sha256": unified.get("sha256"),
+                "gallery_id": unified.get("gallery_id"),
+            },
+        }
 
 
     # ----------------------------------------------

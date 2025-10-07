@@ -11,10 +11,11 @@ This file implements the 4-endpoint plugin architecture:
 Channel plugins are loaded directly into the main API process and their routes
 are mounted at /api/channels/{channel_id}/* by the plugin discovery service.
 """
-import base64
 import uuid
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Depends, Response
-from typing import Dict, Any, Optional
+from fastapi.responses import JSONResponse
 
 from app.services.deps import get_plugin_discovery_service
 from app.services.plugin_discovery import PluginDiscoveryService
@@ -85,107 +86,68 @@ async def get_channel_health(
 @router.post("/{channel_id}/request_image")
 async def request_channel_image(
     channel_id: str,
-    request_data: Optional[Dict[str, Any]] = None,
+    request_data: dict[str, Any] | None = None,
     plugin_discovery: PluginDiscoveryService = Depends(get_plugin_discovery_service)
 ):
-    """Request image generation from a channel plugin.
+    """Request image generation from a channel plugin (unified path).
 
-    Returns a JSON payload containing a short-lived image URL instead of embedding
-    the potentially large base64 blob directly in follow-up request paths.
-
-    Response example:
-        {
-          "imageId": "550e8400-e29b-41d4-a716-446655440000",
-          "imageUrl": "/api/channels/example/images/550e8400-e29b-41d4-a716-446655440000",
-          "contentType": "image/jpeg",
-          "legacyBase64": "<only-present-if-include_base64=true was requested>"
-        }
+    Uses shared normalization logic so scheduler/manual and HTTP produce identical sizing
+    and distribution semantics.
     """
+    # Validate plugin presence early (shared helper also checks, but we keep API semantics)
     plugin = plugin_discovery.get_plugin(channel_id)
     if not plugin:
         raise HTTPException(status_code=404, detail="Channel not found")
-
     if not plugin.instance:
         raise HTTPException(status_code=503, detail="Channel plugin not loaded")
 
-    data = request_data or {}
-    include_base64 = bool(data.get("include_base64"))
+    from app.services.channel_render_shared import request_channel_image_unified, ChannelRenderError
+
+    payload = request_data or {}
+    include_base64 = bool(payload.get("include_base64"))
 
     try:
-        raw_result = await plugin.instance.request_image(data)
-    except Exception as e:  # noqa: BLE001
-        logger.error("Error generating image from plugin %s: %s", channel_id, e)
-        raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}") from e
+        unified = await request_channel_image_unified(channel_id, payload)
+    except ChannelRenderError as ce:
+        raise HTTPException(status_code=500, detail=str(ce)) from ce
 
-    # The plugin might return:
-    #   * raw base64 string
-    #   * bytes
-    #   * dict with keys { image / image_base64 / bytes / content_type }
-    b64_payload: Optional[str] = None
-    content_bytes: Optional[bytes] = None
-    content_type = "image/jpeg"  # default fallback
+    # Persist bytes into ephemeral store to provide URL (maintain previous contract)
+    image_id = str(uuid.uuid4())
+    channel_image_store.put(
+        channel_id=channel_id,
+        image_id=image_id,
+        content=unified["bytes"],
+        content_type=unified["content_type"],
+    )
+    base_path = f"/api/channels/{channel_id}/images/{image_id}"
 
-    try:
-        if isinstance(raw_result, dict):
-            if isinstance(raw_result.get("bytes"), (bytes, bytearray)):
-                content_bytes = bytes(raw_result["bytes"])
-            elif isinstance(raw_result.get("image"), str):
-                b64_payload = raw_result["image"]
-            elif isinstance(raw_result.get("image_base64"), str):
-                b64_payload = raw_result["image_base64"]
-            content_type = raw_result.get("content_type", content_type)
-        elif isinstance(raw_result, (bytes, bytearray)):
-            content_bytes = bytes(raw_result)
-        elif isinstance(raw_result, str):
-            # Could be a data URI or plain base64
-            if raw_result.startswith("data:image") and ";base64," in raw_result:
-                # Extract mime + base64
-                prefix, b64_payload = raw_result.split(",", 1)
-                try:
-                    content_type = prefix.split(":", 1)[1].split(";", 1)[0]
-                except IndexError:
-                    pass
-            else:
-                b64_payload = raw_result
-        else:
-            raise ValueError("Unsupported image result format from plugin")
-
-        if b64_payload and not content_bytes:
-            try:
-                content_bytes = base64.b64decode(b64_payload, validate=True)
-            except Exception:  # noqa: BLE001
-                raise ValueError("Failed to decode base64 image from plugin")
-
-        if not content_bytes:
-            raise ValueError("No image content produced by plugin")
-
-        # Simple format sniffing to adjust content-type if default
-        if content_type == "image/jpeg" and len(content_bytes) >= 4:
-            if content_bytes.startswith(b"\x89PNG"):
-                content_type = "image/png"
-            elif content_bytes[0:2] == b"\xff\xd8":
-                content_type = "image/jpeg"
-
-        image_id = str(uuid.uuid4())
-        channel_image_store.put(channel_id=channel_id, image_id=image_id, content=content_bytes, content_type=content_type)
-
-        base_path = f"/api/channels/{channel_id}/images/{image_id}"
-        response: Dict[str, Any] = {
-            "imageId": image_id,
-            "imageUrl": base_path,
-            "contentType": content_type,
-        }
-
-        if include_base64 and b64_payload:
-            response["legacyBase64"] = b64_payload
-
-        return response
-    except ValueError as ve:  # Input/format issues
-        logger.warning("Invalid image output from plugin %s: %s", channel_id, ve)
-        raise HTTPException(status_code=422, detail=str(ve)) from ve
-    except Exception as e:  # noqa: BLE001
-        logger.error("Unhandled error processing image for %s: %s", channel_id, e)
-        raise HTTPException(status_code=500, detail="Internal error storing image") from e
+    resp: dict[str, Any] = {
+        "imageId": image_id,
+        "imageUrl": base_path,
+        "contentType": unified["content_type"],
+        "width": unified.get("width"),
+        "height": unified.get("height"),
+        "orientation": unified.get("orientation"),
+        "distributionMode": unified.get("distribution_mode"),
+        "sha256": unified.get("sha256"),
+        "galleryId": unified.get("gallery_id"),
+    }
+    if include_base64:
+        import base64 as _b64  # local import to avoid top-level if unused
+        resp["legacyBase64"] = _b64.b64encode(unified["bytes"]).decode("ascii")
+    # Optionally include debug headers if processing meta available
+    headers = {}
+    # Unified helper currently does not expose crop path; if rendering_service stored last meta, we could access here.
+    # Placeholder: check for keys that may be added later in unified dict (e.g., processing_path, crop_mode)
+    processing_path = unified.get("processing_path")
+    crop_mode = unified.get("crop_mode") or unified.get("requested_crop_mode")
+    if processing_path:
+        headers["X-Processing-Path"] = str(processing_path)
+    if crop_mode:
+        headers["X-Crop-Mode"] = str(crop_mode)
+    if headers:
+        return JSONResponse(content=resp, headers=headers)
+    return resp
 
 
 @router.get("/{channel_id}/images/{image_id}")
