@@ -21,7 +21,7 @@ import logging
 import time
 import hashlib
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple  # NOTE: legacy typing kept for untouched sections; new edits prefer PEP 585
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 from app.db.base import SessionLocal
@@ -168,8 +168,9 @@ class SceneRefreshService:
                     channel_id: Optional[str] = None
                     subchannel_id: Optional[str] = None
 
-                    # Lazy import to avoid circular dependency during module import
+                    # Local lazy imports to mitigate circular dependencies and startup overhead
                     from app.services.plugin_discovery import plugin_discovery_service  # noqa: WPS433
+                    from app.services.channel_render_shared import request_channel_image_unified, ChannelRenderError  # noqa: WPS433
 
                     for entry in channel_entries:
                         ch_id = entry.get("channel_id")
@@ -177,44 +178,49 @@ class SceneRefreshService:
                         if not ch_id:
                             errors.append("missing_channel_id")
                             continue
+                        # Validate plugin availability early (unified helper will also validate)
                         plugin = plugin_discovery_service.get_plugin(ch_id)
-                        if not plugin or not plugin.instance:
+                        if not plugin or not plugin.instance:  # defensive double-check
                             errors.append(f"plugin_not_loaded:{ch_id}")
                             continue
                         # We will evaluate content-gating once on the first group to avoid churn
                         checked_gating = False
                         for (w,h,orientation), display_group in groups.items():
-                            request_data: Dict[str, Any] = {
+                            # Build minimal payload; unified helper will normalize other fields.
+                            request_payload: dict[str, Any] = {
                                 "settings": {
                                     "resolution": [w, h],
                                     "orientation": orientation,
+                                    # Preserve prior semantics: request a fresh distribution for scene refresh
                                     "distribution": "new",
                                 }
                             }
                             if sc_id:
-                                request_data["gallery_id"] = sc_id
-                                request_data["settings"]["subChannelId"] = sc_id
+                                request_payload["gallery_id"] = sc_id
+                                request_payload["settings"]["subChannelId"] = sc_id
                             try:
-                                image_response = await plugin.instance.request_image(request_data)
-                            except (RuntimeError, ValueError, OSError) as e:  # plugin call safety
+                                image_result = await request_channel_image_unified(ch_id, request_payload)
+                            except ChannelRenderError as e:  # logical failure
                                 errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
                                 continue
-                            if not image_response or not image_response.get("success"):
+                            except (RuntimeError, ValueError, OSError) as e:  # safety net
+                                errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
+                                continue
+
+                            if not image_result or not image_result.get("success"):
                                 errors.append(f"channel_response_unsuccessful:{ch_id}")
                                 continue
-                            image_info = image_response
-                            # Gating: compute content fingerprint (stable across sizes) and distribution mode
+
+                            # Unified helper always returns bytes; capture for distribution
+                            raw_bytes = image_result.get("bytes")
+                            content_type = image_result.get("content_type")
+
+                            # Gating using sha256 (Phase A); retain legacy map for compatibility
                             if not checked_gating:
                                 checked_gating = True
                                 scene_key = f"{scene_id}:{sc_id or ''}"
-                                fp = (
-                                    image_response.get("content_fingerprint")
-                                    or (image_response.get("image") or {}).get("content_fingerprint")
-                                )
-                                dist_mode = (
-                                    (image_response.get("image") or {}).get("distribution_mode")
-                                    or image_response.get("distribution_mode")
-                                )
+                                fp = image_result.get("sha256") or image_result.get("content_fingerprint")
+                                dist_mode = image_result.get("distribution_mode")
                                 last_fp = _last_scene_fingerprint.get(scene_key)
                                 if fp and last_fp and fp == last_fp and not force:
                                     logger.info(
@@ -229,32 +235,9 @@ class SceneRefreshService:
                                         errors=[],
                                         duration_ms=int((time.perf_counter()-start)*1000),
                                     )
-                            raw_bytes = None
-                            content_type = None
-                            if isinstance(image_info, dict):
-                                raw_bytes = image_info.get("bytes")
-                                content_type = image_info.get("content_type") or image_info.get("mime_type")
+
+                            # In unified path we always have raw bytes; image_url path only created via swap file below
                             image_url = None
-                            if raw_bytes:
-                                # Will generate per-display URL; sample_url recorded from first display
-                                pass
-                            else:
-                                image_url = self._convert_image_to_url(image_info)
-                                if not image_url:
-                                    errors.append(f"image_url_conversion_failed:{ch_id}")
-                                    continue
-                                # Ensure downstream MQTT dedup does not suppress publishes when content changes
-                                # but the endpoint URL is stable by appending a cache-busting query param based on
-                                # the content fingerprint (fp). This also helps device-side HTTP caches.
-                                try:
-                                    if 'fp' in locals() and fp:
-                                        image_url = self._append_cache_buster(image_url, fp)
-                                except Exception:  # pragma: no cover – do not fail refresh on URL tweak issues
-                                    pass
-                                if not sample_url:
-                                    sample_url = image_url
-                                    channel_id = ch_id
-                                    subchannel_id = sc_id
                             for disp in display_group:
                                 device_id = disp["device_id"]
                                 # Ensure the underlying publisher loop is running (best-effort).
@@ -279,8 +262,8 @@ class SceneRefreshService:
                                     )
                                     # If raw bytes present create swap file per display
                                     per_display_url = image_url
-                                    swap_path_str: Optional[str] = None
-                                    if raw_bytes:
+                                    swap_path_str: str | None = None
+                                    if raw_bytes:  # unified helper guarantees bytes when success
                                         _path, per_display_url, _written = save_swap_image(
                                             scene_id=str(scene_id),
                                             display_id=device_id,
@@ -291,10 +274,9 @@ class SceneRefreshService:
                                             errors.append(f"swap_save_failed:{device_id}")
                                             logger.debug("scene.refresh.swap_save_failed scene=%s device=%s", scene_id, device_id)
                                             continue
-                                        # Apply same cache-busting to per-display URL if fp available
-                                        try:
+                                        try:  # cache bust with sha256 fp if available
                                             if 'fp' in locals() and fp:
-                                                per_display_url = self._append_cache_buster(per_display_url, fp)
+                                                per_display_url = self._append_cache_buster(per_display_url, fp)  # type: ignore[arg-type]
                                         except Exception:  # pragma: no cover
                                             pass
                                         if _path:
@@ -311,7 +293,7 @@ class SceneRefreshService:
                                     if success:
                                         total_updated += 1
                                         logger.info(
-                                            "scene.refresh.publish_ok scene=%s device=%s assignment=%s", 
+                                            "scene.refresh.publish_ok scene=%s device=%s assignment=%s",
                                             scene_id,
                                             device_id,
                                             assignment_id,
@@ -355,7 +337,7 @@ class SceneRefreshService:
                                 except (ConnectionError, RuntimeError, OSError) as send_err:  # network/mqtt isolation
                                     errors.append(f"send_exception:{device_id}:{type(send_err).__name__}")
                                     logger.warning(
-                                        "scene.refresh.publish_error scene=%s device=%s err=%s", 
+                                        "scene.refresh.publish_error scene=%s device=%s err=%s",
                                         scene_id,
                                         device_id,
                                         type(send_err).__name__,
@@ -426,8 +408,8 @@ class SceneRefreshService:
                         logger.debug("scene.content_hash.update_failed scene=%s err=%s", scene_id, type(hash_err).__name__)
 
     # --- Helpers (duplicated conceptually from scheduler worker; refactor later) ---
-    def _collect_assigned_displays(self, scene: Scene) -> List[Dict[str, Any]]:
-        collected: Dict[str, Dict[str, Any]] = {}
+    def _collect_assigned_displays(self, scene: Scene) -> list[dict[str, Any]]:
+        collected: dict[str, dict[str, Any]] = {}
         if mdns_discovery_service.is_running:
             try:
                 discovered = mdns_discovery_service.get_discovered_displays()
@@ -458,19 +440,20 @@ class SceneRefreshService:
         return list(collected.values())
 
     @staticmethod
-    def _parse_resolution_string(res_str: Optional[str]):  # type: ignore
+    def _parse_resolution_string(res_str: str | None):  # type: ignore
         if not res_str or "x" not in res_str:
             return 800, 600
         try:
             w_str, h_str = res_str.lower().split("x", 1)
-            w = int(w_str); h = int(h_str)
+            w = int(w_str)
+            h = int(h_str)
             if w <= 0 or h <= 0:
                 return 800, 600
             return w, h
         except ValueError:
             return 800, 600
 
-    def _convert_image_to_url(self, image_info: Dict[str, Any]) -> Optional[str]:
+    def _convert_image_to_url(self, image_info: dict[str, Any]) -> str | None:
         # Simplified copy of scheduler conversion (future: factor to shared util)
         base_url = settings.public_base_url
         img_val = image_info.get("image")
