@@ -222,7 +222,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
 
   const formatRelative = (ts) => {
     const date = normalizeTs(ts);
-    if (!date) return 'Never';
+    if (!date) return '';
     const diffMs = Date.now() - date.getTime();
     const mins = Math.floor(diffMs / 60000);
     const hours = Math.floor(mins / 60);
@@ -239,6 +239,13 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
   };
 
   const lastUpdatedTs = persisted.updated_ts ?? display.last_image_update_ts;
+  // Ticking re-render to keep relative time fresh without altering timestamp.
+  const [timeTick, setTimeTick] = useState(0); // value not used directly, only triggers render
+  useEffect(() => {
+    if (!lastUpdatedTs) return; // no ticking until we have a timestamp
+    const interval = setInterval(() => setTimeTick(t => t + 1), 60 * 1000); // update every minute
+    return () => clearInterval(interval);
+  }, [lastUpdatedTs]);
 
   return (
     <>
@@ -367,12 +374,13 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             </div>
           )}
 
-          {lastUpdatedTs && (
-            <div className="detail-item">
-              <Calendar size={14} />
-              <span>Last updated: {formatRelative(lastUpdatedTs)}</span>
-            </div>
-          )}
+          <div className="detail-item" data-reltime-tick={timeTick}>
+            <Calendar size={14} />
+            <span>
+              Last updated:{' '}
+              {lastUpdatedTs ? formatRelative(lastUpdatedTs) : ''}
+            </span>
+          </div>
 
           {display.tags && display.tags.length > 0 && (
             <div className="detail-item">
