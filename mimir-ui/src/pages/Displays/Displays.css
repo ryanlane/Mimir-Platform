@@ -275,8 +275,11 @@
 /* Display Grid */
 .displays-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 1.5rem;
+  gap: var(--gap);
+  /* Each column is as wide as 1fr, but never bigger than --item-max.
+     On small screens, columns shrink below --item-max to stay 3-up. */
+  grid-template-columns: repeat(var(--cols), minmax(0, min(1fr, var(--item-max))));
+  justify-content: center; /* center tracks when capped and leftover space exists */
 }
 
 @media (max-width: 768px){

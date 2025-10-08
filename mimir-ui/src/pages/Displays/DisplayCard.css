@@ -1,6 +1,7 @@
 /* Styles for DisplayCard component */
 
 .display-card {
+  width: 100%;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface);
