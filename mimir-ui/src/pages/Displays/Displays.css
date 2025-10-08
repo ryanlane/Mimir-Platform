@@ -262,10 +262,10 @@
 }
 
 .image-activity-indicator.active {
-  background-color: var(--color-success);
+  background-color: var(--color-mimir-green);
   opacity: 1;
   animation: image-activity-fade 3.5s forwards;
-  box-shadow: 0 0 0 4px rgba(var(--color-success-rgb), 0.15);
+  box-shadow: 0 0 0 4px rgba(var(--color-mimir-green-rbga), 0.15);
 }
 
 @keyframes image-activity-fade {

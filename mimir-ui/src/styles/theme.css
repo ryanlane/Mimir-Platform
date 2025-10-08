@@ -21,12 +21,14 @@
   --color-accent: #3b4b59;
   --color-accent-hover: #5f788d;
   --color-active: #8d962941;
-  --color-success: #8d9629;      /* unify with light override if desired */
+  --color-success: #8d9629;
+  --color-success-rgb: 141, 150, 41;     /* unify with light override if desired */
   --color-warning: #cc6324;
   --color-error: #bf1b1b;
   --color-focus-ring: #bfa07a;
   --color-icon: #000000A0;
   --color-mimir-green: #7eff00C0;
+  --color-mimir-green-rbga: rgba(126, 255, 0);
 
   --elevation-1: 0 1px 3px rgba(0 0 0 / 10%);
   --elevation-2: 0 4px 12px rgba(0 0 0 / 12%);
