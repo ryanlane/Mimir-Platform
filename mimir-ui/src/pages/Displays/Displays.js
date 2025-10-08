@@ -1,5 +1,5 @@
 // Multi-Display Management page for v2.3 API
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
@@ -28,13 +28,23 @@ const Displays = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   // Image update activity indicator state – toggles true briefly on any image update WS event
-  const [imageActivity, setImageActivity] = useState(false);
-  // Auto fade-out for image activity indicator
-  useEffect(() => {
-    if (!imageActivity) return;
-    const timeout = setTimeout(() => setImageActivity(false), 3500); // matches CSS fade duration
-    return () => clearTimeout(timeout);
-  }, [imageActivity]);
+  // Pulse hook for image activity indicator so animation restarts every event
+  const usePulse = (durationMs = 3500) => {
+    const [active, setActive] = useState(false);
+    const timeoutRef = useRef(null);
+    const trigger = useCallback(() => {
+      // Reset first so re-adding class restarts CSS keyframes reliably
+      setActive(false);
+      requestAnimationFrame(() => {
+        setActive(true);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => setActive(false), durationMs);
+      });
+    }, [durationMs]);
+    useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
+    return { active, trigger };
+  };
+  const { active: imageActivity, trigger: triggerImageActivity } = usePulse(3500);
   
   console.log('🔍 Current displays state:', displays?.length || 0, 'displays');
   console.log('🔍 Loading state:', loading);
@@ -367,7 +377,7 @@ const Displays = () => {
           case 'display_image_updated':
             console.log('🖼️ (legacy) Display image updated:', payload);
             setDisplays(prev => prev.map(display => display.id === payload.displayId ? (display.current_image_url === payload.imageUrl ? display : { ...display, current_image_url: payload.imageUrl, last_image_update_ts: new Date().toISOString() }) : display));
-            setImageActivity(true); // legacy event still counts
+            triggerImageActivity(); // legacy event still counts
             return;
           case 'mqtt_message': {
             // Normalize nested mqtt message shape so existing topic-based parser can run
@@ -395,7 +405,7 @@ const Displays = () => {
                   last_image_update_ts: tsIso
                 };
               }));
-              setImageActivity(true);
+              triggerImageActivity();
               return;
             }
             // Heartbeat / status / evt fallback via synthetic forwarding variables
@@ -432,8 +442,7 @@ const Displays = () => {
                     last_error: { code: obj.error || obj.code, detail: obj.detail || obj.message, ts: obj.timestamp || obj.t }
                   });
                 }
-                // treat rendered ack as activity pulse
-                // 'rendered' evt no longer pulses image activity to reduce noise
+                // rendered ack intentionally does not pulse image activity
                 return;
               }
             } catch (e) {
@@ -508,7 +517,7 @@ const Displays = () => {
 
     window.addEventListener('websocket-message', handleDisplayEvent);
     return () => window.removeEventListener('websocket-message', handleDisplayEvent);
-  }, [refreshDisplays]);
+  }, [refreshDisplays, triggerImageActivity]);
 
 
   const handleSceneAssigned = async (displayId, sceneId) => {
