@@ -278,13 +278,14 @@
   gap: var(--spacing-sm);
   /* Each column is as wide as 1fr, but never bigger than --item-max.
      On small screens, columns shrink below --item-max to stay 3-up. */
-  grid-template-columns: repeat(3, minmax(0, min(1fr, 420px)));
+  grid-template-columns: repeat(3, 1fr);
   justify-content: center; /* center tracks when capped and leftover space exists */
+  margin: var(--spacing-sm)
 }
 
 @media (max-width: 768px){
   .displays-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -645,7 +646,7 @@
 /* --------------------------------------------- */
 /* Mobile / Small Screen Responsive Enhancements */
 /* --------------------------------------------- */
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   /* Page level spacing tweaks */
   .displays-controls {
     padding: 1rem;
