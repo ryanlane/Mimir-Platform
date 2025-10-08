@@ -275,7 +275,7 @@
 /* Display Grid */
 .displays-grid {
   display: grid;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
   /* Each column is as wide as 1fr, but never bigger than --item-max.
      On small screens, columns shrink below --item-max to stay 3-up. */
   grid-template-columns: repeat(3, 1fr);
