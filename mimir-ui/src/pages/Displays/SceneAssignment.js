@@ -1,6 +1,6 @@
 // Scene Assignment component for assigning scenes to displays
-import React, { useState, useEffect } from 'react';
-import { Monitor, Play, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Monitor, Play, CheckCircle, X, ChevronDown } from 'lucide-react';
 import Modal from '../../components/Modal/Modal';
 import { api } from '../../services/api';
 import './Displays.css';
@@ -11,6 +11,11 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
   const [selectedScene, setSelectedScene] = useState(display.assigned_scene_id || '');
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1); // keyboard navigation
+  const inputRef = useRef(null);
+  const listRef = useRef(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -82,6 +87,62 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
     handleAssignScene(selectedScene);
   };
 
+  // Derived filtered scenes based on query
+  const filteredScenes = useMemo(() => {
+    if (!query) return scenes;
+    const q = query.toLowerCase();
+    return scenes.filter(s => s.name?.toLowerCase().includes(q));
+  }, [scenes, query]);
+
+  const selectedSceneObj = useMemo(() => scenes.find(s => s.id === selectedScene), [scenes, selectedScene]);
+
+  const commitSelection = useCallback((sceneId) => {
+    setSelectedScene(sceneId);
+    setOpen(false);
+    // Keep query synced with chosen label (except unassign)
+    if (sceneId) {
+      const sc = scenes.find(s => s.id === sceneId);
+      if (sc) setQuery(sc.name);
+    } else {
+      setQuery('');
+    }
+  }, [scenes]);
+
+  const handleKeyDown = (e) => {
+    if (!open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      setOpen(true);
+      setActiveIndex(0);
+      return;
+    }
+    if (!open) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(i => Math.min(filteredScenes.length, i + 1)); // +1 for unassign option at index 0
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(i => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIndex === 0) {
+        commitSelection('');
+      } else {
+        const item = filteredScenes[activeIndex - 1];
+        if (item && isSceneCompatible(item).compatible) commitSelection(item.id);
+      }
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open && listRef.current && activeIndex >= 0) {
+      const el = listRef.current.querySelector(`[data-index="${activeIndex}"]`);
+      if (el) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [open, activeIndex]);
+
   const isSceneCompatible = (scene) => {
     // Basic compatibility check - could be enhanced with more logic
     if (!scene.channels || scene.channels.length === 0) {
@@ -147,61 +208,120 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
               <p>Loading scenes...</p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} autoComplete="off">
               <div className="scene-selection">
-                <h3>Select Scene</h3>
-                
-                {/* Unassign option */}
-                <div className="scene-option">
-                  <label className="scene-card unassign-option">
+                <h3 style={{ marginBottom: '0.5rem' }}>Select Scene</h3>
+                <div className="scene-combobox-wrapper">
+                  <label className="scene-combobox-label" id="scene-combobox-label">Scene</label>
+                  <div
+                    className="scene-combobox"
+                    role="combobox"
+                    aria-haspopup="listbox"
+                    aria-expanded={open}
+                    aria-owns="scene-combobox-list"
+                    aria-controls="scene-combobox-list"
+                  >
                     <input
-                      type="radio"
-                      name="scene"
-                      value=""
-                      checked={selectedScene === ''}
-                      onChange={(e) => setSelectedScene(e.target.value)}
+                      ref={inputRef}
+                      type="text"
+                      placeholder="Search scenes..."
+                      value={query}
+                      aria-labelledby="scene-combobox-label"
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setOpen(true);
+                        setActiveIndex(0);
+                      }}
+                      onFocus={() => setOpen(true)}
+                      onKeyDown={handleKeyDown}
                     />
-                    <div className="scene-main">
-                      <span className="scene-name">No Scene (Unassign)</span>
-                      <span className="scene-meta">Remove assignment</span>
-                    </div>
-                  </label>
+                    {query && (
+                      <button
+                        type="button"
+                        className="clear-btn"
+                        aria-label="Clear search"
+                        onClick={() => {
+                          setQuery('');
+                          inputRef.current?.focus();
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (open) {
+                          setOpen(false);
+                        } else {
+                          setOpen(true);
+                          inputRef.current?.focus();
+                        }
+                      }}
+                      aria-label={open ? 'Collapse list' : 'Expand list'}
+                      style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: 'var(--color-text-tertiary, var(--color-text-secondary))' }}
+                    >
+                      <ChevronDown size={16} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+                    </button>
+                  </div>
+                  {open && (
+                    <ul
+                      id="scene-combobox-list"
+                      role="listbox"
+                      ref={listRef}
+                      className="scene-combobox-dropdown"
+                      aria-label="Scene options"
+                    >
+                      {/* Unassign option at index 0 */}
+                      <li
+                        role="option"
+                        data-index={0}
+                        className={`scene-combobox-option ${activeIndex === 0 ? 'active' : ''} ${selectedScene === '' ? 'selected' : ''}`}
+                        aria-selected={selectedScene === ''}
+                        onMouseEnter={() => setActiveIndex(0)}
+                        onMouseDown={(e) => { e.preventDefault(); commitSelection(''); }}
+                      >
+                        <span className="scene-name">No Scene (Unassign)</span>
+                        <span className="scene-combobox-meta">Remove assignment</span>
+                      </li>
+                      {filteredScenes.map((scene, idx) => {
+                        const compatibility = isSceneCompatible(scene);
+                        const itemIndex = idx + 1; // account for unassign at 0
+                        return (
+                          <li
+                            key={scene.id}
+                            role="option"
+                            data-index={itemIndex}
+                            aria-selected={selectedScene === scene.id}
+                            className={`scene-combobox-option ${selectedScene === scene.id ? 'selected' : ''} ${activeIndex === itemIndex ? 'active' : ''} ${!compatibility.compatible ? 'incompatible' : ''}`}
+                            onMouseEnter={() => setActiveIndex(itemIndex)}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              if (compatibility.compatible) commitSelection(scene.id);
+                            }}
+                          >
+                            <Play size={16} />
+                            <span className="scene-name" style={{ fontWeight: 500 }}>{scene.name}</span>
+                            {compatibility.compatible && (
+                              <CheckCircle size={14} className="compatible-icon" />
+                            )}
+                            {!compatibility.compatible && (
+                              <span className="compatibility-badge" title={compatibility.reason}>⚠ {compatibility.reason}</span>
+                            )}
+                            <span className="scene-combobox-meta">
+                              {(scene.channels?.length || 0)} ch
+                              {scene.overlay && scene.overlay.overlays?.length > 0 && ` • ${scene.overlay.overlays.length} ov`}
+                            </span>
+                          </li>
+                        );
+                      })}
+                      {filteredScenes.length === 0 && (
+                        <li className="scene-combobox-empty">No scenes match "{query}"</li>
+                      )}
+                    </ul>
+                  )}
                 </div>
-
-                {/* Available scenes */}
-                {scenes.map(scene => {
-                  const compatibility = isSceneCompatible(scene);
-                  return (
-                    <div key={scene.id} className="scene-option">
-                      <label className={`scene-card ${!compatibility.compatible ? 'incompatible' : ''}`}>
-                        <input
-                          type="radio"
-                          name="scene"
-                          value={scene.id}
-                          checked={selectedScene === scene.id}
-                          onChange={(e) => setSelectedScene(e.target.value)}
-                          disabled={!compatibility.compatible}
-                        />
-                        <div className="scene-main">
-                          <Play size={18} />
-                          <span className="scene-name">{scene.name}</span>
-                          {compatibility.compatible && (
-                            <CheckCircle size={16} className="compatible-icon" />
-                          )}
-                          {!compatibility.compatible && (
-                            <span className="compatibility-badge" title={compatibility.reason}>⚠ {compatibility.reason}</span>
-                          )}
-                          <span className="scene-meta">
-                            {(scene.channels?.length || 0)} channel{(scene.channels?.length || 0) === 1 ? '' : 's'}
-                            {scene.overlay && scene.overlay.overlays?.length > 0 && ` • ${scene.overlay.overlays.length} overlay${scene.overlay.overlays.length === 1 ? '' : 's'}`}
-                          </span>
-                        </div>
-                      </label>
-                    </div>
-                  );
-                })}
-
-                {scenes.length === 0 && (
+                {scenes.length === 0 && !loading && (
                   <div className="empty-state">
                     <p>No scenes available. Create a scene first to assign it to displays.</p>
                   </div>
@@ -209,11 +329,11 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
               </div>
 
               <div className="assignment-preview">
-                {selectedScene && (
+                {selectedScene && selectedSceneObj && (
                   <div className="preview-info">
                     <h4>Assignment Preview</h4>
                     <p>
-                      Scene "<strong>{scenes.find(s => s.id === selectedScene)?.name}</strong>" 
+                      Scene "<strong>{selectedSceneObj?.name}</strong>" 
                       will be assigned to "<strong>{display.name}</strong>"
                     </p>
                     <div className="preview-details">
