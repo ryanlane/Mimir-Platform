@@ -111,6 +111,22 @@ class WebSocketService {
           if (!isHeartbeat) {
             this.emit('message', message);
           }
+
+          // Legacy bridge: dispatch DOM CustomEvent used by older components (e.g., Displays.js)
+          try {
+            const legacyPayload = {
+              // Older listener expects either .type (legacy) OR topic-based fields
+              type: message.event, // map new 'event' field to legacy 'type'
+              data: message.data,
+              event: message.event,
+              sequenceId: message.sequenceId || message.sequence_id,
+              timestamp: message.timestamp,
+            };
+            const domEvent = new CustomEvent('websocket-message', { detail: legacyPayload });
+            window.dispatchEvent(domEvent);
+          } catch (bridgeErr) {
+            console.warn('Legacy websocket bridge dispatch failed', bridgeErr);
+          }
         } catch (error) {
           console.error('❌ Error parsing WebSocket message:', error, 'Raw data:', event.data);
         }
