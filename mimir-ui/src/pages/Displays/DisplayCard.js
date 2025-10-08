@@ -13,7 +13,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
   const [imageError, setImageError] = useState(false);
   const [thumbLoading, setThumbLoading] = useState(false);
   const [thumbError, setThumbError] = useState(false);
-  const [persisted, setPersisted] = useState({ loading: false, error: null, thumb: null, image: null });
+  const [persisted, setPersisted] = useState({ loading: false, error: null, thumb: null, image: null, updated_ts: null });
   // Scheduler-related state for manual update button
   const [sceneInfo, setSceneInfo] = useState(null); // scene details
   const [sceneAssignment, setSceneAssignment] = useState(null); // first scene assignment (contains job_id)
@@ -28,6 +28,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
   }
 
   const SCHEDULE_CACHE_TTL_MS = 30_000; // 30s
+
 
   // Fetch persisted last-image (per display+scene) if a scene is assigned
   useEffect(() => {
@@ -50,6 +51,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
           error: null,
           thumb: data.thumbnail_url || data.image_url || null,
           image: data.image_url || null,
+          updated_ts: data.updated_at || data.updated_ts || data.ts || null
         });
       })
       .catch(err => {
@@ -206,25 +208,37 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
 
   // Image action handlers removed (image section currently commented out)
 
-  const formatRelative = (ts) => {
-    if (!ts) return 'Never';
-    const date = new Date(ts);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
+  // robust date normalizer + relative formatter
+  const normalizeTs = (ts) => {
+    if (!ts && ts !== 0) return null;
+    // number or numeric string
+    if (typeof ts === 'number' || (typeof ts === 'string' && /^\d+$/.test(ts))) {
+      const n = Number(ts);
+      return new Date(n < 1e12 ? n * 1000 : n); // seconds -> ms
+    }
+    const d = new Date(ts);                     // ISO string, etc.
+    return isNaN(d.getTime()) ? null : d;
+  };
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    return `${diffDays}d ago`;
+  const formatRelative = (ts) => {
+    const date = normalizeTs(ts);
+    if (!date) return 'Never';
+    const diffMs = Date.now() - date.getTime();
+    const mins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(mins / 60);
+    const days = Math.floor(hours / 24);
+    if (mins < 1)  return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
   };
 
   const getStatusColor = () => {
     if (display.is_online) return 'status-online';
     return 'status-offline';
   };
+
+  const lastUpdatedTs = persisted.updated_ts ?? display.last_image_update_ts;
 
   return (
     <>
@@ -353,12 +367,10 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             </div>
           )}
 
-          {display.last_image_update_ts && (
+          {lastUpdatedTs && (
             <div className="detail-item">
               <Calendar size={14} />
-              <span>
-                Last updated: {formatRelative(display.last_image_update_ts)}
-              </span>
+              <span>Last updated: {formatRelative(lastUpdatedTs)}</span>
             </div>
           )}
 

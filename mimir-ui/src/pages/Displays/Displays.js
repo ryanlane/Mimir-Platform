@@ -373,30 +373,30 @@ const Displays = () => {
             // Normalize nested mqtt message shape so existing topic-based parser can run
             const topic = payload.data?.topic;
             const mqttInner = payload.data?.payload;
-            if (topic && mqttInner) {
-              // Directly handle image display commands so we don't rely solely on generic parsing
-              // Expect topics like mimir/<device>/cmd with payload.type === 'display_image'
-              const cmdMatch = /^mimir\/(.+?)\/cmd$/.exec(topic);
-              if (cmdMatch && mqttInner?.type === 'display_image' && mqttInner.image_url) {
-                const deviceId = cmdMatch[1];
-                console.log('🖼️ Incoming display_image for device', deviceId, mqttInner.image_url);
-                setDisplays(prev => prev.map(d => {
-                  if (d.id === deviceId || d.device_id === deviceId) {
-                    // Only update timestamp if the image actually changed to avoid perpetual 'Just now'
-                    if (d.current_image_url === mqttInner.image_url) {
-                      return d; // no change; do NOT pulse activity
-                    }
-                    return {
-                      ...d,
-                      current_image_url: mqttInner.image_url,
-                      last_image_update_ts: mqttInner.timestamp || new Date().toISOString()
-                    };
-                  }
-                  return d;
-                }));
-                setImageActivity(true); // pulse only on actual new image
-                return; // handled
-              }
+            if (cmdMatch && mqttInner?.type === 'display_image' && mqttInner.image_url) {
+              const deviceId = cmdMatch[1];
+              const tsRaw = mqttInner.updated_at ?? mqttInner.timestamp; // accept either
+              const tsIso = tsRaw
+                ? new Date(typeof tsRaw === 'number' && tsRaw < 1e12 ? tsRaw * 1000 : tsRaw).toISOString()
+                : new Date().toISOString();
+
+              setDisplays(prev => prev.map(d => {
+                if (d.id !== deviceId && d.device_id !== deviceId) return d;
+
+                // If your backend reuses the same URL for new content,
+                // you STILL want to bump the "last updated" time:
+                if (d.current_image_url === mqttInner.image_url) {
+                  return { ...d, last_image_update_ts: tsIso };
+                }
+                return {
+                  ...d,
+                  current_image_url: mqttInner.image_url,
+                  last_image_update_ts: tsIso
+                };
+              }));
+              setImageActivity(true);
+              return;
+            }
               // Heartbeat / status / evt fallback via synthetic forwarding variables
               // Reuse existing regex logic below by constructing variables
               try {
