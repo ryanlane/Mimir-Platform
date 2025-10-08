@@ -397,47 +397,46 @@ const Displays = () => {
               setImageActivity(true);
               return;
             }
-              // Heartbeat / status / evt fallback via synthetic forwarding variables
-              // Reuse existing regex logic below by constructing variables
-              try {
-                const obj = mqttInner;
-                let match;
-                if ((match = /^mimir\/(.+?)\/heartbeat$/.exec(topic))) {
-                  const deviceId = match[1];
-                  const cap = obj.cap || obj.capabilities || {};
-                  const resolution = Array.isArray(cap.res) ? cap.res : (obj.res || null);
-                  const orientation = cap.ori || obj.ori || obj.rotation || null;
-                  // We intentionally do NOT update last_seen to avoid UI churn; only structural changes
-                  mergeDisplayUpdate(deviceId, {
-                    cap,
-                    capabilities: cap,
-                    resolution,
-                    orientation,
-                    is_online: true,
-                    displayType: obj.display_id ? 'registered' : 'discovered'
-                  });
-                  return;
-                }
-                if ((match = /^mimir\/(.+?)\/status$/.exec(topic))) {
-                  const deviceId = match[1];
-                  const statusOnline = obj.status === 'online';
-                  mergeDisplayUpdate(deviceId, { is_online: statusOnline });
-                  return;
-                }
-                if ((match = /^mimir\/(.+?)\/evt$/.exec(topic))) {
-                  const deviceId = match[1];
-                  if (obj.type === 'error') {
-                    mergeDisplayUpdate(deviceId, {
-                      last_error: { code: obj.error || obj.code, detail: obj.detail || obj.message, ts: obj.timestamp || obj.t }
-                    });
-                  }
-                  // treat rendered ack as activity pulse
-                  // 'rendered' evt no longer pulses image activity to reduce noise
-                  return;
-                }
-              } catch (e) {
-                console.warn('Failed inner mqtt_message normalization', e);
+            // Heartbeat / status / evt fallback via synthetic forwarding variables
+            // Reuse existing regex logic below by constructing variables
+            try {
+              const obj = mqttInner;
+              let match;
+              if ((match = /^mimir\/(.+?)\/heartbeat$/.exec(topic))) {
+                const deviceId = match[1];
+                const cap = obj.cap || obj.capabilities || {};
+                const resolution = Array.isArray(cap.res) ? cap.res : (obj.res || null);
+                const orientation = cap.ori || obj.ori || obj.rotation || null;
+                // We intentionally do NOT update last_seen to avoid UI churn; only structural changes
+                mergeDisplayUpdate(deviceId, {
+                  cap,
+                  capabilities: cap,
+                  resolution,
+                  orientation,
+                  is_online: true,
+                  displayType: obj.display_id ? 'registered' : 'discovered'
+                });
+                return;
               }
+              if ((match = /^mimir\/(.+?)\/status$/.exec(topic))) {
+                const deviceId = match[1];
+                const statusOnline = obj.status === 'online';
+                mergeDisplayUpdate(deviceId, { is_online: statusOnline });
+                return;
+              }
+              if ((match = /^mimir\/(.+?)\/evt$/.exec(topic))) {
+                const deviceId = match[1];
+                if (obj.type === 'error') {
+                  mergeDisplayUpdate(deviceId, {
+                    last_error: { code: obj.error || obj.code, detail: obj.detail || obj.message, ts: obj.timestamp || obj.t }
+                  });
+                }
+                // treat rendered ack as activity pulse
+                // 'rendered' evt no longer pulses image activity to reduce noise
+                return;
+              }
+            } catch (e) {
+              console.warn('Failed inner mqtt_message normalization', e);
             }
             break; // allow fallthrough to generic handling if any later additions
           }
