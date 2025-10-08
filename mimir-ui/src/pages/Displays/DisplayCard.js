@@ -238,14 +238,24 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
     return 'status-offline';
   };
 
-  const lastUpdatedTs = persisted.updated_ts ?? display.last_image_update_ts;
+  // Stable local timestamp so transient persisted fetch states don't clear display
+  const [lastImageUpdateTs, setLastImageUpdateTs] = useState(null);
+  // Consolidate sources: prefer persisted.updated_ts if present, else display.last_image_update_ts
+  useEffect(() => {
+    if (persisted.updated_ts) {
+      setLastImageUpdateTs(persisted.updated_ts);
+    } else if (display.last_image_update_ts) {
+      setLastImageUpdateTs(display.last_image_update_ts);
+    }
+  }, [persisted.updated_ts, display.last_image_update_ts]);
+
   // Ticking re-render to keep relative time fresh without altering timestamp.
   const [timeTick, setTimeTick] = useState(0); // value not used directly, only triggers render
   useEffect(() => {
-    if (!lastUpdatedTs) return; // no ticking until we have a timestamp
+    if (!lastImageUpdateTs) return; // no ticking until we have a timestamp
     const interval = setInterval(() => setTimeTick(t => t + 1), 60 * 1000); // update every minute
     return () => clearInterval(interval);
-  }, [lastUpdatedTs]);
+  }, [lastImageUpdateTs]);
 
   return (
     <>
@@ -378,7 +388,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             <Calendar size={14} />
             <span>
               Last updated:{' '}
-              {lastUpdatedTs ? formatRelative(lastUpdatedTs) : ''}
+              {lastImageUpdateTs ? formatRelative(lastImageUpdateTs) : ''}
             </span>
           </div>
 
