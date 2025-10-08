@@ -275,10 +275,10 @@
 /* Display Grid */
 .displays-grid {
   display: grid;
-  gap: var(--gap);
+  gap: var(--spacing-sm);
   /* Each column is as wide as 1fr, but never bigger than --item-max.
      On small screens, columns shrink below --item-max to stay 3-up. */
-  grid-template-columns: repeat(var(--cols), minmax(0, min(1fr, var(--item-max))));
+  grid-template-columns: repeat(3, minmax(0, min(1fr, 420px)));
   justify-content: center; /* center tracks when capped and leftover space exists */
 }
 
