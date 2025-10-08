@@ -62,7 +62,13 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
         }
       });
     return () => { cancelled = true; };
-  }, [display.id, display.assigned_scene_id, apiClient]);
+  }, [display.id, display.assigned_scene_id, display.current_image_url, apiClient]);
+
+  // Note: we include display.current_image_url so that when a realtime MQTT
+  // 'display_image' event updates the display object in parent state, this card
+  // re-runs the persisted image fetch to obtain the latest stored full-size
+  // image & thumb (if the backend generated a new persisted record). This keeps
+  // modal + thumb in sync with live distribution without forcing a full page refresh.
 
   // Fetch scene details & scheduler job mapping when assigned scene changes
   useEffect(() => {
