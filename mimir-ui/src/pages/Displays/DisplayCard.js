@@ -353,12 +353,14 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             </div>
           )}
 
-          <div className="detail-item">
-            <Calendar size={14} />
-            <span>
-              Last updated: {formatRelative(display.last_image_update_ts || display.last_seen)}
-            </span>
-          </div>
+          {display.last_image_update_ts && (
+            <div className="detail-item">
+              <Calendar size={14} />
+              <span>
+                Last updated: {formatRelative(display.last_image_update_ts)}
+              </span>
+            </div>
+          )}
 
           {display.tags && display.tags.length > 0 && (
             <div className="detail-item">
