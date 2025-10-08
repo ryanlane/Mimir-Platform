@@ -27,6 +27,14 @@ const Displays = () => {
   const [displays, setDisplays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Image update activity indicator state – toggles true briefly on any image update WS event
+  const [imageActivity, setImageActivity] = useState(false);
+  // Auto fade-out for image activity indicator
+  useEffect(() => {
+    if (!imageActivity) return;
+    const timeout = setTimeout(() => setImageActivity(false), 3500); // matches CSS fade duration
+    return () => clearTimeout(timeout);
+  }, [imageActivity]);
   
   console.log('🔍 Current displays state:', displays?.length || 0, 'displays');
   console.log('🔍 Loading state:', loading);
@@ -67,6 +75,8 @@ const Displays = () => {
   
   // Discovery service status
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
+  // Reference discoveryStatus to avoid lint unused var (could be shown later in UI)
+  const _hasDiscoveryData = !!discoveryStatus; // eslint-disable-line no-unused-vars
   const [discoveredDisplayStats, setDiscoveredDisplayStats] = useState(null);
 
   // Clear feature detection cache on fresh page loads to avoid stale errors
@@ -348,6 +358,8 @@ const Displays = () => {
           case 'display_image_updated':
             console.log('🖼️ Display image updated:', payload);
             setDisplays(prev => prev.map(display => display.id === payload.displayId ? { ...display, current_image_url: payload.imageUrl } : display));
+            // Trigger global activity pulse
+            setImageActivity(true);
             return;
           default:
             break; // fall through to topic-based parsing if available
@@ -687,6 +699,10 @@ const Displays = () => {
         <span className="stats-item">
           <WifiOff size={14} />
           {filteredDisplays.filter(d => !d.is_online).length} offline
+        </span>
+        <span className="stats-item image-activity-wrapper" title="Recent image activity">
+          <span className={`image-activity-indicator ${imageActivity ? 'active' : ''}`}></span>
+          <span style={{ fontSize: '12px' }}>image activity</span>
         </span>
       </div>
 

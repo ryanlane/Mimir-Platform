@@ -242,6 +242,36 @@
   color: var(--color-text-tertiary);
 }
 
+/* Image activity indicator */
+.image-activity-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.image-activity-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-text); /* idle: dark/neutral */
+  opacity: 0.4;
+  transition: background-color .2s ease;
+  position: relative;
+}
+
+.image-activity-indicator.active {
+  background: var(--color-success);
+  opacity: 1;
+  animation: image-activity-fade 3.5s forwards;
+  box-shadow: 0 0 0 4px rgba(var(--color-success-rgb), 0.15);
+}
+
+@keyframes image-activity-fade {
+  0% { opacity: 1; transform: scale(1); }
+  60% { opacity: 1; }
+  100% { opacity: 0.35; transform: scale(0.9); }
+}
+
 /* Display Grid */
 .displays-grid {
   display: grid;
