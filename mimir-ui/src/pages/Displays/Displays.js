@@ -372,7 +372,7 @@ const Displays = () => {
               if (cmdMatch && mqttInner?.type === 'display_image' && mqttInner.image_url) {
                 const deviceId = cmdMatch[1];
                 console.log('🖼️ Incoming display_image for device', deviceId, mqttInner.image_url);
-                setDisplays(prev => prev.map(d => (d.id === deviceId || d.device_id === deviceId) ? { ...d, current_image_url: mqttInner.image_url } : d));
+                setDisplays(prev => prev.map(d => (d.id === deviceId || d.device_id === deviceId) ? { ...d, current_image_url: mqttInner.image_url, last_image_update_ts: mqttInner.timestamp || new Date().toISOString() } : d));
                 setImageActivity(true);
                 return; // handled
               }

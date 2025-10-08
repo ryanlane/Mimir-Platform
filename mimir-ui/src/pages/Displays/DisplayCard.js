@@ -206,9 +206,9 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
 
   // Image action handlers removed (image section currently commented out)
 
-  const formatLastSeen = (lastSeen) => {
-    if (!lastSeen) return 'Never';
-    const date = new Date(lastSeen);
+  const formatRelative = (ts) => {
+    if (!ts) return 'Never';
+    const date = new Date(ts);
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
@@ -355,7 +355,9 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
 
           <div className="detail-item">
             <Calendar size={14} />
-            <span>Last seen: {formatLastSeen(display.last_seen)}</span>
+            <span>
+              Last updated: {formatRelative(display.last_image_update_ts || display.last_seen)}
+            </span>
           </div>
 
           {display.tags && display.tags.length > 0 && (
