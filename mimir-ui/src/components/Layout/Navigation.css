@@ -64,7 +64,7 @@
   color: var(--active-hover);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .navigation {
     display: none; /* Hide desktop navigation on mobile */
   }

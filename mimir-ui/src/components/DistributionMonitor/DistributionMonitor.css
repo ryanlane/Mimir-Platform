@@ -228,7 +228,7 @@
 }
 
 /* Responsive Design */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .metrics-grid {
     grid-template-columns: repeat(2, 1fr);
   }

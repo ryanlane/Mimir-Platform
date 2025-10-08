@@ -433,7 +433,7 @@
 }
 
 /* Mobile Responsive */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .toast-container {
     left: 1rem;
     right: 1rem;

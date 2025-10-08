@@ -224,7 +224,7 @@
   animation: spin 1s linear infinite;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .stat-grid {
     grid-template-columns: 1fr;
   }

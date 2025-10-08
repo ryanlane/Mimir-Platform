@@ -253,7 +253,7 @@
   font-style: italic;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .channel-settings-overlay {
     padding: var(--spacing-md);
   }

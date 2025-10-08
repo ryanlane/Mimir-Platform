@@ -88,7 +88,7 @@
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .modal-overlay {
     padding: var(--spacing-sm);
   }

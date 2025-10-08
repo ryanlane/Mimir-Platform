@@ -163,7 +163,7 @@ code {
 }
 
 /* Responsive design */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .container {
     padding: var(--spacing-sm);
   }

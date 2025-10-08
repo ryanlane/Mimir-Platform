@@ -911,7 +911,7 @@
 }
 
 /* Responsive Design */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .gallery-manager-overlay,
   .image-selector-overlay {
     padding: 10px;

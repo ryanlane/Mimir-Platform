@@ -268,7 +268,7 @@
 
 
 /* Responsive design */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .schedule-manager {
     width: 95vw;
     margin: 20px;

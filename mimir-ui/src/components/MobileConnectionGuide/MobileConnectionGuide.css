@@ -169,7 +169,7 @@
 }
 
 /* Mobile responsive */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .guide-content {
     padding: 0.75rem;
   }

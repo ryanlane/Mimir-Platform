@@ -307,7 +307,7 @@
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .distribution-page {
     padding: var(--spacing-md);
   }

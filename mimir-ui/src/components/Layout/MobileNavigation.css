@@ -19,7 +19,7 @@
 .mobile-nav-items {
   display: flex;
   justify-content: space-around;
-  align-items: center;
+  align-items: start;
   padding: 8px 12px 12px 12px;
   height: 100%;
   max-width: 100%;
@@ -92,21 +92,21 @@
 }
 
 /* Responsive breakpoints */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .mobile-navigation {
     display: block;
   }
 }
 
 /* Very small screens */
-@media (max-width: 360px) {
+@media (max-width: 320px) {
   .mobile-nav-label {
     font-size: 9px;
   }
   
   .mobile-nav-item {
     min-width: 40px;
-    padding: 4px 4px 2px 4px;
+    padding: 2px 2px 1px 2px;
   }
   
   .mobile-nav-icon svg {

@@ -94,7 +94,7 @@
 }
 
 /* Responsive adjustments */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .status-header {
     flex-direction: column;
     align-items: flex-start;

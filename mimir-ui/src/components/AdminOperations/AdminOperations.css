@@ -286,7 +286,7 @@
 }
 
 /* Mobile responsive */
-@media (max-width: 768px) {
+@media (max-width: 768px){
   .admin-header {
     flex-direction: column;
     align-items: flex-start;
