@@ -361,6 +361,71 @@ const Displays = () => {
             // Trigger global activity pulse
             setImageActivity(true);
             return;
+          case 'mqtt_message': {
+            // Normalize nested mqtt message shape so existing topic-based parser can run
+            const topic = payload.data?.topic;
+            const mqttInner = payload.data?.payload;
+            if (topic && mqttInner) {
+              // Directly handle image display commands so we don't rely solely on generic parsing
+              // Expect topics like mimir/<device>/cmd with payload.type === 'display_image'
+              const cmdMatch = /^mimir\/(.+?)\/cmd$/.exec(topic);
+              if (cmdMatch && mqttInner?.type === 'display_image' && mqttInner.image_url) {
+                const deviceId = cmdMatch[1];
+                console.log('🖼️ Incoming display_image for device', deviceId, mqttInner.image_url);
+                setDisplays(prev => prev.map(d => (d.id === deviceId || d.device_id === deviceId) ? { ...d, current_image_url: mqttInner.image_url } : d));
+                setImageActivity(true);
+                return; // handled
+              }
+              // Heartbeat / status / evt fallback via synthetic forwarding variables
+              // Reuse existing regex logic below by constructing variables
+              try {
+                const obj = mqttInner;
+                let match;
+                if ((match = /^mimir\/(.+?)\/heartbeat$/.exec(topic))) {
+                  const deviceId = match[1];
+                  const cap = obj.cap || obj.capabilities || {};
+                  const resolution = Array.isArray(cap.res) ? cap.res : (obj.res || null);
+                  const orientation = cap.ori || obj.ori || obj.rotation || null;
+                  const last_seen = obj.timestamp || obj.t || new Date().toISOString();
+                  mergeDisplayUpdate(deviceId, {
+                    cap,
+                    capabilities: cap,
+                    resolution,
+                    orientation,
+                    last_seen,
+                    is_online: true,
+                    displayType: obj.display_id ? 'registered' : 'discovered'
+                  });
+                  return;
+                }
+                if ((match = /^mimir\/(.+?)\/status$/.exec(topic))) {
+                  const deviceId = match[1];
+                  const statusOnline = obj.status === 'online';
+                  mergeDisplayUpdate(deviceId, {
+                    is_online: statusOnline,
+                    last_seen: obj.timestamp || obj.time || new Date().toISOString(),
+                  });
+                  return;
+                }
+                if ((match = /^mimir\/(.+?)\/evt$/.exec(topic))) {
+                  const deviceId = match[1];
+                  if (obj.type === 'error') {
+                    mergeDisplayUpdate(deviceId, {
+                      last_error: { code: obj.error || obj.code, detail: obj.detail || obj.message, ts: obj.timestamp || obj.t }
+                    });
+                  }
+                  // treat rendered ack as activity pulse
+                  if (obj.type === 'rendered') {
+                    setImageActivity(true);
+                  }
+                  return;
+                }
+              } catch (e) {
+                console.warn('Failed inner mqtt_message normalization', e);
+              }
+            }
+            break; // allow fallthrough to generic handling if any later additions
+          }
           default:
             break; // fall through to topic-based parsing if available
         }
