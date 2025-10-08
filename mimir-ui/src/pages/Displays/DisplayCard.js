@@ -285,7 +285,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
           </div>
 
         </div>
-        {display.cap || display.capabilities ? (
+        {/* {display.cap || display.capabilities ? (
           <div className="capabilities-row">
             {(() => { const cap = display.cap || display.capabilities || {}; return (
               <>
@@ -307,7 +307,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
               </>
             ); })()}
           </div>
-        ) : null}
+        ) : null} */}
 
         {/* Inline Thumbnail */}
         <div className="display-thumbnail-wrapper">
