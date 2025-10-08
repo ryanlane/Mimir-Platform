@@ -373,6 +373,7 @@ const Displays = () => {
             // Normalize nested mqtt message shape so existing topic-based parser can run
             const topic = payload.data?.topic;
             const mqttInner = payload.data?.payload;
+            const cmdMatch = topic ? /^mimir\/(.+?)\/cmd$/.exec(topic) : null;
             if (cmdMatch && mqttInner?.type === 'display_image' && mqttInner.image_url) {
               const deviceId = cmdMatch[1];
               const tsRaw = mqttInner.updated_at ?? mqttInner.timestamp; // accept either
