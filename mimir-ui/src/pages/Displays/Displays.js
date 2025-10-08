@@ -315,19 +315,28 @@ const Displays = () => {
     const mergeDisplayUpdate = (deviceId, partial) => {
       setDisplays(prev => {
         let found = false;
+        let changed = false;
         const updated = prev.map(d => {
-          // Match on either display.id or device_id (fallback for discovered)
           const idMatch = d.id === deviceId || d.device_id === deviceId;
-            if (idMatch) {
-              found = true;
-              return { ...d, ...partial };
+          if (!idMatch) return d;
+          found = true;
+          // Determine if any field in partial differs
+          for (const k in partial) {
+            if (Object.prototype.hasOwnProperty.call(partial, k)) {
+              if (d[k] !== partial[k]) {
+                changed = true;
+                break;
+              }
             }
-            return d;
+          }
+          if (!changed) return d; // skip object spread to avoid re-render
+          return { ...d, ...partial };
         });
         if (!found) {
-          // Create provisional discovered entry
+          // New provisional discovered display only if update contains meaningful data
+          changed = true;
           updated.push({
-            id: deviceId, // temporary key until registration provides display_id
+            id: deviceId,
             device_id: deviceId,
             name: deviceId,
             displayType: 'discovered',
@@ -336,7 +345,7 @@ const Displays = () => {
             ...partial
           });
         }
-        return updated;
+        return changed ? updated : prev;
       });
     };
 
@@ -356,10 +365,9 @@ const Displays = () => {
             refreshDisplays();
             return;
           case 'display_image_updated':
-            console.log('🖼️ Display image updated:', payload);
-            setDisplays(prev => prev.map(display => display.id === payload.displayId ? { ...display, current_image_url: payload.imageUrl } : display));
-            // Trigger global activity pulse
-            setImageActivity(true);
+            console.log('🖼️ (legacy) Display image updated:', payload);
+            setDisplays(prev => prev.map(display => display.id === payload.displayId ? (display.current_image_url === payload.imageUrl ? display : { ...display, current_image_url: payload.imageUrl, last_image_update_ts: new Date().toISOString() }) : display));
+            setImageActivity(true); // legacy event still counts
             return;
           case 'mqtt_message': {
             // Normalize nested mqtt message shape so existing topic-based parser can run
@@ -376,7 +384,7 @@ const Displays = () => {
                   if (d.id === deviceId || d.device_id === deviceId) {
                     // Only update timestamp if the image actually changed to avoid perpetual 'Just now'
                     if (d.current_image_url === mqttInner.image_url) {
-                      return d; // no change
+                      return d; // no change; do NOT pulse activity
                     }
                     return {
                       ...d,
@@ -386,7 +394,7 @@ const Displays = () => {
                   }
                   return d;
                 }));
-                setImageActivity(true);
+                setImageActivity(true); // pulse only on actual new image
                 return; // handled
               }
               // Heartbeat / status / evt fallback via synthetic forwarding variables
@@ -399,13 +407,12 @@ const Displays = () => {
                   const cap = obj.cap || obj.capabilities || {};
                   const resolution = Array.isArray(cap.res) ? cap.res : (obj.res || null);
                   const orientation = cap.ori || obj.ori || obj.rotation || null;
-                  const last_seen = obj.timestamp || obj.t || new Date().toISOString();
+                  // We intentionally do NOT update last_seen to avoid UI churn; only structural changes
                   mergeDisplayUpdate(deviceId, {
                     cap,
                     capabilities: cap,
                     resolution,
                     orientation,
-                    last_seen,
                     is_online: true,
                     displayType: obj.display_id ? 'registered' : 'discovered'
                   });
@@ -414,10 +421,7 @@ const Displays = () => {
                 if ((match = /^mimir\/(.+?)\/status$/.exec(topic))) {
                   const deviceId = match[1];
                   const statusOnline = obj.status === 'online';
-                  mergeDisplayUpdate(deviceId, {
-                    is_online: statusOnline,
-                    last_seen: obj.timestamp || obj.time || new Date().toISOString(),
-                  });
+                  mergeDisplayUpdate(deviceId, { is_online: statusOnline });
                   return;
                 }
                 if ((match = /^mimir\/(.+?)\/evt$/.exec(topic))) {
@@ -428,9 +432,7 @@ const Displays = () => {
                     });
                   }
                   // treat rendered ack as activity pulse
-                  if (obj.type === 'rendered') {
-                    setImageActivity(true);
-                  }
+                  // 'rendered' evt no longer pulses image activity to reduce noise
                   return;
                 }
               } catch (e) {
