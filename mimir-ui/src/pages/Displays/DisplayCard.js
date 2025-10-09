@@ -1,7 +1,7 @@
 // Display Card component for individual display clients
 import React, { useState, useEffect } from 'react';
 import './DisplayCard.css';
-import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe } from 'lucide-react';
 import { api } from '../../services/api';
 import Button from '../../components/Button/Button';
 import Icon from '../../components/Icon/Icon';
@@ -362,6 +362,15 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             <div className="detail-item">
               <MapPin size={14} />
               <span>{display.location}</span>
+            </div>
+          )}
+
+          {(display.ip || display.ip_address || display.ipAddress || (Array.isArray(display.ip_addresses) && display.ip_addresses.length > 0) || (Array.isArray(display.ipAddresses) && display.ipAddresses.length > 0)) && (
+            <div className="detail-item" title={Array.isArray(display.ip_addresses) ? display.ip_addresses.join(', ') : (Array.isArray(display.ipAddresses) ? display.ipAddresses.join(', ') : (display.ip || display.ip_address || display.ipAddress))}>
+              <Globe size={14} />
+              <span>
+                {display.ip || display.ip_address || display.ipAddress || (Array.isArray(display.ip_addresses) ? display.ip_addresses[0] : (Array.isArray(display.ipAddresses) ? display.ipAddresses[0] : ''))}
+              </span>
             </div>
           )}
 
