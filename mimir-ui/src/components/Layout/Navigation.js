@@ -1,11 +1,10 @@
 import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { Settings, Tv, Layers, Home, MonitorSpeaker, Database } from 'lucide-react';
 import './Navigation.css';
+import Logo from '../../components/Brand/Logo';
 
 const Navigation = () => {
-  const location = useLocation();
-  
   const navItems = [
     { path: '/', label: 'Dashboard', icon: Home },
     { path: '/scenes', label: 'Scenes', icon: Layers },
@@ -18,8 +17,12 @@ const Navigation = () => {
   return (
     <nav className="navigation">
       <div className="navigation-header">
-        <h1 className="navigation-title">Mimir</h1>
-        <p className="navigation-subtitle">Platform Control</p>
+        <div className="navigation-brand" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <Logo size={38} />
+          <div className="navigation-brand-text" style={{ display: 'flex', flexDirection: 'column' }}>
+            <h1 className="navigation-title" style={{ margin: 0 }}>Mimir</h1>
+          </div>
+        </div>
       </div>
       
       <ul className="navigation-menu">

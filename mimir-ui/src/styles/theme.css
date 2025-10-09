@@ -27,8 +27,12 @@
   --color-error: #bf1b1b;
   --color-focus-ring: #bfa07a;
   --color-icon: #000000A0;
-  --color-mimir-green: #7eff00C0;
-  --color-mimir-green-rbga: rgba(126, 255, 0);
+  --color-mimir-green: #00ff30C0;
+  --color-mimir-green-rbg: 0, 255, 48;
+  --color-mimir-blue: #d2fbff;
+  --color-mimir-blue-rbg: 210, 251, 255;
+  --color-mimir-dark-green: #036600;
+  --color-mimir-dark-green-rgb: 3, 102, 0;
 
   --elevation-1: 0 1px 3px rgba(0 0 0 / 10%);
   --elevation-2: 0 4px 12px rgba(0 0 0 / 12%);
@@ -58,6 +62,8 @@ html, body {
   font-family: var(--font-base);
   background: var(--color-background);
   color: var(--color-text);
+  padding: 0;
+  margin: 0;
 }
 
 /* Forced colors: keep semantics but don’t fight the OS */
