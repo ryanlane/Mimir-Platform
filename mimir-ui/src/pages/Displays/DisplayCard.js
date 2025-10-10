@@ -186,6 +186,49 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
     setManualUpdateError(null);
     setManualUpdateSuccess(false);
     try {
+      // 1) Pre-flight: call channel request_image with correct payload (matches Postman)
+      try {
+        const channelEntry = Array.isArray(sceneInfo?.channels) ? sceneInfo.channels.find(c => c && typeof c === 'object' && (c.channel_id || c.id)) : null;
+        const channelId = channelEntry?.channel_id || channelEntry?.id || null;
+        if (channelId) {
+          // Derive resolution from display
+          let w = null, h = null;
+          if (Array.isArray(display.resolution) && display.resolution.length >= 2) {
+            w = Number(display.resolution[0]);
+            h = Number(display.resolution[1]);
+          } else if (display.width && display.height) {
+            w = Number(display.width);
+            h = Number(display.height);
+          }
+          // Fallback sane defaults
+          if (!(w > 0 && h > 0)) {
+            const ori = (display.orientation || 'landscape').toLowerCase();
+            if (ori === 'portrait') { w = 600; h = 800; }
+            else if (ori === 'square') { w = 600; h = 600; }
+            else { w = 800; h = 600; }
+          }
+          // Orientation
+          const inferred = w === h ? 'square' : (h > w ? 'portrait' : 'landscape');
+          const orientation = (display.orientation || inferred || 'landscape').toLowerCase();
+          // Optional subchannel (gallery)
+          const subChannelId = channelEntry?.subchannel_id || channelEntry?.subChannelId || null;
+          const payload = {
+            settings: {
+              resolution: [w, h],
+              orientation,
+              distribution: 'new',
+              ...(subChannelId ? { subChannelId } : {}),
+            },
+          };
+          // Fire-and-forget the image request (does not distribute, but validates correct generation path)
+          await apiClient.requestChannelImage(channelId, payload);
+        }
+      } catch (preflightErr) {
+        // Non-fatal: proceed to trigger scheduler distribution anyway
+        console.warn('Channel preflight request_image failed (continuing to trigger job):', preflightErr?.message || preflightErr);
+      }
+
+      // 2) Trigger scheduler job for distribution
       const jobId = sceneAssignment.job_id || jobDetails?.id;
       if (!jobId) throw new Error('Missing job id for manual trigger');
   await apiClient.triggerSchedulerJob(jobId, 'Manual display card update');
