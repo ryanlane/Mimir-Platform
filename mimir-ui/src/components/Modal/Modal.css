@@ -13,7 +13,7 @@
 
 .modal-content {
   padding: 1em;
-  background: var(--color-surface);
+  background: var(--color-background);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   max-height: 90vh;
