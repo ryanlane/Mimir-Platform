@@ -171,7 +171,8 @@ export const api = {
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
   requestChannelImage: async (channelId, requestData = {}) => {
-    const resp = await apiClient.post(`/channels/${channelId}/request_image`, requestData || {});
+    // Prefer hyphenated endpoint; backend accepts both hyphen and underscore for compatibility
+    const resp = await apiClient.post(`/channels/${channelId}/request-image`, requestData || {});
     // Normalize response so callers always have an imageUrl and optional dataUrl
     const payload = resp.data || {};
     const { imageUrl, imageId, contentType, legacyBase64 } = payload;
