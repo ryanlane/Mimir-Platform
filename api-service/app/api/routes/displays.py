@@ -169,6 +169,9 @@ def _build_discovered_display_response(discovered):
             'subchannel_id': getattr(discovered, 'assigned_subchannel_id', None)
         }
     supported_formats = _extract_supported_formats(discovered)
+    # IP addresses from discovery (if available)
+    addresses = getattr(discovered, 'addresses', None) or []
+    primary_ip = addresses[0] if isinstance(addresses, (list, tuple)) and addresses else None
     return {
         'id': discovered.display_id,
         'name': discovered.display_name,
@@ -179,6 +182,8 @@ def _build_discovered_display_response(discovered):
         'display_type': 'discovered',
         'discovery_method': 'mdns',
         'auto_discovered': True,
+        'ip_addresses': list(addresses) if isinstance(addresses, (list, tuple)) else None,
+        'ip_address': primary_ip,
         'width': width,
         'height': height,
         'orientation': _extract_orientation(discovered, width, height),
@@ -326,23 +331,51 @@ async def list_display_clients(
     """Get paginated list of display clients including discovered displays"""
     # Get displays from database
     db_clients = db.query(DisplayClient).offset(offset).limit(limit).all()
-    display_responses = []
-    
-    # Add database displays
-    for client in db_clients:
-        display_responses.append(DisplayClientResponse.model_validate(client))
-    
-    # If requested, merge with discovered displays that aren't in database
+
+    # Optionally get discovered displays once and build hostname->addresses map
+    discovered_displays = []
+    discovered_addr_map: dict[str, list[str]] = {}
     if include_discovered and mdns_discovery_service.is_running:
-        discovered_displays = mdns_discovery_service.get_discovered_displays()
-        
-        # Find discovered displays that aren't already in database
+        try:
+            discovered_displays = mdns_discovery_service.get_discovered_displays()
+            for d in discovered_displays:
+                if getattr(d, 'hostname', None):
+                    addrs = getattr(d, 'addresses', None) or []
+                    if isinstance(addrs, (list, tuple)):
+                        discovered_addr_map[d.hostname] = list(addrs)
+        except Exception:  # pragma: no cover - defensive
+            discovered_displays = []
+            discovered_addr_map = {}
+
+    display_responses: list[DisplayClientResponse] = []
+
+    # Add database displays, enriching with IPs from discovery when available
+    for client in db_clients:
+        resp = DisplayClientResponse.model_validate(client)
+        if client.hostname and client.hostname in discovered_addr_map:
+            addrs = discovered_addr_map[client.hostname]
+            if addrs:
+                try:
+                    resp.ip_addresses = addrs
+                    resp.ip_address = addrs[0]
+                except Exception:
+                    # If model assignment fails, fall back to re-validate with dict
+                    data = resp.model_dump()
+                    data['ip_addresses'] = addrs
+                    data['ip_address'] = addrs[0]
+                    resp = DisplayClientResponse.model_validate(data)
+        display_responses.append(resp)
+
+    # Merge with discovered displays that aren't in database
+    if include_discovered and discovered_displays:
         db_hostnames = {client.hostname for client in db_clients if client.hostname}
-        
+
         for discovered in discovered_displays:
             if discovered.hostname not in db_hostnames:
                 try:
-                    display_responses.append(DisplayClientResponse.model_validate(_build_discovered_display_response(discovered)))
+                    display_responses.append(
+                        DisplayClientResponse.model_validate(_build_discovered_display_response(discovered))
+                    )
                 except Exception as e:  # pragma: no cover - defensive logging
                     import logging
                     logging.getLogger(__name__).warning(
@@ -352,9 +385,7 @@ async def list_display_clients(
     # Get total count including potential discovered displays
     total_db = db.query(DisplayClient).count()
     total_discovered = 0
-    
-    if include_discovered and mdns_discovery_service.is_running:
-        discovered_displays = mdns_discovery_service.get_discovered_displays()
+    if include_discovered and discovered_displays:
         # Get all hostnames from database to avoid duplicates
         all_db_hostnames = {client.hostname for client in db.query(DisplayClient).all() if client.hostname}
         total_discovered = sum(1 for d in discovered_displays if d.hostname not in all_db_hostnames)

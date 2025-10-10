@@ -191,3 +191,4 @@ __init__.py
 /api-service/deploy.sh
 /api-service/api-deploy.sh
 api-service/scheduler_migration.py
+/api-service/app/api/routes/websockets.py

@@ -68,6 +68,9 @@ class DisplayClientResponse(DisplayClientBase, TimestampMixin):
     display_type: str | None = Field(None, alias="displayType")
     discovery_method: str | None = Field(None, alias="discoveryMethod")
     auto_discovered: bool | None = Field(None, alias="autoDiscovered")
+    # Networking
+    ip_address: str | None = Field(None, alias="ipAddress", description="Primary IP address if known")
+    ip_addresses: list[str] | None = Field(None, alias="ipAddresses", description="All known IP addresses")
     width: int | None = None
     height: int | None = None
     orientation: str | None = None
