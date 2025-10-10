@@ -90,13 +90,11 @@ def _inject_normalized_settings(payload: dict[str, Any], width: int, height: int
     if settings.get("distribution") not in ("new", "existing", "cached"):
         settings["distribution"] = "existing"
     data["settings"] = settings
-    # Also ensure options for channels that read width/height there
-    options = dict(data.get("options") or {})
-    options.setdefault("width", width)
-    options.setdefault("height", height)
-    if orientation == "square":
-        options.setdefault("layout", "auto")
-    data["options"] = options
+    # Preserve caller-provided options only; do NOT inject width/height by default
+    # Some channels interpret options.width/height differently (fit vs crop),
+    # while settings.resolution is the source of truth for sizing.
+    if "options" in data and isinstance(data["options"], dict):
+        data["options"] = dict(data["options"])  # shallow copy
     # Provide gallery id root-level for plugins expecting that
     if gallery_id:
         data.setdefault("gallery_id", gallery_id)
@@ -118,6 +116,31 @@ async def request_channel_image_unified(channel_id: str, payload: dict[str, Any]
 
     width, height = _derive_resolution(payload)
     orientation = _derive_orientation(payload, width, height)
+    # Normalize resolution to match the chosen orientation
+    if orientation == "portrait" and width > height:
+        width, height = height, width
+    elif orientation == "landscape" and height > width:
+        width, height = height, width
+    elif orientation == "square":
+        m = min(width, height)
+        width, height = m, m
+    # Warn if the provided orientation conflicts with inferred aspect ratio
+    explicit_orient = None
+    s = payload.get("settings") or {}
+    if isinstance(s, dict):
+        explicit_orient = s.get("orientation") or payload.get("orientation")
+    if isinstance(explicit_orient, str):
+        eo = explicit_orient.lower()
+        inferred = "square" if width == height else ("portrait" if height > width else "landscape")
+        if eo in VALID_ORIENTATIONS and eo != inferred:
+            logger.warning(
+                "channel.render.conflicting_orientation channel=%s requested=%s inferred=%s w=%s h=%s",
+                channel_id,
+                eo,
+                inferred,
+                width,
+                height,
+            )
     gallery_id = _derive_gallery(payload)
 
     normalized_payload = _inject_normalized_settings(payload, width, height, orientation, gallery_id)

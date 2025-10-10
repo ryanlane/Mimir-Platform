@@ -155,11 +155,13 @@ class SceneRefreshService:
                             duration_ms=int((time.perf_counter()-start)*1000),
                         )
 
-                    # Group by resolution/orientation
+                    # Group by resolution/orientation (infer orientation from aspect to avoid mismatches)
                     groups: Dict[Tuple[int,int,str], List[Dict[str,Any]]] = {}
                     for d in displays:
-                        key = (d["width"], d["height"], d["orientation"])
-                        groups.setdefault(key, []).append(d)
+                        w, h = d["width"], d["height"]
+                        inferred_orient = "square" if w == h else ("portrait" if h > w else "landscape")
+                        key = (w, h, inferred_orient)
+                        groups.setdefault(key, []).append({**d, "orientation": inferred_orient})
 
                     total_updated = 0
                     errors: List[str] = []
@@ -186,6 +188,15 @@ class SceneRefreshService:
                         # We will evaluate content-gating once on the first group to avoid churn
                         checked_gating = False
                         for (w,h,orientation), display_group in groups.items():
+                            logger.debug(
+                                "scene.refresh.group_request scene=%s channel=%s w=%s h=%s orient=%s count=%s",
+                                scene_id,
+                                ch_id,
+                                w,
+                                h,
+                                orientation,
+                                len(display_group),
+                            )
                             # Build minimal payload; unified helper will normalize other fields.
                             request_payload: dict[str, Any] = {
                                 "settings": {
@@ -416,11 +427,20 @@ class SceneRefreshService:
                 for d in discovered:
                     if d.assigned_scene_id == scene.id or d.assigned_scene_id == str(scene.id):
                         w, h = self._parse_resolution_string(d.resolution)
+                        orientation = d.properties.get("orientation", "landscape")
+                        # Ensure we never propagate a single missing dimension – default as a pair
+                        if not (w and h and w > 0 and h > 0):
+                            if orientation == "portrait":
+                                w, h = 600, 800
+                            elif orientation == "square":
+                                w, h = 600, 600
+                            else:
+                                w, h = 800, 600
                         collected[d.display_id] = {
                             "device_id": d.hostname or d.display_id,
                             "width": w,
                             "height": h,
-                            "orientation": d.properties.get("orientation", "landscape"),
+                            "orientation": orientation,
                         }
             except (RuntimeError, ValueError, OSError) as e:  # discovery iteration resilience
                 logger.debug("collect_discovered.error scene=%s err=%s", scene.id, type(e).__name__)
@@ -431,11 +451,21 @@ class SceneRefreshService:
             for display in db_displays:
                 if display.id in collected:
                     continue
+                w = display.width or 0
+                h = display.height or 0
+                orientation = display.orientation or "landscape"
+                if not (w and h and w > 0 and h > 0):
+                    if orientation == "portrait":
+                        w, h = 600, 800
+                    elif orientation == "square":
+                        w, h = 600, 600
+                    else:
+                        w, h = 800, 600
                 collected[display.id] = {
                     "device_id": display.hostname or display.id,
-                    "width": display.width or 800,
-                    "height": display.height or 600,
-                    "orientation": display.orientation or "landscape",
+                    "width": w,
+                    "height": h,
+                    "orientation": orientation,
                 }
         return list(collected.values())
 

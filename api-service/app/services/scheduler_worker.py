@@ -657,11 +657,25 @@ class SchedulerWorker:
                 for d in discovered:
                     if d.assigned_scene_id == scene.id or d.assigned_scene_id == str(scene.id):
                         w, h = self._parse_resolution_string(d.resolution)
+                        orientation = d.properties.get("orientation", "landscape")
+                        # Fill missing dims using orientation-appropriate defaults
+                        if not (w and h and w > 0 and h > 0):
+                            if orientation == "portrait":
+                                w, h = 600, 800
+                            elif orientation == "square":
+                                w, h = 600, 600
+                            else:
+                                w, h = 800, 600
+                        # Swap dims if they don't match the orientation's aspect
+                        if orientation == "portrait" and w > h:
+                            w, h = h, w
+                        elif orientation == "landscape" and h > w:
+                            w, h = h, w
                         collected[d.display_id] = {
                             "device_id": d.hostname or d.display_id,
                             "width": w,
                             "height": h,
-                            "orientation": d.properties.get("orientation", "landscape"),
+                            "orientation": orientation,
                         }
             except Exception as e:  # noqa: BLE001
                 logger.debug("collect_discovered.error scene=%s err=%s", scene.id, e)
@@ -674,16 +688,34 @@ class SchedulerWorker:
             for display in db_displays:
                 if display.id in collected:
                     continue  # prefer discovered
-                w = display.width or 800
-                h = display.height or 600
+                orientation = display.orientation or "landscape"
+                w = display.width or 0
+                h = display.height or 0
+                if not (w and h and w > 0 and h > 0):
+                    if orientation == "portrait":
+                        w, h = 600, 800
+                    elif orientation == "square":
+                        w, h = 600, 600
+                    else:
+                        w, h = 800, 600
+                if orientation == "portrait" and w > h:
+                    w, h = h, w
+                elif orientation == "landscape" and h > w:
+                    w, h = h, w
                 collected[display.id] = {
                     "device_id": display.hostname or display.id,
                     "width": w,
                     "height": h,
-                    "orientation": display.orientation or "landscape",
+                    "orientation": orientation,
                 }
 
-        return list(collected.values())
+        # Normalize orientation by aspect to avoid conflicting values
+        normalized: list[dict[str, Any]] = []
+        for d in collected.values():
+            w, h = d.get("width") or 0, d.get("height") or 0
+            inferred = "square" if w == h else ("portrait" if h > w else "landscape")
+            normalized.append({**d, "orientation": inferred})
+        return normalized
 
     @staticmethod
     def _parse_resolution_string(res_str: str | None) -> tuple[int, int]:
