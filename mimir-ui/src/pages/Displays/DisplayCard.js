@@ -265,18 +265,18 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
             <div className="display-title">
               <Icon name="Monitor" size={20} color="var(--color-text)" />              
               <h3>{display.name}</h3>
-              <div className={`status-indicator ${display.is_online ? 'online' : 'offline'}`}>
-                {display.is_online ? <Wifi size={14} /> : <WifiOff size={14} />}
+              <div className={`display-status-indicator ${display.is_online ? 'online' : 'offline'}`}>
+                {display.is_online ? (
+                  <Icon name="Link" size={14} color="var(--color-mimir-dark-green)" />
+                ) : (
+                  <Icon name="Unlink" size={14} color="var(--color-mimir-dark-green)" />
+                )}
               </div>
               {display.displayType === 'discovered' && (
-                <div className="source-badge discovered">
-                  <span>Discovered</span>
-                </div>
+                <span className="source-dot discovered" title="Discovered" />
               )}
               {display.displayType === 'registered' && (
-                <div className="source-badge registered">
-                  <span>Registered</span>
-                </div>
+                <span className="source-dot registered" title="Registered" />
               )}
             </div>
             {display.description && (
@@ -463,7 +463,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
               <Button
                 icon="Plus"
                 iconSize={14}
-                size="sm"
+                size="md"
                 variant='primary'
                 onClick={() => onAssignScene(display)}
               >

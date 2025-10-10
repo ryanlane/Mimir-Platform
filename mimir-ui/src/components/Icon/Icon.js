@@ -7,6 +7,8 @@ export const PROJECT_ICON_NAMES = [
   'Home', 'Layers', 'Tv', 'MonitorSpeaker', 'Settings',
   // Data / system actions
   'Database', 'Download', 'RefreshCw', 'Send', 'Trash2', 'Wifi',
+  // Links
+  'Link', 'Link2', 'Unlink',
   // Media / volume
   'Volume2', 'VolumeX',
   // Misc / feature pages
