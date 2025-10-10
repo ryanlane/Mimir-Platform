@@ -127,7 +127,8 @@ html, body {
   /* Surfaces */
   --color-background: #fafeff;
   --color-background-alt: #CFF3F8;
-  --color-surface: #C6EDF2;
+  --color-surface: #e1f0f1;
+  --color-surface-card: #e1f0f1D4;
   --color-surface-hover: #B9E5EC;
   --color-border: #A4D7E0;
 
