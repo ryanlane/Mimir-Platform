@@ -4,7 +4,7 @@ FastAPI router for the new embedded plugin architecture
 
 This file implements the 4-endpoint plugin architecture:
 1. GET /api/channels/ - List available channel plugins
-2. GET /api/channels/{channel_id}/manifest - Get channel capabilities 
+2. GET /api/channels/{channel_id}/manifest - Get channel capabilities
 3. GET /api/channels/{channel_id}/health - Check channel health
 4. POST /api/channels/{channel_id}/request_image - Request image generation
 
@@ -84,6 +84,7 @@ async def get_channel_health(
 
 
 @router.post("/{channel_id}/request_image")
+@router.post("/{channel_id}/request-image")
 async def request_channel_image(
     channel_id: str,
     request_data: dict[str, Any] | None = None,
@@ -104,6 +105,36 @@ async def request_channel_image(
     from app.services.channel_render_shared import request_channel_image_unified, ChannelRenderError
 
     payload = request_data or {}
+    # Log sanitized inbound payload details for troubleshooting
+    try:
+        s = payload.get("settings") or {}
+        r = s.get("resolution") or payload.get("resolution") or []
+        w = int(r[0]) if isinstance(r, (list, tuple)) and len(r) == 2 else None
+        h = int(r[1]) if isinstance(r, (list, tuple)) and len(r) == 2 else None
+        orient = (s.get("orientation") or payload.get("orientation") or "-")
+        dist = (s.get("distribution") or payload.get("distribution") or "-")
+        sub = (
+            payload.get("gallery_id")
+            or s.get("subChannelId")
+            or payload.get("subchannel_id")
+            or "-"
+        )
+        opts = payload.get("options") or {}
+        ow = opts.get("width") if isinstance(opts, dict) else None
+        oh = opts.get("height") if isinstance(opts, dict) else None
+        logger.info(
+            "channel.request_image.inbound channel=%s w=%s h=%s orientation=%s distribution=%s sub=%s options_wh=%s:%s",
+            channel_id,
+            w if w is not None else "-",
+            h if h is not None else "-",
+            orient,
+            dist,
+            sub,
+            ow if isinstance(ow, int) else "-",
+            oh if isinstance(oh, int) else "-",
+        )
+    except Exception:  # pragma: no cover – do not let logging break the endpoint  # noqa: BLE001
+        pass
     include_base64 = bool(payload.get("include_base64"))
 
     try:

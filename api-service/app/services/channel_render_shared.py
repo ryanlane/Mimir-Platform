@@ -145,6 +145,27 @@ async def request_channel_image_unified(channel_id: str, payload: dict[str, Any]
 
     normalized_payload = _inject_normalized_settings(payload, width, height, orientation, gallery_id)
 
+    # Log normalized request details (sanitized) for troubleshooting
+    try:
+        s = normalized_payload.get("settings") or {}
+        dist = s.get("distribution")
+        opts = payload.get("options") or {}
+        ow = opts.get("width") if isinstance(opts, dict) else None
+        oh = opts.get("height") if isinstance(opts, dict) else None
+        logger.info(
+            "channel.render.normalized channel=%s w=%s h=%s orientation=%s distribution=%s gallery=%s options_wh=%s:%s",
+            channel_id,
+            width,
+            height,
+            orientation,
+            dist,
+            gallery_id or "-",
+            ow if isinstance(ow, int) else "-",
+            oh if isinstance(oh, int) else "-",
+        )
+    except Exception:  # pragma: no cover – avoid logging failures  # noqa: BLE001
+        pass
+
     try:
         raw_result = await plugin.instance.request_image(normalized_payload)
     except Exception as e:  # noqa: BLE001
@@ -200,6 +221,18 @@ async def request_channel_image_unified(channel_id: str, payload: dict[str, Any]
             content_type = "image/jpeg"
 
     sha256 = _compute_sha256(content_bytes)
+
+    # Summarize result
+    try:
+        logger.info(
+            "channel.render.result channel=%s type=%s bytes=%s sha256=%s",
+            channel_id,
+            content_type,
+            len(content_bytes),
+            sha256[:12],
+        )
+    except Exception:  # pragma: no cover  # noqa: BLE001
+        pass
 
     return {
         "success": True,

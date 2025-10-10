@@ -92,6 +92,7 @@ class SceneRefreshService:
         trigger_reason: str,
         force: bool = False,
         channel_subset: Optional[List[str]] = None,
+        target_devices: list[str] | None = None,
     ) -> SceneRefreshResult:
         start = time.perf_counter()
         lock = self._get_lock(scene_id)
@@ -145,6 +146,19 @@ class SceneRefreshService:
 
                     # Collect assigned displays
                     displays = self._collect_assigned_displays(scene)
+                    # If targeting specific device(s), filter here
+                    if target_devices:
+                        allow = set(target_devices)
+                        displays = [d for d in displays if d.get("device_id") in allow]
+                        if not displays:
+                            return SceneRefreshResult(
+                                scene_id=scene_id,
+                                status="skipped",
+                                reason=trigger_reason,
+                                skipped_reason="no_matching_target",
+                                errors=[],
+                                duration_ms=int((time.perf_counter()-start)*1000),
+                            )
                     if not displays:
                         return SceneRefreshResult(
                             scene_id=scene_id,
@@ -188,13 +202,16 @@ class SceneRefreshService:
                         # We will evaluate content-gating once on the first group to avoid churn
                         checked_gating = False
                         for (w,h,orientation), display_group in groups.items():
-                            logger.debug(
-                                "scene.refresh.group_request scene=%s channel=%s w=%s h=%s orient=%s count=%s",
+                            # Promote to INFO with richer context for field troubleshooting
+                            logger.info(
+                                "scene.refresh.group_request scene=%s channel=%s sub=%s w=%s h=%s orient=%s distribution=%s count=%s",
                                 scene_id,
                                 ch_id,
+                                sc_id or "-",
                                 w,
                                 h,
                                 orientation,
+                                "new",
                                 len(display_group),
                             )
                             # Build minimal payload; unified helper will normalize other fields.
@@ -288,7 +305,7 @@ class SceneRefreshService:
                                         try:  # cache bust with sha256 fp if available
                                             if 'fp' in locals() and fp:
                                                 per_display_url = self._append_cache_buster(per_display_url, fp)  # type: ignore[arg-type]
-                                        except Exception:  # pragma: no cover
+                                        except Exception:  # pragma: no cover  # noqa: BLE001
                                             pass
                                         if _path:
                                             swap_path_str = str(_path)
@@ -519,7 +536,7 @@ class SceneRefreshService:
             query[param] = value
             new_query = urlencode(query)
             return urlunparse((parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment))
-        except Exception:
+        except Exception:  # noqa: BLE001
             # If parsing fails (e.g., odd schemeless path), fall back to simple concatenation
             sep = '&' if ('?' in url) else '?'
             return f"{url}{sep}{param}={value}"
