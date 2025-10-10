@@ -2,14 +2,18 @@
 Scene API Routes
 FastAPI router for scene-related endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
 from datetime import datetime
-from app.dependencies import get_scene_service
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
 from app.core.services.scene_service import SceneService
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient
+from app.dependencies import get_scene_service
 from app.schemas.scenes import SceneListResponse, SceneResponse
+from app.services.scene_refresh_service import scene_refresh_service
 
 
 router = APIRouter(prefix="/scenes", tags=["scenes"])
@@ -39,7 +43,7 @@ async def get_scene(
 
 @router.post("")
 async def create_scene(
-    scene_data: Dict[str, Any],
+    scene_data: dict[str, Any],
     scene_service: SceneService = Depends(get_scene_service)
 ):
     """Create a new scene"""
@@ -60,7 +64,7 @@ async def create_scene(
 @router.put("/{scene_id}")
 async def update_scene(
     scene_id: str,
-    scene_data: Dict[str, Any],
+    scene_data: dict[str, Any],
     scene_service: SceneService = Depends(get_scene_service)
 ):
     """Update scene by ID"""
@@ -172,8 +176,8 @@ async def refresh_scene_content(
     
     try:
         # Import here to avoid circular imports
-        from app.services.scheduler_worker import SchedulerWorker
         from app.services.scheduler_service import SchedulerService
+        from app.services.scheduler_worker import SchedulerWorker
         
         # Create a temporary worker instance for manual execution
         worker = SchedulerWorker()
@@ -209,6 +213,57 @@ async def refresh_scene_content(
             
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to refresh scene content: {str(e)}"
+            status_code=500,
+            detail=f"Failed to refresh scene content: {str(e)}",
+        ) from e
+
+
+class SceneRefreshRequest(BaseModel):
+    """Request body for targeted scene refresh operations."""
+    target_devices: list[str] | None = Field(
+        default=None,
+        description="List of device IDs/hostnames to refresh; if omitted, refreshes all assigned displays",
+        example=["livingroom-pi", "office-display-01"],
+    )
+    channel_subset: list[str] | None = Field(
+        default=None,
+        description="Optional subset of channel IDs to refresh; defaults to all channels in the scene",
+    )
+    force: bool = Field(
+        default=False,
+        description="Force refresh even if a previous refresh is currently in progress",
+    )
+    reason: str = Field(
+        default="manual",
+        description="Trigger reason label for logging and audit",
+        example="manual-ui",
+    )
+
+
+@router.post("/{scene_id}/refresh")
+async def refresh_scene_targeted(
+    scene_id: str,
+    req: SceneRefreshRequest,
+    scene_service: SceneService = Depends(get_scene_service),
+):
+    """Trigger a scene refresh, optionally targeting specific devices only.
+
+    This endpoint uses the shared SceneRefreshService and supports selective device
+    targeting to avoid refreshing all displays in a scene during manual updates.
+    """
+    # Validate scene exists early for a clearer 404
+    scene = scene_service.get_scene_by_id(scene_id)
+    if not scene:
+        raise HTTPException(status_code=404, detail="Scene not found")
+
+    try:
+        result = await scene_refresh_service.refresh_scene(
+            scene_id,
+            trigger_reason=req.reason or "manual",
+            force=req.force,
+            channel_subset=req.channel_subset,
+            target_devices=req.target_devices,
         )
+        return result.to_dict()
+    except Exception as e:  # pragma: no cover - safety net to return 500s consistently
+        raise HTTPException(status_code=500, detail=f"Failed to refresh scene: {e}") from e

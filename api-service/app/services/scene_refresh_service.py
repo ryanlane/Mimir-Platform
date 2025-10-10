@@ -21,7 +21,7 @@ import logging
 import time
 import hashlib
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional, Tuple  # NOTE: legacy typing kept for untouched sections; new edits prefer PEP 585
+from typing import Any, Optional  # NOTE: legacy typing kept for untouched sections; new edits prefer PEP 585
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 from app.db.base import SessionLocal
@@ -146,10 +146,41 @@ class SceneRefreshService:
 
                     # Collect assigned displays
                     displays = self._collect_assigned_displays(scene)
+                    try:
+                        logger.info(
+                            "scene.refresh.request scene=%s trigger=%s assigned=%s targets=%s subset=%s force=%s",
+                            scene_id,
+                            trigger_reason,
+                            len(displays),
+                            len(target_devices) if target_devices else 0,
+                            len(channel_subset) if channel_subset else 0,
+                            force,
+                        )
+                        logger.debug(
+                            "scene.refresh.assigned_devices scene=%s devices=%s",
+                            scene_id,
+                            [d.get("device_id") for d in displays],
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                     # If targeting specific device(s), filter here
                     if target_devices:
                         allow = set(target_devices)
                         displays = [d for d in displays if d.get("device_id") in allow]
+                        try:
+                            logger.info(
+                                "scene.refresh.filtered_devices scene=%s count=%s targets=%s",
+                                scene_id,
+                                len(displays),
+                                list(allow),
+                            )
+                            logger.debug(
+                                "scene.refresh.filtered_list scene=%s devices=%s",
+                                scene_id,
+                                [d.get("device_id") for d in displays],
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
                         if not displays:
                             return SceneRefreshResult(
                                 scene_id=scene_id,
@@ -170,7 +201,7 @@ class SceneRefreshService:
                         )
 
                     # Group by resolution/orientation (infer orientation from aspect to avoid mismatches)
-                    groups: Dict[Tuple[int,int,str], List[Dict[str,Any]]] = {}
+                    groups: dict[tuple[int, int, str], list[dict[str, Any]]] = {}
                     for d in displays:
                         w, h = d["width"], d["height"]
                         inferred_orient = "square" if w == h else ("portrait" if h > w else "landscape")
@@ -178,11 +209,11 @@ class SceneRefreshService:
                         groups.setdefault(key, []).append({**d, "orientation": inferred_orient})
 
                     total_updated = 0
-                    errors: List[str] = []
-                    sample_url: Optional[str] = None
+                    errors: list[str] = []
+                    sample_url: str | None = None
                     # Track first channel/subchannel used for sample
-                    channel_id: Optional[str] = None
-                    subchannel_id: Optional[str] = None
+                    channel_id: str | None = None
+                    subchannel_id: str | None = None
 
                     # Local lazy imports to mitigate circular dependencies and startup overhead
                     from app.services.plugin_discovery import plugin_discovery_service  # noqa: WPS433
