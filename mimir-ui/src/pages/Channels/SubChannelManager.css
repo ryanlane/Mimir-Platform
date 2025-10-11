@@ -231,13 +231,6 @@
 }
 
 
-/* Loading State */
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: #6b7280;
-}
-
 /* Responsive Design */
 @media (max-width: 768px){
   .subchannel-manager-overlay {

@@ -228,10 +228,19 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
         console.warn('Channel preflight request_image failed (continuing to trigger job):', preflightErr?.message || preflightErr);
       }
 
-      // 2) Trigger scheduler job for distribution
-      const jobId = sceneAssignment.job_id || jobDetails?.id;
-      if (!jobId) throw new Error('Missing job id for manual trigger');
-  await apiClient.triggerSchedulerJob(jobId, 'Manual display card update');
+      // 2) Targeted refresh for just this display
+      const assignedSceneId = typeof display.assigned_scene_id === 'object' && display.assigned_scene_id?.id
+        ? display.assigned_scene_id.id
+        : display.assigned_scene_id;
+      const deviceId = display.hostname || display.id;
+      if (!assignedSceneId || !deviceId) {
+        throw new Error('Missing scene or device for targeted refresh');
+      }
+      await apiClient.refreshSceneTargeted(assignedSceneId, {
+        target_devices: [deviceId],
+        reason: 'manual-ui',
+        force: false,
+      });
       setManualUpdateSuccess(true);
       // After triggering the job, attempt a refresh of current image (slight delay may be needed externally)
       onRefresh && onRefresh();

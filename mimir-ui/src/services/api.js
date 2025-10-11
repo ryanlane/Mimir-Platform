@@ -171,23 +171,9 @@ export const api = {
   getChannelSettings: (channelId) => apiClient.get(`/channels/${channelId}/settings`),
   updateChannelSettings: (channelId, settings) => apiClient.post(`/channels/${channelId}/settings`, settings),
   requestChannelImage: async (channelId, requestData = {}) => {
-    // Prefer hyphenated endpoint; backend accepts both hyphen and underscore for compatibility
-    const resp = await apiClient.post(`/channels/${channelId}/request-image`, requestData || {});
-    // Normalize response so callers always have an imageUrl and optional dataUrl
-    const payload = resp.data || {};
-    const { imageUrl, imageId, contentType, legacyBase64 } = payload;
-    let dataUrl = null;
-    if (legacyBase64) {
-      // Provide a proper data URL for components that expect embeddable image
-      dataUrl = `data:${contentType || 'image/jpeg'};base64,${legacyBase64}`;
-    }
-    return {
-      raw: resp,
-      imageId,
-      imageUrl: imageUrl ? `${imageUrl}${imageUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : null,
-      contentType: contentType || 'image/jpeg',
-      dataUrl,
-    };
+    // Channel-owned endpoint: returns raw image bytes. Treat as a fire-and-forget preflight.
+    // We accept blob to avoid JSON parsing when plugins return binary images.
+    return apiClient.post(`/channels/${channelId}/request-image`, requestData || {}, { responseType: 'blob' });
   },
 
   // Sub-Channels (NEW) with Performance Caching
@@ -455,6 +441,7 @@ export const api = {
   // Distribution System Operations
   getDistributionOverview: () => apiClient.get('/admin/distribution/overview'),
   refreshSceneContent: (sceneId) => apiClient.post(`/scenes/${sceneId}/refresh_content`),
+  refreshSceneTargeted: (sceneId, body = {}) => apiClient.post(`/scenes/${sceneId}/refresh`, body),
   resetSceneDistribution: (sceneId) => apiClient.post(`/scenes/${sceneId}/reset_distribution`),
   getSceneContentInfo: (sceneId) => apiClient.get(`/scenes/${sceneId}/content_info`),
   updateSceneDistributionMode: async (sceneId, distributionMode) => {

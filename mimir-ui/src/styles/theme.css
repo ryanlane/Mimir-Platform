@@ -191,6 +191,6 @@ html, body {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
-@media (prefers-reduced-motion: reduce) {
+/* @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
-}
+} */
