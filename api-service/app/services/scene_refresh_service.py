@@ -17,28 +17,37 @@ until a full extraction/refactor can safely consolidate duplication.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import time
-import hashlib
-from dataclasses import dataclass, asdict
-from typing import Any, Optional  # NOTE: legacy typing kept for untouched sections; new edits prefer PEP 585
-from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+from dataclasses import asdict, dataclass
+from io import BytesIO
+import json as _json
+from typing import Any  # NOTE: legacy typing kept for untouched sections; new edits prefer PEP 585
+from urllib import error as _urlerr
+from urllib import request as _urlreq
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from app.db.base import SessionLocal
-from app.db.models import Scene, DisplayClient
-from app.services.mqtt.publisher import mqtt_scene_service, MQTTSceneAssignmentPublisher
-from app.services.display_last_image import display_last_image_store
-from app.services.display_image_persistence import DisplayImagePersistenceService
+try:
+    from PIL import Image  # type: ignore
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore
+
 from app.config import settings
-from app.services.mdns_discovery import mdns_discovery_service
+from app.db.base import SessionLocal
+from app.db.models import DisplayClient, Scene
+from app.services.display_image_persistence import DisplayImagePersistenceService
+from app.services.display_last_image import display_last_image_store
 from app.services.image_swap import save_swap_image
+from app.services.mdns_discovery import mdns_discovery_service
+from app.services.mqtt.publisher import MQTTSceneAssignmentPublisher, mqtt_scene_service
 
 logger = logging.getLogger(__name__)
 
 # Track last content fingerprint per scene/subchannel to avoid re-sending
 # identical content during push/fallback refreshes.
 # Key: f"{scene_id}:{subchannel_id or ''}"
-_last_scene_fingerprint: Dict[str, str] = {}
+_last_scene_fingerprint: dict[str, str] = {}
 
 _METRICS = False
 refresh_counter = None  # type: ignore[assignment]
@@ -57,17 +66,17 @@ class SceneRefreshResult:
     scene_id: str
     status: str  # ok | skipped | error
     reason: str  # trigger reason: scheduler|push|manual|fallback
-    content_hash: Optional[str] = None  # placeholder for future hashing
-    epoch: Optional[int] = None
-    channel_id: Optional[str] = None
-    subchannel_id: Optional[str] = None
+    content_hash: str | None = None  # placeholder for future hashing
+    epoch: int | None = None
+    channel_id: str | None = None
+    subchannel_id: str | None = None
     displays_updated: int = 0
-    errors: List[str] = None  # type: ignore
+    errors: list[str] = None  # type: ignore
     duration_ms: int = 0
-    skipped_reason: Optional[str] = None
-    image_url: Optional[str] = None
+    skipped_reason: str | None = None
+    image_url: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         # Ensure errors is list
         if d.get("errors") is None:
@@ -78,7 +87,7 @@ class SceneRefreshResult:
 class SceneRefreshService:
     def __init__(self):
         # Per-scene async locks
-        self._locks: Dict[str, asyncio.Lock] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     def _get_lock(self, scene_id: str) -> asyncio.Lock:
         if scene_id not in self._locks:
@@ -91,7 +100,7 @@ class SceneRefreshService:
         *,
         trigger_reason: str,
         force: bool = False,
-        channel_subset: Optional[List[str]] = None,
+        channel_subset: list[str] | None = None,
         target_devices: list[str] | None = None,
     ) -> SceneRefreshResult:
         start = time.perf_counter()
@@ -131,7 +140,7 @@ class SceneRefreshService:
                         )
 
                     # Multi-channel: filter dict entries, optionally subset
-                    channel_entries: List[Dict[str, Any]] = [c for c in scene.channels if isinstance(c, dict)]
+                    channel_entries: list[dict[str, Any]] = [c for c in scene.channels if isinstance(c, dict)]
                     if channel_subset:
                         channel_entries = [c for c in channel_entries if c.get("channel_id") in channel_subset]
                     if not channel_entries:
@@ -215,9 +224,8 @@ class SceneRefreshService:
                     channel_id: str | None = None
                     subchannel_id: str | None = None
 
-                    # Local lazy imports to mitigate circular dependencies and startup overhead
+                    # Local lazy import to avoid circular import on startup
                     from app.services.plugin_discovery import plugin_discovery_service  # noqa: WPS433
-                    from app.services.channel_render_shared import request_channel_image_unified, ChannelRenderError  # noqa: WPS433
 
                     for entry in channel_entries:
                         ch_id = entry.get("channel_id")
@@ -230,99 +238,104 @@ class SceneRefreshService:
                         if not plugin or not plugin.instance:  # defensive double-check
                             errors.append(f"plugin_not_loaded:{ch_id}")
                             continue
-                        # We will evaluate content-gating once on the first group to avoid churn
+                        # Determine fetch strategy: mirror (one fetch per group) vs sequential (per-device)
+                        distribution_mode = getattr(scene, "distribution_mode", "mirror") or "mirror"
+                        # Evaluate content-gating once per scene execution
                         checked_gating = False
-                        for (w,h,orientation), display_group in groups.items():
-                            # Promote to INFO with richer context for field troubleshooting
-                            logger.info(
-                                "scene.refresh.group_request scene=%s channel=%s sub=%s w=%s h=%s orient=%s distribution=%s count=%s",
-                                scene_id,
-                                ch_id,
-                                sc_id or "-",
-                                w,
-                                h,
-                                orientation,
-                                "new",
-                                len(display_group),
-                            )
-                            # Build minimal payload; unified helper will normalize other fields.
-                            request_payload: dict[str, Any] = {
-                                "settings": {
-                                    "resolution": [w, h],
-                                    "orientation": orientation,
-                                    # Preserve prior semantics: request a fresh distribution for scene refresh
-                                    "distribution": "new",
-                                }
-                            }
-                            if sc_id:
-                                request_payload["gallery_id"] = sc_id
-                                request_payload["settings"]["subChannelId"] = sc_id
-                            try:
-                                image_result = await request_channel_image_unified(ch_id, request_payload)
-                            except ChannelRenderError as e:  # logical failure
-                                errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
-                                continue
-                            except (RuntimeError, ValueError, OSError) as e:  # safety net
-                                errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
-                                continue
 
-                            if not image_result or not image_result.get("success"):
-                                errors.append(f"channel_response_unsuccessful:{ch_id}")
-                                continue
-
-                            # Unified helper always returns bytes; capture for distribution
-                            raw_bytes = image_result.get("bytes")
-                            content_type = image_result.get("content_type")
-
-                            # Gating using sha256 (Phase A); retain legacy map for compatibility
-                            if not checked_gating:
-                                checked_gating = True
-                                scene_key = f"{scene_id}:{sc_id or ''}"
-                                fp = image_result.get("sha256") or image_result.get("content_fingerprint")
-                                dist_mode = image_result.get("distribution_mode")
-                                last_fp = _last_scene_fingerprint.get(scene_key)
-                                if fp and last_fp and fp == last_fp and not force:
+                        if distribution_mode == "sequential":
+                            # Per-device HTTP requests
+                            for (w, h, orientation), display_group in groups.items():
+                                for disp in display_group:
                                     logger.info(
-                                        "scene.refresh.skipped unchanged content scene=%s channel=%s sub=%s mode=%s",
-                                        scene_id, ch_id, sc_id, dist_mode,
-                                    )
-                                    return SceneRefreshResult(
-                                        scene_id=scene_id,
-                                        status="skipped",
-                                        reason=trigger_reason,
-                                        skipped_reason="unchanged_content",
-                                        errors=[],
-                                        duration_ms=int((time.perf_counter()-start)*1000),
-                                    )
-
-                            # In unified path we always have raw bytes; image_url path only created via swap file below
-                            image_url = None
-                            for disp in display_group:
-                                device_id = disp["device_id"]
-                                # Ensure the underlying publisher loop is running (best-effort).
-                                # Do not block refresh if not yet connected; the publisher will queue and send once online.
-                                try:
-                                    pub = MQTTSceneAssignmentPublisher.get()
-                                    if not pub.is_connected():  # type: ignore[attr-defined]
-                                        await pub.start()
-                                except (RuntimeError, OSError):  # pragma: no cover – resilience
-                                    # If singleton not initialized elsewhere, ignore; service path will lazy-start on publish
-                                    pass
-                                assignment_id = f"display-{device_id[:6]}-{int(time.time())}"
-                                try:
-                                    logger.info(
-                                        "scene.refresh.publish_attempt scene=%s device=%s channel=%s subchannel=%s url=%s assignment=%s",
+                                        "scene.refresh.device_request scene=%s channel=%s sub=%s device=%s w=%s h=%s orient=%s distribution=%s",
                                         scene_id,
-                                        device_id,
                                         ch_id,
-                                        sc_id,
-                                        image_url if image_url else ("swap-bytes" if raw_bytes else None),
-                                        assignment_id,
+                                        sc_id or "-",
+                                        disp.get("device_id"),
+                                        w,
+                                        h,
+                                        orientation,
+                                        "new",
                                     )
-                                    # If raw bytes present create swap file per display
-                                    per_display_url = image_url
-                                    swap_path_str: str | None = None
-                                    if raw_bytes:  # unified helper guarantees bytes when success
+                                    request_payload: dict[str, Any] = {
+                                        "settings": {
+                                            "resolution": [w, h],
+                                            "orientation": orientation,
+                                            "distribution": "new",
+                                        }
+                                    }
+                                    if sc_id:
+                                        request_payload["gallery_id"] = sc_id
+                                        request_payload["settings"]["subChannelId"] = sc_id
+                                    try:
+                                        raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
+                                    except RuntimeError as e:
+                                        errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
+                                        continue
+
+                                    # Gating once using first device's fingerprint
+                                    if not checked_gating:
+                                        checked_gating = True
+                                        scene_key = f"{scene_id}:{sc_id or ''}"
+                                        if not fp:
+                                            try:
+                                                fp = hashlib.sha256(raw_bytes).hexdigest()
+                                            except (ValueError, TypeError):
+                                                fp = None
+                                        last_fp = _last_scene_fingerprint.get(scene_key)
+                                        if fp and last_fp and fp == last_fp and not force:
+                                            logger.info(
+                                                "scene.refresh.skipped unchanged content scene=%s channel=%s sub=%s mode=%s",
+                                                scene_id, ch_id, sc_id, "new",
+                                            )
+                                            return SceneRefreshResult(
+                                                scene_id=scene_id,
+                                                status="skipped",
+                                                reason=trigger_reason,
+                                                skipped_reason="unchanged_content",
+                                                errors=[],
+                                                duration_ms=int((time.perf_counter()-start)*1000),
+                                            )
+
+                                    # Optional: decode to log size mismatch only; never modify bytes
+                                    if raw_bytes and Image is not None:
+                                        try:
+                                            with Image.open(BytesIO(raw_bytes)) as im:
+                                                actual_w, actual_h = im.size
+                                                if (actual_w, actual_h) != (w, h):
+                                                    logger.info(
+                                                        "scene.refresh.size_mismatch scene=%s channel=%s sub=%s requested=%sx%s actual=%sx%s",
+                                                        scene_id,
+                                                        ch_id,
+                                                        sc_id,
+                                                        w,
+                                                        h,
+                                                        actual_w,
+                                                        actual_h,
+                                                    )
+                                        except (OSError, ValueError):
+                                            pass
+
+                                    # Publish per-device
+                                    device_id = disp["device_id"]
+                                    try:
+                                        pub = MQTTSceneAssignmentPublisher.get()
+                                        if not pub.is_connected():  # type: ignore[attr-defined]
+                                            await pub.start()
+                                    except (RuntimeError, OSError):
+                                        pass
+                                    assignment_id = f"display-{device_id[:6]}-{int(time.time())}"
+                                    try:
+                                        logger.info(
+                                            "scene.refresh.publish_attempt scene=%s device=%s channel=%s subchannel=%s url=%s assignment=%s",
+                                            scene_id,
+                                            device_id,
+                                            ch_id,
+                                            sc_id,
+                                            "swap-bytes",
+                                            assignment_id,
+                                        )
                                         _path, per_display_url, _written = save_swap_image(
                                             scene_id=str(scene_id),
                                             display_id=device_id,
@@ -331,76 +344,204 @@ class SceneRefreshService:
                                         )
                                         if not per_display_url:
                                             errors.append(f"swap_save_failed:{device_id}")
-                                            logger.debug("scene.refresh.swap_save_failed scene=%s device=%s", scene_id, device_id)
                                             continue
-                                        try:  # cache bust with sha256 fp if available
-                                            if 'fp' in locals() and fp:
-                                                per_display_url = self._append_cache_buster(per_display_url, fp)  # type: ignore[arg-type]
-                                        except Exception:  # pragma: no cover  # noqa: BLE001
-                                            pass
-                                        if _path:
-                                            swap_path_str = str(_path)
-                                        if not sample_url:
-                                            sample_url = per_display_url
-                                            channel_id = ch_id
-                                            subchannel_id = sc_id
-                                    success = await mqtt_scene_service.send_display_image(
-                                        device_id=device_id,
-                                        image_url=per_display_url,
-                                        assignment_id=assignment_id,
-                                    )
-                                    if success:
-                                        total_updated += 1
-                                        logger.info(
-                                            "scene.refresh.publish_ok scene=%s device=%s assignment=%s",
-                                            scene_id,
-                                            device_id,
-                                            assignment_id,
-                                        )
-                                        display_last_image_store.update(
+                                        if fp:
+                                            try:
+                                                per_display_url = self._append_cache_buster(per_display_url, fp)
+                                            except (ValueError, TypeError):
+                                                pass
+                                        success = await mqtt_scene_service.send_display_image(
                                             device_id=device_id,
-                                            assignment_id=assignment_id,
                                             image_url=per_display_url,
-                                            image_width=w,
-                                            image_height=h,
-                                            image_format=None,
-                                            scene_id=str(scene.id),
-                                            subchannel_id=sc_id,
-                                            image_path=swap_path_str,
+                                            assignment_id=assignment_id,
                                         )
-                                        # Persistence best-effort; isolate errors
+                                        if success:
+                                            total_updated += 1
+                                            if not sample_url:
+                                                sample_url = per_display_url
+                                                channel_id = ch_id
+                                                subchannel_id = sc_id
+                                            display_last_image_store.update(
+                                                device_id=device_id,
+                                                assignment_id=assignment_id,
+                                                image_url=per_display_url,
+                                                image_width=w,
+                                                image_height=h,
+                                                image_format=None,
+                                                scene_id=str(scene.id),
+                                                subchannel_id=sc_id,
+                                                image_path=str(_path) if _path else None,
+                                            )
+                                            try:
+                                                with SessionLocal() as p_db:
+                                                    DisplayImagePersistenceService(p_db).store_distribution_image(
+                                                        display_id=device_id,
+                                                        scene_id=str(scene.id),
+                                                        subchannel_id=sc_id,
+                                                        assignment_id=assignment_id,
+                                                        image_url=per_display_url,
+                                                        width=w,
+                                                        height=h,
+                                                        image_format=None,
+                                                        source="distribution",
+                                                        retain_history=True,
+                                                    )
+                                            except Exception:  # noqa: BLE001
+                                                pass
+                                        else:
+                                            errors.append(f"mqtt_send_failed:{device_id}")
+                                    except (ConnectionError, RuntimeError, OSError) as send_err:
+                                        errors.append(f"send_exception:{device_id}:{type(send_err).__name__}")
+                            # End sequential loop
+                        else:
+                            # Mirror mode: one HTTP request per group, fan-out to displays
+                            for (w, h, orientation), display_group in groups.items():
+                                logger.info(
+                                    "scene.refresh.group_request scene=%s channel=%s sub=%s w=%s h=%s orient=%s distribution=%s count=%s",
+                                    scene_id,
+                                    ch_id,
+                                    sc_id or "-",
+                                    w,
+                                    h,
+                                    orientation,
+                                    "new",
+                                    len(display_group),
+                                )
+                                request_payload: dict[str, Any] = {
+                                    "settings": {
+                                        "resolution": [w, h],
+                                        "orientation": orientation,
+                                        "distribution": "new",
+                                    }
+                                }
+                                if sc_id:
+                                    request_payload["gallery_id"] = sc_id
+                                    request_payload["settings"]["subChannelId"] = sc_id
+                                try:
+                                    raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
+                                except RuntimeError as e:
+                                    errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
+                                    continue
+
+                                # Gating once for scene on first successful fetch
+                                if not checked_gating:
+                                    checked_gating = True
+                                    scene_key = f"{scene_id}:{sc_id or ''}"
+                                    if not fp:
                                         try:
-                                            with SessionLocal() as p_db:
-                                                DisplayImagePersistenceService(p_db).store_distribution_image(
-                                                    display_id=device_id,
-                                                    scene_id=str(scene.id),
-                                                    subchannel_id=sc_id,
-                                                    assignment_id=assignment_id,
-                                                    image_url=per_display_url,
-                                                    width=w,
-                                                    height=h,
-                                                    image_format=None,
-                                                    source="distribution",
-                                                    retain_history=True,
+                                            fp = hashlib.sha256(raw_bytes).hexdigest()
+                                        except (ValueError, TypeError):
+                                            fp = None
+                                    last_fp = _last_scene_fingerprint.get(scene_key)
+                                    if fp and last_fp and fp == last_fp and not force:
+                                        logger.info(
+                                            "scene.refresh.skipped unchanged content scene=%s channel=%s sub=%s mode=%s",
+                                            scene_id, ch_id, sc_id, "new",
+                                        )
+                                        return SceneRefreshResult(
+                                            scene_id=scene_id,
+                                            status="skipped",
+                                            reason=trigger_reason,
+                                            skipped_reason="unchanged_content",
+                                            errors=[],
+                                            duration_ms=int((time.perf_counter()-start)*1000),
+                                        )
+
+                                # Optional: decode to log size mismatch only; never modify bytes
+                                if raw_bytes and Image is not None:
+                                    try:
+                                        with Image.open(BytesIO(raw_bytes)) as im:
+                                            actual_w, actual_h = im.size
+                                            if (actual_w, actual_h) != (w, h):
+                                                logger.info(
+                                                    "scene.refresh.size_mismatch scene=%s channel=%s sub=%s requested=%sx%s actual=%sx%s",
+                                                    scene_id,
+                                                    ch_id,
+                                                    sc_id,
+                                                    w,
+                                                    h,
+                                                    actual_w,
+                                                    actual_h,
                                                 )
-                                        except (RuntimeError, ValueError, OSError) as perr:  # persistence non-critical
-                                            logger.debug("persist_failure device=%s err=%s", device_id, type(perr).__name__)
-                                    else:
-                                        errors.append(f"mqtt_send_failed:{device_id}")
-                                        logger.warning(
-                                            "scene.refresh.publish_failed scene=%s device=%s assignment=%s",
+                                    except (OSError, ValueError):
+                                        pass
+
+                                # Fan-out to displays in this group
+                                for disp in display_group:
+                                    device_id = disp["device_id"]
+                                    try:
+                                        pub = MQTTSceneAssignmentPublisher.get()
+                                        if not pub.is_connected():  # type: ignore[attr-defined]
+                                            await pub.start()
+                                    except (RuntimeError, OSError):
+                                        pass
+                                    assignment_id = f"display-{device_id[:6]}-{int(time.time())}"
+                                    try:
+                                        logger.info(
+                                            "scene.refresh.publish_attempt scene=%s device=%s channel=%s subchannel=%s url=%s assignment=%s",
                                             scene_id,
                                             device_id,
+                                            ch_id,
+                                            sc_id,
+                                            "swap-bytes",
                                             assignment_id,
                                         )
-                                except (ConnectionError, RuntimeError, OSError) as send_err:  # network/mqtt isolation
-                                    errors.append(f"send_exception:{device_id}:{type(send_err).__name__}")
-                                    logger.warning(
-                                        "scene.refresh.publish_error scene=%s device=%s err=%s",
-                                        scene_id,
-                                        device_id,
-                                        type(send_err).__name__,
-                                    )
+                                        _path, per_display_url, _written = save_swap_image(
+                                            scene_id=str(scene_id),
+                                            display_id=device_id,
+                                            image_bytes=raw_bytes,
+                                            content_type=content_type,
+                                        )
+                                        if not per_display_url:
+                                            errors.append(f"swap_save_failed:{device_id}")
+                                            continue
+                                        if fp:
+                                            try:
+                                                per_display_url = self._append_cache_buster(per_display_url, fp)
+                                            except (ValueError, TypeError):
+                                                pass
+                                        success = await mqtt_scene_service.send_display_image(
+                                            device_id=device_id,
+                                            image_url=per_display_url,
+                                            assignment_id=assignment_id,
+                                        )
+                                        if success:
+                                            total_updated += 1
+                                            if not sample_url:
+                                                sample_url = per_display_url
+                                                channel_id = ch_id
+                                                subchannel_id = sc_id
+                                            display_last_image_store.update(
+                                                device_id=device_id,
+                                                assignment_id=assignment_id,
+                                                image_url=per_display_url,
+                                                image_width=w,
+                                                image_height=h,
+                                                image_format=None,
+                                                scene_id=str(scene.id),
+                                                subchannel_id=sc_id,
+                                                image_path=str(_path) if _path else None,
+                                            )
+                                            try:
+                                                with SessionLocal() as p_db:
+                                                    DisplayImagePersistenceService(p_db).store_distribution_image(
+                                                        display_id=device_id,
+                                                        scene_id=str(scene.id),
+                                                        subchannel_id=sc_id,
+                                                        assignment_id=assignment_id,
+                                                        image_url=per_display_url,
+                                                        width=w,
+                                                        height=h,
+                                                        image_format=None,
+                                                        source="distribution",
+                                                        retain_history=True,
+                                                    )
+                                            except (RuntimeError, ValueError, OSError):
+                                                pass
+                                        else:
+                                            errors.append(f"mqtt_send_failed:{device_id}")
+                                    except (ConnectionError, RuntimeError, OSError) as send_err:
+                                        errors.append(f"send_exception:{device_id}:{type(send_err).__name__}")
 
                     status = "ok" if total_updated > 0 else ("skipped" if not errors else "error")
                     skipped_reason = None
@@ -567,10 +708,40 @@ class SceneRefreshService:
             query[param] = value
             new_query = urlencode(query)
             return urlunparse((parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment))
-        except Exception:  # noqa: BLE001
+        except (ValueError, TypeError):
             # If parsing fails (e.g., odd schemeless path), fall back to simple concatenation
             sep = '&' if ('?' in url) else '?'
             return f"{url}{sep}{param}={value}"
+
+    # --- HTTP fetch helper ---
+    def _request_channel_image_http_blocking(self, channel_id: str, payload: dict[str, Any]) -> tuple[bytes, str | None, str | None]:
+        """Blocking variant: POST to the channel's /request-image endpoint and return raw bytes, content-type, and fingerprint."""
+        base = getattr(settings, "public_base_url", "").rstrip("/")
+        if not base:
+            raise RuntimeError("public_base_url is not configured; cannot call channel endpoint")
+        url = f"{base}/api/channels/{channel_id}/request-image"
+        data = _json.dumps(payload).encode("utf-8")
+        req = _urlreq.Request(url, data=data, headers={
+            "Content-Type": "application/json",
+            "Accept": "image/*,application/octet-stream",
+        }, method="POST")
+        timeout = getattr(settings, "channel_http_timeout_seconds", 15)
+        try:
+            with _urlreq.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+                raw = resp.read()
+                if not raw:
+                    raise ValueError("empty_response")
+                ctype = resp.headers.get("Content-Type")
+                fp = resp.headers.get("X-Content-Fingerprint") or resp.headers.get("X-Image-Fingerprint")
+                return raw, ctype, fp
+        except _urlerr.HTTPError as he:  # rethrow with compact message
+            raise RuntimeError(f"http_{he.code}") from he
+        except _urlerr.URLError as ue:
+            raise RuntimeError(f"url_error:{getattr(ue, 'reason', 'unknown')}") from ue
+
+    async def _request_channel_image_http(self, channel_id: str, payload: dict[str, Any]) -> tuple[bytes, str | None, str | None]:
+        """Async wrapper that runs the blocking HTTP request in a thread to avoid blocking the event loop."""
+        return await asyncio.to_thread(self._request_channel_image_http_blocking, channel_id, payload)
 
 
 # Global instance

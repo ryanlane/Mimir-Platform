@@ -11,7 +11,8 @@ Key responsibilities:
 - Track execution status and handle failures
 """
 import asyncio
-import base64
+import base64 as _b64
+import binascii as _binascii
 import logging
 import time
 import uuid
@@ -158,7 +159,7 @@ def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str |
         
         # Decode and save base64 data
         try:
-            decoded_data = base64.b64decode(image_data)
+            decoded_data = _b64.b64decode(image_data)
             with open(temp_file_path, 'wb') as f:
                 f.write(decoded_data)
                 
@@ -202,11 +203,11 @@ def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str |
                     )
                     return None
             
-        except Exception as decode_error:
+        except (_binascii.Error, ValueError, TypeError) as decode_error:
             logger.error("Failed to decode base64 image data: %s", decode_error)
             return None
             
-    except (OSError, ValueError, base64.binascii.Error) as e:
+    except (OSError, ValueError, _binascii.Error) as e:
         logger.error("Error saving base64 image: %s", e)
         return None
 
@@ -597,45 +598,62 @@ class SchedulerWorker:
         resolution: list[int] | None = None,
         orientation: str | None = None,
     ) -> dict[str, Any]:
-        """Request an image from a channel using the unified render helper.
+        """Request an image from a channel by HTTP POST to its /request-image endpoint.
 
         Returns dict with success flag and normalized image structure under 'image'.
         """
-        from app.services.channel_render_shared import request_channel_image_unified, ChannelRenderError
+        import json as _json
+        from urllib import request as _urlreq, error as _urlerr
 
         # Build base payload; scheduler requests should mark distribution=new to force fresh renders
         res = resolution if (resolution and len(resolution) == 2) else [800, 600]
         base_payload: dict[str, Any] = {
             "settings": {
                 "resolution": res,
-                "orientation": orientation or None,  # let helper infer if None
+                "orientation": orientation or None,
                 "distribution": "new",
             },
         }
         if subchannel_id:
-            # Accept multiple keys; helper will normalize
             base_payload["gallery_id"] = subchannel_id
             base_payload.setdefault("settings", {})["subChannelId"] = subchannel_id
 
+        base = getattr(settings, "public_base_url", "").rstrip("/")
+        if not base:
+            raise ChannelRequestError("public_base_url not configured")
+        url = f"{base}/api/channels/{channel_id}/request-image"
+        data = _json.dumps(base_payload).encode("utf-8")
+        req = _urlreq.Request(url, data=data, headers={
+            "Content-Type": "application/json",
+            "Accept": "image/*,application/octet-stream",
+        }, method="POST")
+        timeout = getattr(settings, "channel_http_timeout_seconds", 15)
         try:
-            unified = await request_channel_image_unified(channel_id, base_payload)
-        except ChannelRenderError as ce:  # noqa: BLE001
-            raise ChannelRequestError(str(ce)) from ce
-        except Exception as e:  # noqa: BLE001
-            raise ChannelRequestError(str(e)) from e
+            with _urlreq.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+                raw_bytes = resp.read()
+                if not raw_bytes:
+                    raise ChannelRequestError("empty_response")
+                content_type = resp.headers.get("Content-Type")
+                sha256 = resp.headers.get("X-Content-Fingerprint") or resp.headers.get("X-Image-Fingerprint")
+        except _urlerr.HTTPError as he:
+            raise ChannelRequestError(f"http_{he.code}") from he
+        except _urlerr.URLError as ue:
+            raise ChannelRequestError(f"url_error:{getattr(ue, 'reason', 'unknown')}") from ue
 
-        # Adapt unified structure to legacy caller expectation
+        width = res[0]
+        height = res[1]
+        orientation_norm = (orientation or ("square" if res[0] == res[1] else ("portrait" if res[1] > res[0] else "landscape"))).lower()
         return {
             "success": True,
             "image": {
-                "bytes": unified.get("bytes"),
-                "content_type": unified.get("content_type"),
-                "width": unified.get("width"),
-                "height": unified.get("height"),
-                "orientation": unified.get("orientation"),
-                "distribution_mode": unified.get("distribution_mode"),
-                "sha256": unified.get("sha256"),
-                "gallery_id": unified.get("gallery_id"),
+                "bytes": raw_bytes,
+                "content_type": content_type,
+                "width": width,
+                "height": height,
+                "orientation": orientation_norm,
+                "distribution_mode": "new",
+                "sha256": sha256,
+                "gallery_id": subchannel_id,
             },
         }
 
@@ -744,7 +762,7 @@ class SchedulerWorker:
             if mdns_discovery_service.is_running:
                 discovered_displays = mdns_discovery_service.get_discovered_displays()
                 for display in discovered_displays:
-                    if (display.assigned_scene_id == scene.id or 
+                    if (display.assigned_scene_id == scene.id or
                         display.assigned_scene_id == str(scene.id)):
                         assigned_displays.append({
                             "id": display.display_id,
@@ -892,7 +910,7 @@ class SchedulerWorker:
                             use_url = base_seed_url  # identical for all displays legacy path
 
                         logger.debug(
-                            "Sending display_image command to display %s url=%s raw_bytes=%s", 
+                            "Sending display_image command to display %s url=%s raw_bytes=%s",
                             device_id,
                             use_url,
                             bool(raw_bytes),
