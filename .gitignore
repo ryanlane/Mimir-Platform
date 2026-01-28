@@ -192,3 +192,4 @@ __init__.py
 /api-service/api-deploy.sh
 api-service/scheduler_migration.py
 /api-service/app/api/routes/websockets.py
+ir-display/scripts/install_display_test.sh
