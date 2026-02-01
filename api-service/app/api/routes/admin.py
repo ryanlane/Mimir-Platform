@@ -2,7 +2,7 @@
 Health and Admin API Routes
 FastAPI router for health checks and administrative endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
 from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime, timezone
@@ -219,6 +219,168 @@ async def reset_channels():
     """Reset all channels"""
     # TODO: Implement channel reset logic
     return {"message": "Channels reset successfully"}
+
+
+# ---------------------------------------------------------------------------
+# Plugin Installation & Management
+# ---------------------------------------------------------------------------
+from fastapi import File, UploadFile, Form
+from app.services.plugin_manager import plugin_manager_service
+
+
+@admin_router.post("/channels/install", summary="Install a channel plugin")
+async def install_channel(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    git_url: Optional[str] = Form(None),
+):
+    """Install a channel plugin from a ZIP upload or Git URL.
+
+    Send either:
+    - A multipart form with a ``file`` field containing a ``.zip`` archive, OR
+    - A multipart form with a ``git_url`` field containing a Git repository URL, OR
+    - A JSON body with ``{"git_url": "..."}``
+    """
+    app = request.app
+
+    # If neither form field is provided, try parsing a JSON body
+    if file is None and git_url is None:
+        try:
+            body = await request.json()
+            git_url = body.get("git_url")
+        except Exception:
+            pass
+
+    if file and file.filename:
+        try:
+            result = await plugin_manager_service.install_from_zip(file, app)
+            return {"status": "installed", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            logger.error("Install from ZIP failed: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Installation failed: {exc}")
+    elif git_url:
+        try:
+            result = await plugin_manager_service.install_from_git(git_url, app)
+            return {"status": "installed", **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            logger.error("Install from Git failed: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Installation failed: {exc}")
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either a ZIP file upload or a git_url",
+        )
+
+
+@admin_router.delete("/channels/{channel_id}", summary="Uninstall a channel plugin")
+async def uninstall_channel(channel_id: str, request: Request):
+    """Uninstall a channel plugin: unload from server and remove from disk."""
+    try:
+        result = await plugin_manager_service.uninstall(channel_id, request.app)
+        return {"status": "uninstalled", **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("Uninstall failed for %s: %s", channel_id, exc)
+        raise HTTPException(status_code=500, detail=f"Uninstall failed: {exc}")
+
+
+@admin_router.post("/channels/{channel_id}/disable", summary="Disable a channel plugin")
+async def disable_channel(channel_id: str, request: Request):
+    """Disable a running channel plugin (keeps files on disk)."""
+    try:
+        result = await plugin_manager_service.disable(channel_id, request.app)
+        return {"status": "disabled", **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("Disable failed for %s: %s", channel_id, exc)
+        raise HTTPException(status_code=500, detail=f"Disable failed: {exc}")
+
+
+@admin_router.post("/channels/{channel_id}/enable", summary="Enable a disabled channel plugin")
+async def enable_channel(channel_id: str, request: Request):
+    """Re-enable a previously disabled channel plugin."""
+    try:
+        result = await plugin_manager_service.enable(channel_id, request.app)
+        return {"status": "enabled", **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("Enable failed for %s: %s", channel_id, exc)
+        raise HTTPException(status_code=500, detail=f"Enable failed: {exc}")
+
+
+@admin_router.get("/channels/disabled", summary="List disabled channel plugin IDs")
+async def list_disabled_channels():
+    """Return the list of currently disabled plugin IDs."""
+    return {"disabled": plugin_manager_service.get_disabled_plugins()}
+
+
+# ---------------------------------------------------------------------------
+# Dev Channel Management
+# ---------------------------------------------------------------------------
+
+
+@admin_router.get("/dev/channels", summary="List dev-linked channels")
+async def list_dev_channels():
+    """Return all dev-linked channel entries."""
+    return {"dev_channels": plugin_manager_service.get_dev_channels()}
+
+
+@admin_router.post("/dev/channels", summary="Link a dev channel")
+async def link_dev_channel(request: Request):
+    """Link a local directory as a dev channel.
+
+    Body: ``{ "path": "/absolute/path/to/plugin" }``
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    path = body.get("path")
+    if not path or not isinstance(path, str):
+        raise HTTPException(status_code=400, detail="'path' field is required and must be a string")
+
+    try:
+        result = await plugin_manager_service.link_dev_channel(path, request.app)
+        return {"status": "linked", **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("Link dev channel failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Link failed: {exc}")
+
+
+@admin_router.delete("/dev/channels/{channel_id}", summary="Unlink a dev channel")
+async def unlink_dev_channel(channel_id: str, request: Request):
+    """Unlink a dev channel (does not delete files on disk)."""
+    try:
+        result = await plugin_manager_service.unlink_dev_channel(channel_id, request.app)
+        return {"status": "unlinked", **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("Unlink dev channel failed for %s: %s", channel_id, exc)
+        raise HTTPException(status_code=500, detail=f"Unlink failed: {exc}")
+
+
+@admin_router.post("/dev/channels/{channel_id}/reload", summary="Reload a dev channel")
+async def reload_dev_channel(channel_id: str, request: Request):
+    """Manually reload a dev channel (unload + re-load)."""
+    try:
+        result = await plugin_manager_service.reload_dev_channel(channel_id, request.app)
+        return {"status": "reloaded", **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("Reload dev channel failed for %s: %s", channel_id, exc)
+        raise HTTPException(status_code=500, detail=f"Reload failed: {exc}")
 
 
 # Scheduler Management Endpoints

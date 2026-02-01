@@ -68,8 +68,12 @@ async def lifespan(app: FastAPI):
         logger.warning("⚠️ APScheduler failed to initialize - using fallback mode")
         app.state.scheduler_worker = None
     
-    # Initialize plugins
+    # Initialize plugins (including dev channels)
     await initialize_plugins(app)
+
+    # Start dev watcher for dev-linked channels
+    from app.services.dev_watcher import dev_watcher_service
+    dev_watcher_service.start(app)
     
     # Report service status
     logger.info(f"📊 Database: {settings.database_url}")
@@ -93,6 +97,11 @@ async def lifespan(app: FastAPI):
             logger.info(f"   Offline timeout: {settings.mdns_offline_timeout}s")
         else:
             logger.info("⚠️ mDNS Discovery: disabled (zeroconf library not available)")
+    elif settings.mdns_external_feed_enabled:
+        await mdns_discovery_service.start_external_feed()
+        logger.info("🔍 mDNS Discovery: external feed mode enabled")
+        logger.info(f"   Update interval: {settings.mdns_update_interval}s")
+        logger.info(f"   Offline timeout: {settings.mdns_offline_timeout}s")
     else:
         logger.info("🔍 mDNS Discovery: disabled by configuration")
     
@@ -134,7 +143,15 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Mimir API shutting down...")
-    
+
+    # Stop dev watcher first (before unloading plugins)
+    from app.services.dev_watcher import dev_watcher_service
+    dev_watcher_service.stop()
+
+    # Shutdown plugins (lifecycle hooks + legacy stop)
+    await plugin_discovery_service.shutdown_plugins()
+    logger.info("🔌 Plugin shutdown complete")
+
     # Stop scheduler worker
     if hasattr(app.state, 'scheduler_worker') and app.state.scheduler_worker:
         await app.state.scheduler_worker.stop()
@@ -173,7 +190,7 @@ async def initialize_plugins(app: FastAPI):
     """Initialize plugins during startup event"""
     if hasattr(app.state, 'plugin_discovery_initialized') and app.state.plugin_discovery_initialized:
         return
-        
+
     print("🔍 Starting plugin discovery...")
     try:
         discovered_plugins = await plugin_discovery_service.discover_plugins(app)
@@ -185,6 +202,13 @@ async def initialize_plugins(app: FastAPI):
         print(f"❌ Plugin discovery failed: {e}")
         import traceback
         traceback.print_exc()
+
+    # Load dev-linked channels (if any)
+    try:
+        from app.services.plugin_manager import plugin_manager_service
+        await plugin_manager_service.load_dev_channels_on_startup(app)
+    except Exception as e:
+        print(f"⚠️ Dev channel loading failed: {e}")
 
 
 def create_app() -> FastAPI:

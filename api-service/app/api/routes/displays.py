@@ -5,7 +5,7 @@ Provides endpoints to query and manage display clients (registered & discovered)
 from pathlib import Path
 import uuid
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
@@ -29,6 +29,19 @@ class AssignSceneBody(BaseModel):
     scene_id: str
     subchannel_id: str | None = None
 
+
+class MdnsIngestEvent(BaseModel):
+    event: str  # discovered|updated|lost
+    service_name: str
+    properties: dict[str, str] | None = None
+    addresses: list[str] | None = None
+    webhook_port: int | None = None
+    seen_at: str | None = None  # ISO8601; optional
+
+
+class MdnsIngestBody(BaseModel):
+    events: list[MdnsIngestEvent]
+
 def get_db():
     """Database dependency"""
     db = SessionLocal()
@@ -36,6 +49,48 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@router.post("/mdns/ingest", response_model=dict)
+async def ingest_mdns_events(body: MdnsIngestBody, request: Request):
+    """Ingest mDNS discovery events from an external host-network discovery service."""
+    if not settings.mdns_external_feed_enabled:
+        raise HTTPException(status_code=404, detail="External mDNS ingest disabled")
+
+    expected = settings.mdns_external_feed_token
+    if expected:
+        provided = request.headers.get("x-mimir-discovery-token")
+        if not provided or provided != expected:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not mdns_discovery_service.is_running:
+        await mdns_discovery_service.start_external_feed()
+
+    from datetime import datetime
+
+    ingested = 0
+    errors: list[str] = []
+    for e in body.events:
+        try:
+            seen_dt = None
+            if e.seen_at:
+                try:
+                    seen_dt = datetime.fromisoformat(e.seen_at.replace('Z', '+00:00'))
+                except Exception:
+                    seen_dt = None
+            mdns_discovery_service.ingest_external_event(
+                event=e.event,
+                service_name=e.service_name,
+                properties=e.properties,
+                addresses=e.addresses,
+                webhook_port=e.webhook_port,
+                seen_at=seen_dt,
+            )
+            ingested += 1
+        except Exception as exc:
+            errors.append(f"{e.service_name}: {exc}")
+
+    return {"ingested": ingested, "errors": errors}
 
 
 def _parse_resolution(discovered) -> tuple[int, int]:
@@ -245,7 +300,9 @@ async def get_displays_status(db: Session = Depends(get_db)):
         },
         "mdns_discovery": {
             "service_running": mdns_service_running,
-            "service_available": mdns_discovery_service.is_available
+            "service_available": mdns_discovery_service.is_available,
+            "external_feed_enabled": bool(getattr(settings, "mdns_external_feed_enabled", False)),
+            "external_feed_token_required": bool(getattr(settings, "mdns_external_feed_token", None)),
         }
     }
 
@@ -407,6 +464,11 @@ async def get_discovery_status():
     
     return {
         "service_status": stats,
+        "ingest": {
+            "external_feed_enabled": bool(getattr(settings, "mdns_external_feed_enabled", False)),
+            "token_required": bool(getattr(settings, "mdns_external_feed_token", None)),
+            "endpoint": "/api/displays/mdns/ingest",
+        },
         "discovered_displays": [
             {
                 "display_id": d.display_id,
@@ -519,11 +581,14 @@ def _build_thumbnail_url(rec: DisplaySceneImage) -> str | None:  # helper kept a
 
 @router.get("/discovery/live")
 async def get_live_discovered_displays():
-    """Get currently discovered displays from the live mDNS service"""
+    """Get currently discovered displays from the live discovery cache.
+
+    Cache is populated either by native Zeroconf browsing, or by external-feed ingest.
+    """
     if not mdns_discovery_service.is_running:
         raise HTTPException(
             status_code=503,
-            detail="mDNS discovery service is not running."
+            detail="Discovery service is not running."
         )
     
     discovered = mdns_discovery_service.get_discovered_displays()
@@ -757,16 +822,19 @@ async def start_discovery_service():
     """Start the mDNS discovery service"""
     if mdns_discovery_service.is_running:
         return {"status": "already_running", "message": "mDNS discovery service is already running"}
-    
+
+    # Prefer external-feed mode when enabled (used by the host-network discovery sidecar)
+    if getattr(settings, "mdns_external_feed_enabled", False):
+        success = await mdns_discovery_service.start_external_feed()
+        if success:
+            return {"status": "started", "mode": "external_feed", "message": "Discovery external feed started"}
+
     if not mdns_discovery_service.is_available:
-        raise HTTPException(
-            status_code=501,
-            detail="mDNS discovery not available (zeroconf library not installed)"
-        )
-    
+        raise HTTPException(status_code=501, detail="mDNS discovery not available")
+
     success = await mdns_discovery_service.start_discovery()
     if success:
-        return {"status": "started", "message": "mDNS discovery service started successfully"}
+        return {"status": "started", "mode": "native", "message": "mDNS discovery service started successfully"}
     else:
         raise HTTPException(
             status_code=500,

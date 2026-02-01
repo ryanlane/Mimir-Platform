@@ -182,12 +182,22 @@ class Settings(BaseSettings):
 
     # --- mDNS Discovery ---
     mdns_discovery_enabled: bool = Field(True, validation_alias=AliasChoices("MDNS_DISCOVERY_ENABLED", "MDNS_ENABLED"))
+    mdns_external_feed_enabled: bool = Field(
+        False,
+        validation_alias=AliasChoices("MDNS_EXTERNAL_FEED_ENABLED",),
+        description="Accept mDNS discovery events from an external host-network discovery service.",
+    )
+    mdns_external_feed_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MDNS_EXTERNAL_FEED_TOKEN", "MIMIR_DISCOVERY_TOKEN"),
+        description="Optional shared secret required for external mDNS ingest requests.",
+    )
     mdns_update_interval: int = Field(30, validation_alias=AliasChoices("MDNS_UPDATE_INTERVAL",))  # seconds
     mdns_offline_timeout: int = Field(120, validation_alias=AliasChoices("MDNS_OFFLINE_TIMEOUT",))  # seconds
 
     # --- MQTT Presence (for instant online/offline detection) ---
     mqtt_enabled: bool = Field(True, validation_alias=AliasChoices("MQTT_ENABLED",))
-    mqtt_broker_host: str = Field("oak", validation_alias=AliasChoices("MQTT_BROKER_HOST", "MQTT_HOST"))
+    mqtt_broker_host: str = Field("localhost", validation_alias=AliasChoices("MQTT_BROKER_HOST", "MQTT_HOST"))
     mqtt_broker_port: int = Field(1883, validation_alias=AliasChoices("MQTT_BROKER_PORT", "MQTT_PORT"))
     mqtt_username: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_USERNAME", "MQTT_USER"))
     mqtt_password: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_PASSWORD", "MQTT_PASS"))

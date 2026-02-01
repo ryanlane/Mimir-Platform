@@ -2,17 +2,18 @@
 Plugin Discovery Service for Embedded Channel Architecture
 Handles discovery and loading of channel plugins into the main API process
 """
+import asyncio
 import json
 import sys
 import importlib.util
-import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 import time
 import traceback
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -22,7 +23,66 @@ from app.services.channel_event_consumer import channel_event_consumer
 
 logger = get_logger(__name__)
 
-logger = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Protocol validation helpers
+# ---------------------------------------------------------------------------
+_REQUIRED_METHODS = ("get_router", "get_manifest", "request_image")
+_OPTIONAL_METHODS = ("get_status", "on_startup", "on_shutdown", "register_listener",
+                     "unregister_listener", "stop")
+
+
+def _validate_channel_protocol(instance: Any, plugin_id: str) -> List[str]:
+    """Check that *instance* satisfies the required channel protocol.
+
+    Returns a list of missing method names (empty == valid).
+    """
+    missing = [m for m in _REQUIRED_METHODS if not callable(getattr(instance, m, None))]
+    if missing:
+        logger.warning(
+            "[plugins] %s: missing required methods: %s",
+            plugin_id,
+            ", ".join(missing),
+        )
+    return missing
+
+
+class _IsolatedPluginRoute(APIRoute):
+    """APIRoute subclass that catches unhandled exceptions in plugin handlers.
+
+    Prevents a single buggy plugin route from crashing the entire API server
+    by returning a 500 JSON response instead of letting the exception propagate
+    to the ASGI server.
+    """
+
+    def __init__(self, *args: Any, plugin_id: str = "unknown", **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self._plugin_id = plugin_id
+
+    def get_route_handler(self):
+        original = super().get_route_handler()
+
+        async def wrapped(request: Request) -> Response:
+            try:
+                return await original(request)
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "[plugins] Unhandled exception in plugin %s route %s %s: %s",
+                    self._plugin_id,
+                    request.method,
+                    request.url.path,
+                    exc,
+                )
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "detail": f"Plugin error in {self._plugin_id}",
+                        "error": str(exc),
+                    },
+                )
+
+        return wrapped
 
 
 @dataclass
@@ -46,16 +106,34 @@ class PluginDiscoveryService:
         self.channels_dir = Path(channels_dir or settings.channels_directory)
         self.plugins: Dict[str, ChannelPlugin] = {}
         
+    def _get_disabled_plugin_ids(self) -> set:
+        """Read the disabled_plugins.json file and return a set of disabled IDs."""
+        disabled_file = self.channels_dir / "disabled_plugins.json"
+        if not disabled_file.exists():
+            return set()
+        try:
+            with open(disabled_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return {str(x) for x in data}
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read disabled_plugins.json: %s", exc)
+        return set()
+
     async def discover_plugins(self, app: FastAPI) -> List[ChannelPlugin]:
         """Discover and load channel plugins into the main API"""
         if not self.channels_dir.exists():
             self.channels_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Created channels directory: {self.channels_dir}")
             return []
-        
+
+        disabled_ids = self._get_disabled_plugin_ids()
+        if disabled_ids:
+            logger.info("[plugins] Disabled plugins: %s", ", ".join(sorted(disabled_ids)))
+
         discovered_plugins = []
         logger.info(f"Scanning for channel plugins in: {self.channels_dir}")
-        
+
         for plugin_path in self.channels_dir.iterdir():
             if not plugin_path.is_dir():
                 continue
@@ -75,6 +153,10 @@ class PluginDiscoveryService:
                 plugin = await self._load_plugin_config(config_file, plugin_path)
                 if not plugin:
                     logger.debug("[plugins] %s: config load returned None", plugin_path.name)
+                    continue
+                # Skip disabled plugins
+                if plugin.id in disabled_ids:
+                    logger.info("[plugins] Skipping disabled plugin: %s", plugin.id)
                     continue
                 logger.debug("[plugins] %s: config loaded (id=%s) – loading instance", plugin_path.name, plugin.id)
                 await self._load_plugin_instance(plugin, app)
@@ -137,23 +219,13 @@ class PluginDiscoveryService:
                 plugin.healthy = False
                 return
             logger.debug(f"[plugins] ({plugin.id}) Checking for channel.py at {channel_file}")
-            
-            # Import the channel module
-            spec = importlib.util.spec_from_file_location(
-                f"plugin_{plugin.id.replace('.', '_')}", 
-                channel_file
-            )
-            if spec is None or spec.loader is None:
-                logger.error(f"Failed to create module spec for {plugin.id}")
+
+            # Use package-aware loading when __init__.py exists, otherwise
+            # fall back to the legacy file-path based import.
+            module = self._import_plugin_module(plugin)
+            if module is None:
                 plugin.healthy = False
                 return
-            
-            spec_name = f"plugin_{plugin.id.replace('.', '_')}"
-            logger.debug(f"[plugins] ({plugin.id}) Creating module spec name={spec_name}")
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[spec_name] = module
-            logger.debug(f"[plugins] ({plugin.id}) Executing module spec")
-            spec.loader.exec_module(module)  # type: ignore[union-attr]
             logger.debug(f"[plugins] ({plugin.id}) Module loaded; searching for channel class")
             
             # Find and instantiate the channel class
@@ -175,7 +247,17 @@ class PluginDiscoveryService:
                 if logger.isEnabledFor(10):
                     logger.debug("Traceback: %s", traceback.format_exc(limit=12))
                 return
-            
+
+            # Validate channel protocol
+            missing = _validate_channel_protocol(plugin.instance, plugin.id)
+            if missing:
+                logger.warning(
+                    "[plugins] %s loaded with missing methods (%s) – "
+                    "plugin may not function correctly",
+                    plugin.id,
+                    ", ".join(missing),
+                )
+
             # Mount plugin router if available
             if hasattr(plugin.instance, 'get_router'):
                 try:
@@ -187,17 +269,31 @@ class PluginDiscoveryService:
                     plugin.healthy = False
                     return
                 if router:
+                    # Wrap routes with exception isolation
+                    router.route_class = type(
+                        f"_Isolated_{plugin.id}",
+                        (_IsolatedPluginRoute,),
+                        {"_plugin_id": plugin.id},
+                    )
                     mount_path = f"/api/channels/{plugin.id}"
                     app.include_router(router, prefix=mount_path, tags=[f"plugin-{plugin.id}"])
                     logger.info(f"Mounted plugin router: {mount_path}")
                 else:
                     logger.warning(f"get_router returned None for {plugin.id}")
-            
+
             # Mount static assets
             self._mount_static_assets(app, plugin)
-            
+
             plugin.healthy = True
             logger.info(f"Successfully loaded plugin instance for {plugin.id}")
+
+            # Call on_startup lifecycle hook if implemented
+            if hasattr(plugin.instance, 'on_startup'):
+                try:
+                    plugin.instance.on_startup()
+                    logger.info(f"Called on_startup for plugin {plugin.id}")
+                except Exception as startup_exc:  # noqa: BLE001
+                    logger.warning(f"on_startup failed for {plugin.id}: {startup_exc}")
 
             # Register push listener if plugin advertises push capability
             try:
@@ -262,6 +358,89 @@ class PluginDiscoveryService:
             logger.error(f"Error loading plugin instance for {plugin.id}: {e}")
             plugin.healthy = False
     
+    def _import_plugin_module(self, plugin: ChannelPlugin) -> Optional[Any]:
+        """Import the plugin's channel module.
+
+        Strategy:
+          1. If the plugin directory contains ``__init__.py``, import as a
+             proper Python package so relative imports (``from . import X``)
+             work naturally.
+          2. Otherwise, fall back to the legacy ``spec_from_file_location``
+             approach for backward compatibility.
+        """
+        plugin_dir = plugin.plugin_path
+        channel_file = plugin_dir / "channel.py"
+        pkg_name = f"mimir_plugin_{plugin.id.replace('.', '_')}"
+
+        if (plugin_dir / "__init__.py").exists():
+            # --- Package import path ---
+            # Ensure the *parent* of the plugin dir is on sys.path so that
+            # ``import mimir_plugin_com_foo_bar`` resolves to the directory.
+            parent_dir = str(plugin_dir.parent)
+            if parent_dir not in sys.path:
+                sys.path.insert(0, parent_dir)
+
+            # Register the package itself
+            try:
+                pkg_spec = importlib.util.spec_from_file_location(
+                    pkg_name,
+                    plugin_dir / "__init__.py",
+                    submodule_search_locations=[str(plugin_dir)],
+                )
+                if pkg_spec is None or pkg_spec.loader is None:
+                    logger.error(f"[plugins] ({plugin.id}) Could not create package spec")
+                    return None
+                pkg_mod = importlib.util.module_from_spec(pkg_spec)
+                sys.modules[pkg_name] = pkg_mod
+                pkg_spec.loader.exec_module(pkg_mod)  # type: ignore[union-attr]
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"[plugins] ({plugin.id}) Package __init__ failed: {e}")
+                if logger.isEnabledFor(10):
+                    logger.debug("Traceback:\n%s", traceback.format_exc(limit=10))
+                return None
+
+            # Now import the channel sub-module
+            channel_mod_name = f"{pkg_name}.channel"
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    channel_mod_name,
+                    channel_file,
+                    submodule_search_locations=None,
+                )
+                if spec is None or spec.loader is None:
+                    logger.error(f"[plugins] ({plugin.id}) Could not create channel module spec")
+                    return None
+                module = importlib.util.module_from_spec(spec)
+                module.__package__ = pkg_name  # enable relative imports
+                sys.modules[channel_mod_name] = module
+                spec.loader.exec_module(module)  # type: ignore[union-attr]
+                logger.debug(f"[plugins] ({plugin.id}) Loaded as package: {pkg_name}")
+                return module
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"[plugins] ({plugin.id}) channel module import failed: {e}")
+                if logger.isEnabledFor(10):
+                    logger.debug("Traceback:\n%s", traceback.format_exc(limit=10))
+                return None
+        else:
+            # --- Legacy file-path import (no __init__.py) ---
+            spec_name = f"plugin_{plugin.id.replace('.', '_')}"
+            logger.debug(f"[plugins] ({plugin.id}) Creating module spec name={spec_name}")
+            spec = importlib.util.spec_from_file_location(spec_name, channel_file)
+            if spec is None or spec.loader is None:
+                logger.error(f"Failed to create module spec for {plugin.id}")
+                return None
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec_name] = module
+            logger.debug(f"[plugins] ({plugin.id}) Executing module spec")
+            try:
+                spec.loader.exec_module(module)  # type: ignore[union-attr]
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"[plugins] ({plugin.id}) Module execution failed: {e}")
+                if logger.isEnabledFor(10):
+                    logger.debug("Traceback:\n%s", traceback.format_exc(limit=10))
+                return None
+            return module
+
     def _find_channel_class(self, module: Any, plugin_id: str) -> Optional[type]:
         """Find the appropriate channel class in the module"""
         # 1. Look for ChannelClass export (preferred)
@@ -364,6 +543,114 @@ class PluginDiscoveryService:
     def get_healthy_plugins(self) -> List[ChannelPlugin]:
         """Get only healthy plugins"""
         return [plugin for plugin in self.plugins.values() if plugin.healthy]
+
+    async def load_single_plugin(self, plugin_path: Path, app: FastAPI) -> Optional[ChannelPlugin]:
+        """Load a single plugin at runtime (hot-reload).
+
+        This follows the same logic as ``discover_plugins`` but targets a single
+        directory.  Returns the ``ChannelPlugin`` instance on success, or ``None``
+        if loading fails.
+        """
+        config_file = plugin_path / "plugin.json"
+        if not config_file.exists():
+            config_file = plugin_path / "config.json"
+        if not config_file.exists():
+            logger.error("[plugins] load_single_plugin: no config file in %s", plugin_path)
+            return None
+
+        plugin = await self._load_plugin_config(config_file, plugin_path)
+        if not plugin:
+            return None
+
+        # Avoid loading duplicates
+        if plugin.id in self.plugins:
+            logger.warning("[plugins] Plugin %s already loaded – skipping", plugin.id)
+            return self.plugins[plugin.id]
+
+        await self._load_plugin_instance(plugin, app)
+        self.plugins[plugin.id] = plugin
+        logger.info("[plugins] Hot-loaded plugin: %s (healthy=%s)", plugin.id, plugin.healthy)
+        return plugin
+
+    async def unload_plugin(self, plugin_id: str, app: FastAPI) -> bool:
+        """Unload a plugin: call shutdown hooks, remove routes/mounts, remove from registry.
+
+        Returns True if the plugin was found and unloaded.
+        """
+        plugin = self.plugins.get(plugin_id)
+        if not plugin:
+            return False
+
+        # Call shutdown lifecycle hooks on the instance
+        inst = plugin.instance
+        if inst:
+            if hasattr(inst, "on_shutdown"):
+                try:
+                    result = inst.on_shutdown()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("on_shutdown failed for %s during unload: %s", plugin_id, exc)
+            if hasattr(inst, "stop"):
+                try:
+                    inst.stop()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("stop() failed for %s during unload: %s", plugin_id, exc)
+
+        # Remove plugin's API routes from the app
+        mount_prefix = f"/api/channels/{plugin_id}"
+        app.routes[:] = [
+            r for r in app.routes
+            if not (hasattr(r, "path") and str(getattr(r, "path", "")).startswith(mount_prefix))
+        ]
+
+        # Remove static mount points (StaticFiles mounts use app.routes with
+        # mount names like "{plugin_id}-ui" and "{plugin_id}-assets")
+        mount_names = {f"{plugin_id}-ui", f"{plugin_id}-assets"}
+        app.routes[:] = [
+            r for r in app.routes
+            if not (hasattr(r, "name") and getattr(r, "name", None) in mount_names)
+        ]
+
+        # Clean up sys.modules entries for this plugin
+        pkg_name = f"mimir_plugin_{plugin_id.replace('.', '_')}"
+        legacy_name = f"plugin_{plugin_id.replace('.', '_')}"
+        to_remove = [k for k in sys.modules if k == pkg_name or k.startswith(f"{pkg_name}.")
+                      or k == legacy_name]
+        for key in to_remove:
+            del sys.modules[key]
+
+        # Remove from registry
+        del self.plugins[plugin_id]
+        logger.info("[plugins] Unloaded plugin: %s", plugin_id)
+        return True
+
+    async def shutdown_plugins(self) -> None:
+        """Call lifecycle shutdown hooks on all loaded plugins.
+
+        Invokes ``on_shutdown`` (async) or ``stop`` (sync) if present,
+        giving plugins a chance to persist state and release resources.
+        """
+        for plugin in self.plugins.values():
+            if not plugin.instance:
+                continue
+            inst = plugin.instance
+            # Prefer the new async on_shutdown hook
+            if hasattr(inst, "on_shutdown"):
+                try:
+                    result = inst.on_shutdown()
+                    if asyncio.iscoroutine(result):
+                        await result
+                    logger.info(f"Called on_shutdown for plugin {plugin.id}")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"on_shutdown failed for {plugin.id}: {exc}")
+            # Also call legacy stop() if present (e.g. Spotify push manager)
+            if hasattr(inst, "stop"):
+                try:
+                    inst.stop()
+                    logger.info(f"Called stop() for plugin {plugin.id}")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"stop() failed for {plugin.id}: {exc}")
 
 
 # Global service instance

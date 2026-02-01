@@ -1,6 +1,6 @@
 """Add display_scene_images table
 
-Revision ID: 20250920_add_display_scene_images
+Revision ID: 20250920_add_display_scene_img
 Revises: 9f3f58276f60
 Create Date: 2025-09-20
 """
@@ -10,7 +10,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision: str = '20250920_add_display_scene_images'
+# NOTE: Keep revision IDs <= 32 chars (Alembic's default version table column is VARCHAR(32)).
+revision: str = '20250920_add_display_scene_img'
 # Depends on initial full schema migration
 down_revision: Union[str, Sequence[str], None] = '9f3f58276f60'
 branch_labels: Union[str, Sequence[str], None] = None

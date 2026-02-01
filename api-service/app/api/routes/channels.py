@@ -30,17 +30,38 @@ async def list_channels(
     plugin_discovery: PluginDiscoveryService = Depends(get_plugin_discovery_service)
 ):
     """List all available channel plugins"""
+    from app.services.plugin_manager import plugin_manager_service
+    import json as _json
+
     plugins = plugin_discovery.get_all_plugins()
-    
+    disabled_ids = set(plugin_manager_service.get_disabled_plugins())
+    dev_ids = plugin_manager_service.get_dev_channel_ids()
+
     channels = []
     for plugin in plugins:
+        # Read version from manifest config on disk
+        version = None
+        try:
+            with open(plugin.config_path, "r", encoding="utf-8") as _f:
+                _cfg = _json.load(_f)
+            version = _cfg.get("version")
+        except Exception:
+            pass
+
+        is_dev = plugin.id in dev_ids
+
         channels.append({
             "id": plugin.id,
             "name": plugin.name,
             "description": plugin.description,
-            "icon": plugin.icon
+            "icon": plugin.icon,
+            "version": version,
+            "enabled": plugin.id not in disabled_ids,
+            "healthy": plugin.healthy,
+            "dev": is_dev,
+            **({"dev_path": str(plugin.plugin_path)} if is_dev else {}),
         })
-    
+
     return {
         "channels": channels,
         "total": len(channels)

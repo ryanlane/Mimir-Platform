@@ -177,8 +177,13 @@ class MdnsDiscoveryService:
     
     @property
     def is_available(self) -> bool:
-        """Check if mDNS discovery is available"""
-        return ZEROCONF_AVAILABLE
+        """Check if discovery is available.
+
+        Availability can come from either:
+        - native Zeroconf browsing (requires `zeroconf`), or
+        - external feed mode (events ingested via API from a host-network sidecar).
+        """
+        return bool(getattr(settings, "mdns_external_feed_enabled", False)) or ZEROCONF_AVAILABLE
     
     def add_discovery_callback(self, callback: Callable[[DiscoveredDisplay, str], None]):
         """Add callback for discovery events (discovered, updated, lost)"""
@@ -227,6 +232,68 @@ class MdnsDiscoveryService:
             logger.error(f"Failed to start mDNS discovery: {e}")
             await self.stop_discovery()
             return False
+
+    async def start_external_feed(self) -> bool:
+        """Start discovery bookkeeping without binding to multicast.
+
+        This mode is intended for accepting discovery events from a separate
+        host-network "edge" service (Linux) that can reliably do mDNS browsing.
+        """
+        if self.is_running:
+            logger.warning("mDNS discovery already running")
+            return True
+
+        logger.info("Starting external mDNS discovery feed mode")
+        self.is_running = True
+        self._monitoring_task = asyncio.create_task(self._monitoring_loop())
+        return True
+
+    def ingest_external_event(
+        self,
+        *,
+        event: str,
+        service_name: str,
+        properties: dict[str, str] | None = None,
+        addresses: list[str] | None = None,
+        webhook_port: int | None = None,
+        seen_at: datetime | None = None,
+    ) -> None:
+        """Ingest a discovery event from an external service.
+
+        Supported events: discovered, updated, lost.
+        """
+        evt = (event or "").strip().lower()
+        if evt == "lost":
+            self._on_display_lost(service_name)
+            return
+        if evt not in ("discovered", "updated"):
+            raise ValueError(f"Unsupported event: {event}")
+
+        props = properties or {}
+        now = seen_at or datetime.now(timezone.utc)
+
+        display_id = props.get("display_id") or props.get("device_id") or service_name
+        display_name = props.get("display_name") or f"Display ({props.get('hostname', display_id)})"
+        hostname = props.get("hostname") or display_id
+        location = props.get("location") or "Auto-discovered"
+        resolution = props.get("resolution")
+        client_version = props.get("client_version")
+
+        display = DiscoveredDisplay(
+            service_name=service_name,
+            display_id=display_id,
+            display_name=display_name,
+            hostname=hostname,
+            location=location,
+            addresses=list(addresses or []),
+            webhook_port=webhook_port,
+            resolution=resolution,
+            client_version=client_version,
+            properties=props,
+            discovered_at=now,
+            last_seen=now,
+        )
+        self._on_display_updated(display) if evt == "updated" else self._on_display_discovered(display)
     
     async def stop_discovery(self):
         """Stop mDNS discovery"""
@@ -532,10 +599,16 @@ class MdnsDiscoveryService:
         with self._lock:
             total_displays = len(self.discovered_displays)
             online_displays = sum(1 for d in self.discovered_displays.values() if d.is_online)
+
+            mode = "stopped"
+            if self.is_running:
+                mode = "native" if self.zeroconf is not None else "external_feed"
             
             return {
                 "is_running": self.is_running,
                 "is_available": self.is_available,
+                "mode": mode,
+                "external_feed_enabled": bool(getattr(settings, "mdns_external_feed_enabled", False)),
                 "total_discovered": total_displays,
                 "online_displays": online_displays,
                 "offline_displays": total_displays - online_displays,
