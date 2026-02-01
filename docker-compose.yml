@@ -1,0 +1,144 @@
+name: mimir
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mimir-db
+    environment:
+      POSTGRES_DB: mimir
+      POSTGRES_USER: mimir
+      POSTGRES_PASSWORD: mimir
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mimir -d mimir"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mimir-pgadmin
+    profiles: ["tools"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@mimirframe.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: "80"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+    ports:
+      - "5050:80"
+    volumes:
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: mimir-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: mimir-mqtt
+    ports:
+      - "1883:1883"
+    volumes:
+      - mqtt_data:/mosquitto/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "health", "-m", "ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./mimir-api/api-service
+      dockerfile: Dockerfile
+    container_name: mimir-api
+    env_file:
+      - ./mimir-api/api-service/mimir-api.docker.env
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: "1883"
+      # MQTT_USER: ""
+      # MQTT_PASSWORD: ""
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persist uploads/media
+      - mimir_api_uploads:/var/opt/mimir/mimir-api/uploads
+      # Bind-mount channel plugins from repo (read-only)
+      - ./mimir-api/api-service/channels:/var/opt/mimir/mimir-api/channels:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    restart: unless-stopped
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        alembic upgrade head
+        exec uvicorn app.main:app --host 0.0.0.0 --port 5000
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./mimir-web/mimir-ui
+      dockerfile: Dockerfile
+    container_name: mimir-web
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  discovery:
+    build:
+      context: ./mimir-discovery
+      dockerfile: Dockerfile
+    container_name: mimir-discovery
+    profiles: ["discovery"]
+    network_mode: "host"
+    environment:
+      MIMIR_API_BASE: "http://127.0.0.1:5000"
+      # Optional shared secret; must match API MDNS_EXTERNAL_FEED_TOKEN if set
+      MIMIR_DISCOVERY_TOKEN: "${MIMIR_DISCOVERY_TOKEN:-}"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  mimir_api_uploads:
+  postgres_data:
+  pgadmin_data:
+  mqtt_data:

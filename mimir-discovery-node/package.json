@@ -1,0 +1,18 @@
+{
+  "name": "mimir-discovery-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "mDNS discovery agent for Mimir (Node/bonjour-service)",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/index.js",
+    "lint": "node -c src/index.js"
+  },
+  "dependencies": {
+    "bonjour-service": "^1.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

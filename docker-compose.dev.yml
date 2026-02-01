@@ -1,0 +1,174 @@
+name: mimir
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mimir-db
+    environment:
+      POSTGRES_DB: mimir
+      POSTGRES_USER: mimir
+      POSTGRES_PASSWORD: mimir
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mimir -d mimir"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mimir-pgadmin
+    profiles: ["tools"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@mimirframe.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: "80"
+      # Auto-register Postgres server in the pgAdmin UI
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      # Ensure servers.json is (re)loaded even when pgadmin_data already exists
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+    ports:
+      - "5050:80"
+    volumes:
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: mimir-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: mimir-mqtt
+    ports:
+      - "1883:1883"
+    volumes:
+      - mqtt_data:/mosquitto/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "health", "-m", "ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./mimir-api/api-service
+      dockerfile: Dockerfile
+    container_name: mimir-api
+    env_file:
+      - ./mimir-api/api-service/mimir-api.docker.env
+    environment:
+      # Dev channel auto-reload: bind mounts can miss inotify events, so use polling in Docker dev.
+      DEV_WATCHER_MODE: polling
+      DEV_WATCHER_POLLING_INTERVAL: "1.0"
+      MQTT_HOST: mqtt
+      MQTT_PORT: "1883"
+      # MQTT_USER: ""
+      # MQTT_PASSWORD: ""
+    ports:
+      - "5000:5000"
+    volumes:
+      # Live code reload
+      - ./mimir-api/api-service:/app
+      # Persist uploads/media
+      - mimir_api_uploads:/var/opt/mimir/mimir-api/uploads
+      # CHANNELS_DIR is configured to /var/opt/mimir/mimir-api/channels in mimir-api.docker.env
+      - ./mimir-api/api-service/channels:/var/opt/mimir/mimir-api/channels
+      # Dev channel linking: mount repo plugins into the API container
+      - ../plugins:/plugins
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    restart: unless-stopped
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        alembic upgrade head
+        exec uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: node:20-alpine
+    container_name: mimir-web
+    working_dir: /app
+    environment:
+      # Reliable file watching on bind mounts
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      # CRA dev server inside container
+      HOST: 0.0.0.0
+      PORT: "3000"
+      # Avoid noisy "CI" behavior in some environments
+      CI: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./mimir-web/mimir-ui:/app
+      - mimir_web_node_modules:/app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - sh
+      - -lc
+      - |
+        if [ ! -d node_modules ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then
+          npm ci
+        fi
+        npm start
+    stdin_open: true
+    tty: true
+
+  discovery:
+    build:
+      context: ./mimir-discovery
+      dockerfile: Dockerfile
+    container_name: mimir-discovery
+    profiles: ["discovery"]
+    network_mode: "host"
+    environment:
+      MIMIR_API_BASE: "http://127.0.0.1:5000"
+      # Optional shared secret; must match API MDNS_EXTERNAL_FEED_TOKEN if set
+      MIMIR_DISCOVERY_TOKEN: "${MIMIR_DISCOVERY_TOKEN:-}"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  mimir_api_uploads:
+  mimir_web_node_modules:
+  postgres_data:
+  pgadmin_data:
+  mqtt_data:
