@@ -438,6 +438,25 @@ export const api = {
   removeChannelFromDatabase: (channelId) => apiClient.delete(`/admin/channels/${channelId}`),
   resetChannelsDatabase: () => apiClient.post('/admin/channels/reset'),
 
+  // Plugin Management
+  installChannelFromZip: (formData) => apiClient.post('/admin/channels/install', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  }),
+  installChannelFromGit: (gitUrl) => apiClient.post('/admin/channels/install', { git_url: gitUrl }, {
+    timeout: 60000,
+  }),
+  uninstallChannel: (channelId) => apiClient.delete(`/admin/channels/${channelId}`),
+  disableChannel: (channelId) => apiClient.post(`/admin/channels/${channelId}/disable`),
+  enableChannel: (channelId) => apiClient.post(`/admin/channels/${channelId}/enable`),
+  getDisabledChannels: () => apiClient.get('/admin/channels/disabled'),
+
+  // Dev Channel Management
+  linkDevChannel: (path) => apiClient.post('/admin/dev/channels', { path }),
+  unlinkDevChannel: (channelId) => apiClient.delete(`/admin/dev/channels/${channelId}`),
+  reloadDevChannel: (channelId) => apiClient.post(`/admin/dev/channels/${channelId}/reload`),
+  getDevChannels: () => apiClient.get('/admin/dev/channels'),
+
   // Distribution System Operations
   getDistributionOverview: () => apiClient.get('/admin/distribution/overview'),
   refreshSceneContent: (sceneId) => apiClient.post(`/scenes/${sceneId}/refresh_content`),

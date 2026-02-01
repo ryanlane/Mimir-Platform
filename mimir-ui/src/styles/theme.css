@@ -14,6 +14,7 @@
 
   /* Brand */
   --color-primary: #036600;
+  --color-primary-hover: #024d00;
   --color-accent: #00C851;
   --color-accent-hover: #00E676;
   --color-focus-ring: #00FF30AA;
@@ -157,6 +158,7 @@ html, body {
 
   /* Brand */
   --color-primary: #00ff2f92;          /* signature neon green from logo */
+  --color-primary-hover: #00cc2970;    /* slightly dimmed for hover */
   --color-accent: #00E0BE;           /* teal-cyan accent for hover and focus */
   --color-accent-hover: #4FFFE2;
   --color-focus-ring: #00FF30AA;     /* maintain recognizable glow */

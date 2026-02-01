@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Info } from 'lucide-react';
+import { RefreshCw, Info, Plus, FolderOpen } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
@@ -8,6 +8,8 @@ import Header from '../../components/Header/Header';
 import Button from '../../components/Button/Button';
 import ChannelSettings from './ChannelSettings';
 import ChannelCard from './ChannelCard';
+import InstallChannel from './InstallChannel';
+import LinkDevChannel from './LinkDevChannel';
 import './Channels.css';
 
 // Legacy in-memory cache removed; persistent IndexedDB cache now used.
@@ -17,6 +19,10 @@ const Channels = () => {
     const [loading, setLoading] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
     const [selectedChannel, setSelectedChannel] = useState(null);
+    const [showInstallModal, setShowInstallModal] = useState(false);
+    const [showLinkDevModal, setShowLinkDevModal] = useState(false);
+
+    const devModeEnabled = localStorage.getItem('mimir-developer-mode') === 'true';
 
     const { supportsV21, supportsChannelHealth, supportsPluginSystem } = useFeatureDetection();
     const [channelHealth, setChannelHealth] = useState({});
@@ -31,7 +37,7 @@ const Channels = () => {
         const manifestData = Object.values(manifestsMap).filter(Boolean);
         setManifest(manifestData);
         // eslint-disable-next-line no-console
-        console.log('📋 Loaded channel manifest (aggregated):', manifestsMap);
+        console.log('Loaded channel manifest (aggregated):', manifestsMap);
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error('Error loading channel manifest:', error);
@@ -93,8 +99,6 @@ const Channels = () => {
         const healthResults = await Promise.all(healthPromises);
         const healthMap = healthResults.reduce((acc, result) => ({ ...acc, ...result }), {});
         setChannelHealth(healthMap);
-        // eslint-disable-next-line no-console
-        console.log('💚 Loaded channel health:', healthMap);
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error('Error loading channel health:', error);
@@ -129,6 +133,61 @@ const Channels = () => {
       setShowSettings(true);
     };
 
+    const handleToggleEnabled = useCallback(async (channel) => {
+      try {
+        const isCurrentlyEnabled = channel.enabled !== false;
+        if (isCurrentlyEnabled) {
+          await api.disableChannel(channel.id);
+        } else {
+          await api.enableChannel(channel.id);
+        }
+        await refreshChannels();
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to toggle channel:', error);
+      }
+    }, [refreshChannels]);
+
+    const handleUninstall = useCallback(async (channel) => {
+      try {
+        await api.uninstallChannel(channel.id);
+        await refreshChannels();
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to uninstall channel:', error);
+      }
+    }, [refreshChannels]);
+
+    const handleReloadDev = useCallback(async (channel) => {
+      try {
+        await api.reloadDevChannel(channel.id);
+        await refreshChannels();
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to reload dev channel:', error);
+      }
+    }, [refreshChannels]);
+
+    const handleUnlinkDev = useCallback(async (channel) => {
+      try {
+        await api.unlinkDevChannel(channel.id);
+        await refreshChannels();
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to unlink dev channel:', error);
+      }
+    }, [refreshChannels]);
+
+    const handleInstalled = useCallback(() => {
+      refreshChannels();
+      loadManifest();
+    }, [refreshChannels, loadManifest]);
+
+    const handleDevLinked = useCallback(() => {
+      refreshChannels();
+      loadManifest();
+    }, [refreshChannels, loadManifest]);
+
     const getStatusInfo = (channel) => {
       if (channel.status?.usingFallback) {
         return { type: 'warning', text: 'Using fallback image' };
@@ -157,6 +216,26 @@ const Channels = () => {
               iconSize={36}
               description="Manage channel configurations and settings"
               actions={[
+                <Button
+                  key="install"
+                  variant="primary"
+                  onClick={() => setShowInstallModal(true)}
+                  icon={<Plus />}
+                  type="button"
+                >
+                  Install Channel
+                </Button>,
+                devModeEnabled && (
+                  <Button
+                    key="link-dev"
+                    variant="secondary"
+                    onClick={() => setShowLinkDevModal(true)}
+                    icon={<FolderOpen />}
+                    type="button"
+                  >
+                    Link Dev Channel
+                  </Button>
+                ),
                 supportsPluginSystem() && (
                   <Button
                     key="manifest"
@@ -170,7 +249,7 @@ const Channels = () => {
                 ),
                 <Button
                   key="refresh"
-                  variant="primary"
+                  variant="secondary"
                   onClick={refreshChannels}
                   icon={<RefreshCw />}
                   type="button"
@@ -197,6 +276,10 @@ const Channels = () => {
                   v21Supported={supportsV21()}
                   channelHealthSupported={supportsChannelHealth()}
                   onOpenSettings={handleSettings}
+                  onToggleEnabled={handleToggleEnabled}
+                  onUninstall={handleUninstall}
+                  onReloadDev={handleReloadDev}
+                  onUnlinkDev={handleUnlinkDev}
                 />
               );
             })}
@@ -205,15 +288,15 @@ const Channels = () => {
           <div className="empty-state">
             <h3>No channels available</h3>
             <p className="text-tertiary">
-              No channels were discovered. Make sure channels are properly installed in the channels directory.
+              No channels were discovered. Install a channel plugin to get started.
             </p>
             <Button
               variant="primary"
-              onClick={refreshChannels}
-              icon={<RefreshCw />}
+              onClick={() => setShowInstallModal(true)}
+              icon={<Plus />}
               type="button"
             >
-              Refresh Channels
+              Install Channel
             </Button>
           </div>
         )}
@@ -226,6 +309,20 @@ const Channels = () => {
               setSelectedChannel(null);
               loadChannels();
             }}
+          />
+        )}
+
+        <InstallChannel
+          isOpen={showInstallModal}
+          onClose={() => setShowInstallModal(false)}
+          onInstalled={handleInstalled}
+        />
+
+        {devModeEnabled && (
+          <LinkDevChannel
+            isOpen={showLinkDevModal}
+            onClose={() => setShowLinkDevModal(false)}
+            onLinked={handleDevLinked}
           />
         )}
       </div>

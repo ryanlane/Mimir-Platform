@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Settings as SettingsIcon, Volume2, VolumeX, Wifi, Download, Database, Trash2, RefreshCw, Send } from 'lucide-react';
+import { Settings as SettingsIcon, Volume2, VolumeX, Wifi, Download, Database, Trash2, RefreshCw, Send, Code } from 'lucide-react';
 import { logger } from '../../utils/logger';
 import './Settings.css';
 import { useInstallPrompt } from '../../hooks/useInstallPrompt';
@@ -11,12 +11,23 @@ import MobileConnectionGuide from '../../components/MobileConnectionGuide/Mobile
 import AdminOperations from '../../components/AdminOperations/AdminOperations';
 import { ThemeSelector } from '../../components/ThemeSelector/ThemeSelector';
 import Header from '../../components/Header/Header';
+import {
+  getPwaEnabledPreference,
+  setPwaEnabledPreference,
+  registerMimirServiceWorker,
+  unregisterMimirServiceWorkers,
+} from '../../services/pwaServiceWorker';
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
   // Install prompt hook
   const { canInstall, promptInstall, installed } = useInstallPrompt();
   const [installing, setInstalling] = useState(false);
+
+  // PWA enablement (opt-in; persisted locally)
+  const [pwaEnabled, setPwaEnabled] = useState(getPwaEnabledPreference());
+  const isProdBuild = process.env.NODE_ENV === 'production';
+  const isPwaForcedOn = process.env.REACT_APP_ENABLE_PWA === 'true';
 
   // Cache management state
   const [idbStats, setIdbStats] = useState({ scenes: 0, channels: 0, distribution: 0 });
@@ -117,6 +128,27 @@ const Settings = () => {
       setForceUpdating(false);
     }
   };
+
+  const applyPwaToggle = async (enabled) => {
+    if (isPwaForcedOn) return;
+    setPwaEnabled(enabled);
+    setPwaEnabledPreference(enabled);
+
+    // In non-prod builds we keep SW off to avoid dev caching issues.
+    if (!isProdBuild) return;
+
+    try {
+      if (enabled) {
+        await registerMimirServiceWorker();
+      } else {
+        await unregisterMimirServiceWorkers({ clearCaches: true });
+      }
+    } finally {
+      // Make behavior deterministic: reload so the SW (if enabled) can take control,
+      // or (if disabled) so we fully stop using cached shell.
+      setTimeout(() => window.location.reload(), 300);
+    }
+  };
   
   // Console verbosity settings
   const [consoleSettings, setConsoleSettings] = useState({
@@ -130,15 +162,28 @@ const Settings = () => {
 
   const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('mimir-api-base-url') || '');
   const [wsBaseUrl, setWsBaseUrl] = useState(localStorage.getItem('mimir-websocket-url') || '');
+  const [mqttBrokerUrl, setMqttBrokerUrl] = useState(localStorage.getItem('mimir-mqtt-broker-url') || '');
   const [apiConnectionStatus, setApiConnectionStatus] = useState(null);
   const [testingApi, setTestingApi] = useState(false);
   const [testingWs, setTestingWs] = useState(false);
+
+  // Developer mode
+  const [developerMode, setDeveloperMode] = useState(
+    localStorage.getItem('mimir-developer-mode') === 'true'
+  );
+
+  const handleDeveloperModeToggle = () => {
+    const newValue = !developerMode;
+    setDeveloperMode(newValue);
+    localStorage.setItem('mimir-developer-mode', String(newValue));
+  };
 
   // Collapsible sections (all collapsed by default)
   const [sectionsExpanded, setSectionsExpanded] = useState({
     connection: false,
     appearance: false,
     console: false,
+    developer: false,
     install: false,
     cache: false,
     system: false,
@@ -194,6 +239,15 @@ const Settings = () => {
     }
   };
 
+  const handleMqttUrlChange = (url) => {
+    setMqttBrokerUrl(url);
+    if (url) {
+      localStorage.setItem('mimir-mqtt-broker-url', url);
+    } else {
+      localStorage.removeItem('mimir-mqtt-broker-url');
+    }
+  };
+
   const testWebSocketConnection = () => {
     if (!wsBaseUrl || !wsBaseUrl.trim()) {
       setApiConnectionStatus({ success: false, error: 'WebSocket URL is required' });
@@ -242,7 +296,8 @@ const Settings = () => {
   const getCurrentUrls = () => {
     const apiUrl = apiBaseUrl || 'Auto-detected';
     const wsUrl = wsBaseUrl || 'Auto-detected';
-    return { apiUrl, wsUrl };
+    const mqttUrl = mqttBrokerUrl || 'Default (bundled broker)';
+    return { apiUrl, wsUrl, mqttUrl };
   };
 
   const handleVerbosityLevelChange = (level) => {
@@ -279,6 +334,10 @@ const Settings = () => {
     window.mimirApiBaseUrl = apiBaseUrl;
     localStorage.setItem('mimir-api-base-url', apiBaseUrl);
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    window.mimirMqttBrokerUrl = mqttBrokerUrl;
+  }, [mqttBrokerUrl]);
 
   const testApiConnection = useCallback(async () => {
     if (!apiBaseUrl || !apiBaseUrl.trim()) {
@@ -423,6 +482,23 @@ const Settings = () => {
               </div>
               <small className="input-help">
                 Current: {getCurrentUrls().wsUrl}
+              </small>
+            </div>
+
+            <div className="config-group">
+              <label htmlFor="mqtt-url">MQTT Broker URL:</label>
+              <div className="url-input-group">
+                <input
+                  id="mqtt-url"
+                  type="text"
+                  value={mqttBrokerUrl}
+                  onChange={(e) => handleMqttUrlChange(e.target.value)}
+                  placeholder="e.g., mqtt://192.168.1.50:1883 (leave blank for default)"
+                  className="url-input"
+                />
+              </div>
+              <small className="input-help">
+                Current: {getCurrentUrls().mqttUrl}
               </small>
             </div>
 
@@ -573,6 +649,48 @@ const Settings = () => {
           )}
         </div>
 
+        {/* Developer Mode */}
+        <div className="settings-card">
+          <div
+            className="card-header"
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleSection('developer')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSection('developer'); } }}
+          >
+            <div className="flex items-center gap-sm">
+              <Code size={20} />
+              <h3 className="card-title">Developer</h3>
+            </div>
+            <button type="button" className="expand-button" aria-label={sectionsExpanded.developer ? 'Collapse section' : 'Expand section'}>
+              {sectionsExpanded.developer ? '−' : '+'}
+            </button>
+          </div>
+          {sectionsExpanded.developer && (
+            <div className="card-body">
+              <div className="setting-row">
+                <div className="setting-label">
+                  <strong>Developer Mode</strong>
+                  <p className="text-tertiary">
+                    Enables developer tools for channel plugin development. When enabled,
+                    the Channels page shows a "Link Dev Channel" option that lets you load
+                    a plugin from a local directory with automatic file-watching and reload.
+                  </p>
+                </div>
+                <label className="toggle-switch" htmlFor="dev-mode-toggle">
+                  <input
+                    id="dev-mode-toggle"
+                    type="checkbox"
+                    checked={developerMode}
+                    onChange={handleDeveloperModeToggle}
+                  />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Install App (PWA) */}
         <div className="settings-card">
           <div
@@ -595,6 +713,37 @@ const Settings = () => {
             <p className="text-tertiary" style={{ marginBottom: '0.75rem' }}>
               Install this web app for faster launch, offline support, and a more native experience.
             </p>
+
+            <div className="setting-row" style={{ marginBottom: '0.75rem' }}>
+              <div className="setting-label">
+                <strong>Enable Offline Mode (PWA)</strong>
+                <p className="text-tertiary">
+                  When enabled, Mimir registers a service worker to cache the app shell and allow limited offline use.
+                  This can improve reliability on spotty networks, but may cause stale assets if your browser caches aggressively.
+                </p>
+                {!isProdBuild && (
+                  <p className="text-tertiary" style={{ marginTop: '0.25rem' }}>
+                    Note: disabled in development builds.
+                  </p>
+                )}
+                {isPwaForcedOn && (
+                  <p className="text-tertiary" style={{ marginTop: '0.25rem' }}>
+                    This instance has offline mode forced on by the administrator.
+                  </p>
+                )}
+              </div>
+              <label className="toggle-switch" htmlFor="pwa-enable-toggle">
+                <input
+                  id="pwa-enable-toggle"
+                  type="checkbox"
+                  checked={isProdBuild ? (isPwaForcedOn ? true : pwaEnabled) : false}
+                  onChange={(e) => applyPwaToggle(e.target.checked)}
+                  disabled={!isProdBuild || isPwaForcedOn}
+                />
+                <span className="toggle-slider"></span>
+              </label>
+            </div>
+
             <div className="install-status" style={{ marginBottom: '0.75rem', fontSize: '14px' }}>
               {installed ? (
                 <span className="status-installed" style={{ color: 'var(--color-success)', fontWeight: 500 }}>

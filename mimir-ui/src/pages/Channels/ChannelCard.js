@@ -1,21 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import PropTypes from 'prop-types';
-import { AlertCircle, Heart, Settings } from 'lucide-react';
+import { AlertCircle, Heart, Settings, Power, Trash2, RefreshCw, Unlink } from 'lucide-react';
 import Button from '../../components/Button/Button';
 import './ChannelCard.css';
 
 /**
  * ChannelCard component
  * Displays summary information for a channel including status, health, manifest info, and actions.
- *
- * Props:
- *  - channel (object) channel data
- *  - statusInfo ({ type: 'success'|'warning'|'error', text: string }) computed status display
- *  - health (object|undefined) health object { healthy: bool, ... }
- *  - manifestData (object|undefined) manifest details for v2.1
- *  - v21Supported (boolean) whether UI should show v2.1 badges/sections
- *  - channelHealthSupported (boolean) whether to display health indicator
- *  - onOpenSettings (function) handler to open settings dialog
  */
 const ChannelCard = ({
   channel,
@@ -24,26 +15,39 @@ const ChannelCard = ({
   manifestData,
   v21Supported,
   channelHealthSupported,
-  onOpenSettings
+  onOpenSettings,
+  onToggleEnabled,
+  onUninstall,
+  onReloadDev,
+  onUnlinkDev,
 }) => {
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const isEnabled = channel.enabled !== false;
+  const isDev = channel.dev === true;
+
   return (
-    <div className="channel-card">
+    <div className={`channel-card ${!isEnabled ? 'channel-card-disabled' : ''} ${isDev ? 'channel-card-dev' : ''}`}>
       <div className="channel-card-header">
         <div className="channel-info">
           <h3>
             {channel.name}
+            {isDev && <span className="dev-badge">DEV</span>}
+            {!isEnabled && <span className="disabled-badge">Disabled</span>}
             {v21Supported && manifestData?.schemaVersion === '2.1' && (
               <span className="v21-badge">v2.1</span>
             )}
           </h3>
             <div className="channel-id">ID: {channel.id}</div>
             <p className="text-tertiary">{channel.description}</p>
+            {isDev && channel.dev_path && (
+              <div className="dev-path">{channel.dev_path}</div>
+            )}
         </div>
         <div className="status-indicators">
-          <div className={`status-indicator status-${statusInfo.type}`}>
-            {statusInfo.text}
+          <div className={`status-indicator status-${isEnabled ? statusInfo.type : 'disabled'}`}>
+            {isEnabled ? statusInfo.text : 'Disabled'}
           </div>
-          {channelHealthSupported && health && (
+          {channelHealthSupported && health && isEnabled && (
             <div className={`health-indicator ${health.healthy ? 'healthy' : 'unhealthy'}`}>
               <Heart size={16} />
               {health.healthy ? 'Healthy' : 'Issues'}
@@ -93,14 +97,113 @@ const ChannelCard = ({
       </div>
 
       <div className="channel-card-footer">
-        <Button
-          variant="accent"
-          onClick={() => onOpenSettings(channel)}
-          icon={<Settings />}
-          type="button"
-        >
-          Settings
-        </Button>
+        {/* Dev channel actions */}
+        {isDev && onReloadDev && (
+          <Button
+            variant="secondary"
+            onClick={() => onReloadDev(channel)}
+            icon={<RefreshCw />}
+            type="button"
+            size="sm"
+          >
+            Reload
+          </Button>
+        )}
+
+        {/* Enable/Disable toggle (not for dev channels) */}
+        {!isDev && onToggleEnabled && (
+          <Button
+            variant={isEnabled ? 'secondary' : 'primary'}
+            onClick={() => onToggleEnabled(channel)}
+            icon={<Power />}
+            type="button"
+            size="sm"
+          >
+            {isEnabled ? 'Disable' : 'Enable'}
+          </Button>
+        )}
+
+        {/* Settings button */}
+        {isEnabled && (
+          <Button
+            variant="accent"
+            onClick={() => onOpenSettings(channel)}
+            icon={<Settings />}
+            type="button"
+            size="sm"
+          >
+            Settings
+          </Button>
+        )}
+
+        {/* Unlink (dev) or Uninstall (regular) */}
+        {isDev && onUnlinkDev && (
+          confirmRemove ? (
+            <div className="uninstall-confirm">
+              <span className="uninstall-confirm-text">Unlink?</span>
+              <Button
+                variant="danger"
+                onClick={() => { onUnlinkDev(channel); setConfirmRemove(false); }}
+                type="button"
+                size="sm"
+              >
+                Yes
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmRemove(false)}
+                type="button"
+                size="sm"
+              >
+                No
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="danger"
+              onClick={() => setConfirmRemove(true)}
+              icon={<Unlink />}
+              type="button"
+              size="sm"
+            >
+              Unlink
+            </Button>
+          )
+        )}
+
+        {!isDev && onUninstall && (
+          confirmRemove ? (
+            <div className="uninstall-confirm">
+              <span className="uninstall-confirm-text">Remove?</span>
+              <Button
+                variant="danger"
+                onClick={() => { onUninstall(channel); setConfirmRemove(false); }}
+                type="button"
+                size="sm"
+              >
+                Yes
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmRemove(false)}
+                type="button"
+                size="sm"
+              >
+                No
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="danger"
+              onClick={() => setConfirmRemove(true)}
+              icon={<Trash2 />}
+              type="button"
+              size="sm"
+            >
+              Uninstall
+            </Button>
+          )
+        )}
       </div>
     </div>
   );
@@ -114,6 +217,9 @@ ChannelCard.propTypes = {
     name: PropTypes.string.isRequired,
     description: PropTypes.string,
     version: PropTypes.string,
+    enabled: PropTypes.bool,
+    dev: PropTypes.bool,
+    dev_path: PropTypes.string,
     status: PropTypes.shape({
       lastUpdate: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.instanceOf(Date)]),
       lastError: PropTypes.string,
@@ -137,6 +243,10 @@ ChannelCard.propTypes = {
   v21Supported: PropTypes.bool,
   channelHealthSupported: PropTypes.bool,
   onOpenSettings: PropTypes.func.isRequired,
+  onToggleEnabled: PropTypes.func,
+  onUninstall: PropTypes.func,
+  onReloadDev: PropTypes.func,
+  onUnlinkDev: PropTypes.func,
 };
 
 ChannelCard.defaultProps = {
@@ -144,4 +254,8 @@ ChannelCard.defaultProps = {
   manifestData: undefined,
   v21Supported: false,
   channelHealthSupported: false,
+  onToggleEnabled: undefined,
+  onUninstall: undefined,
+  onReloadDev: undefined,
+  onUnlinkDev: undefined,
 };
