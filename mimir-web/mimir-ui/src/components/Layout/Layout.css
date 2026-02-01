@@ -1,0 +1,35 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.layout-main {
+  flex: 1;
+  padding: var(--spacing-xl);
+  background-color: var(--color-background);
+  /* Body/viewport will now scroll (Option A); remove internal scroll */
+  overflow: visible;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px){
+  .layout {
+    flex-direction: column;
+  }
+  
+  .layout-main {
+    padding: var(--spacing-lg);
+    padding-bottom: calc(var(--spacing-lg) + 70px + env(safe-area-inset-bottom, 0px)); /* Space for tab bar + safe area */
+    min-height: calc(100vh - 70px - env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Promote mobile nav layer & ensure independent compositing */
+@media (max-width: 768px) {
+  .mobile-navigation {
+    transform: translateZ(0);
+    will-change: transform;
+    contain: layout paint style;
+  }
+}

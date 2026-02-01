@@ -1,0 +1,69 @@
+.tag-item {
+  --focus-ring: 0 0 0 2px rgba(59,130,246,0.5);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-surface, #f1f5f9);
+  color: var(--color-text, #0f172a);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+/* Size */
+.tag-item.tag-sm { padding: 3px 6px; font-size: 0.6875rem; }
+
+/* Interactive (selectable) states */
+.tag-item.is-selectable { cursor: pointer; }
+.tag-item.is-selectable:hover:not(.is-disabled) { background: var(--color-hover, #e2e8f0); }
+.tag-item.is-selectable:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.tag-item.is-selectable.is-selected { 
+  background: var(--color-accent, #3b82f6); 
+  color: #fff; 
+  border-color: var(--color-accent, #3b82f6);
+}
+.tag-item.is-selectable.is-selected:hover:not(.is-disabled) { background: var(--color-accent-strong, #2563eb); }
+
+.tag-item.is-disabled { opacity: .55; cursor: not-allowed; }
+
+/* Variants */
+.tag-item.tag-accent { background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; }
+.tag-item.tag-accent.is-selectable.is-selected { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+
+.tag-item.tag-success { background: #ecfdf5; color: #047857; border-color: #6ee7b7; }
+.tag-item.tag-success.is-selectable.is-selected { background: #047857; color: #fff; border-color: #047857; }
+
+.tag-item.tag-warning { background: #fffbeb; color: #b45309; border-color: #fcd34d; }
+.tag-item.tag-warning.is-selectable.is-selected { background: #b45309; color: #fff; border-color: #b45309; }
+
+.tag-item.tag-error { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
+.tag-item.tag-error.is-selectable.is-selected { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+
+.tag-icon { display: inline-flex; width: 14px; height: 14px; }
+
+.tag-label { white-space: nowrap; }
+
+.tag-remove { 
+  background: none; 
+  border: none; 
+  color: currentColor; 
+  cursor: pointer; 
+  font-size: 0.875em; 
+  line-height: 1; 
+  padding: 0 2px; 
+  display: inline-flex; 
+  align-items: center; 
+  justify-content: center; 
+  border-radius: 50%;
+}
+.tag-remove:hover { background: rgba(0,0,0,0.1); }
+.tag-item.is-selectable.is-selected .tag-remove:hover { background: rgba(255,255,255,0.25); }
+.tag-remove:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(255,255,255,0.8), var(--focus-ring); }
+.tag-remove:disabled { cursor: not-allowed; opacity: .6; }

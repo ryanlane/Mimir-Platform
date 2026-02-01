@@ -1,0 +1,12 @@
+.mimir-logo-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.mimir-logo-wrapper svg { display: block; }
+.mimir-logo-wrapper.variant-default svg path[stroke],
+.mimir-logo-wrapper.variant-default svg rect[stroke] { stroke: url(#mimirGradient); }
+
+/* Optional monochrome variant inheriting currentColor */
+.mimir-logo-wrapper.variant-mono svg * { stroke: currentColor; fill: currentColor; }

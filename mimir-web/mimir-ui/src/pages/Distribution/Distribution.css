@@ -1,0 +1,333 @@
+/* Distribution Page Styles */
+.distribution-page {
+  padding: var(--spacing-lg);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--spacing-xl);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.header-content h1 {
+  margin: 0 0 var(--spacing-sm) 0;
+  color: var(--color-text-primary);
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+.header-content p {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--color-text-tertiary);
+}
+
+.connection-status {
+  color: var(--color-success);
+  font-weight: 500;
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.btn.loading {
+  position: relative;
+  color: transparent;
+}
+
+.btn.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Distribution Grid */
+.distribution-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+
+.distribution-section.full-width {
+  grid-column: 1 / -1;
+}
+
+.distribution-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-header {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.card-header h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.card-body {
+  padding: var(--spacing-lg);
+}
+
+/* Overview Stats */
+.overview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+.stat-item {
+  text-align: center;
+  padding: var(--spacing-md);
+  background: var(--color-background);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--spacing-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.stat-status {
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--border-radius-sm);
+  display: inline-block;
+}
+
+.stat-status.success {
+  background: var(--color-success-light);
+  color: var(--color-success-dark);
+}
+
+.stat-status.error {
+  background: var(--color-error-light);
+  color: var(--color-error-dark);
+}
+
+/* Scene Distribution List */
+.scenes-distribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.scene-distribution-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-md);
+  transition: all 0.2s ease;
+}
+
+.scene-distribution-item:hover {
+  box-shadow: var(--shadow-sm);
+  border-color: var(--color-primary-light);
+}
+
+.scene-info h4 {
+  margin: 0 0 var(--spacing-xs) 0;
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.scene-info p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-tertiary);
+}
+
+.scene-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+/* Display Assignment List */
+.displays-assignment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.display-assignment-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--border-radius-sm);
+  transition: background-color 0.2s ease;
+}
+
+.display-assignment-item:hover {
+  background: var(--color-surface);
+}
+
+.display-info h4 {
+  margin: 0 0 2px 0;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.display-info p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.assignment-status .status-indicator {
+  font-size: 0.75rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--border-radius-full);
+  font-weight: 500;
+}
+
+.assignment-status .status-indicator.success {
+  background: var(--color-success-light);
+  color: var(--color-success-dark);
+}
+
+.assignment-status .status-indicator.error {
+  background: var(--color-error-light);
+  color: var(--color-error-dark);
+}
+
+/* Empty States */
+.empty-state {
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-tertiary);
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+/* Error State */
+.error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: var(--spacing-xl);
+}
+
+.error-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.error-content h2 {
+  margin: 0 0 var(--spacing-md) 0;
+  color: var(--color-error);
+}
+
+.error-content p {
+  margin: 0 0 var(--spacing-lg) 0;
+  color: var(--color-text-tertiary);
+}
+
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .distribution-grid {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+  }
+  
+  .overview-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px){
+  .distribution-page {
+    padding: var(--spacing-md);
+  }
+  
+  .page-header {
+    flex-direction: column;
+    gap: var(--spacing-md);
+    align-items: stretch;
+  }
+  
+  .header-actions {
+    justify-content: flex-end;
+  }
+  
+  .overview-stats {
+    grid-template-columns: 1fr;
+  }
+  
+  .scene-distribution-item,
+  .display-assignment-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+  
+  .scene-actions {
+    align-self: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .distribution-page {
+    padding: var(--spacing-sm);
+  }
+  
+  .card-header,
+  .card-body {
+    padding: var(--spacing-md);
+  }
+}

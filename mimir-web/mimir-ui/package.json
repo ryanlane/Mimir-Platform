@@ -1,0 +1,63 @@
+{
+  "name": "mimir-ui",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.7.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "axios": "^1.11.0",
+    "lucide-react": "^0.540.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.8.1",
+    "react-scripts": "5.0.1",
+    "web-vitals": "^2.1.4"
+  },
+  "scripts": {
+    "prebuild": "node ./scripts/gen-version.mjs",
+    "gen:version": "node ./scripts/gen-version.mjs",
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "build:prod": "npm run build",
+    "deploy": "npm run build:prod && npm run upload",
+    "upload": "scp -o PreferredAuthentications=password -o PubkeyAuthentication=no -r build/* oak:/var/www/mimir-ui/",
+    "deploy:rsync": "npm run build:prod && rsync -avz --delete -e 'ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no' build/ oak:/var/www/mimir-ui/",
+    "deploy:sftp": "npm run build:prod && sftp oak:/var/www/mimir-ui/",
+    "rsync": "rsync -avz --delete -e 'ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no' build/ oak:/var/www/mimir-ui/",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest",
+      "plugin:storybook/recommended"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@storybook/addon-docs": "9.1.8",
+    "@storybook/addon-onboarding": "9.1.8",
+    "@storybook/preset-create-react-app": "9.1.8",
+    "@storybook/react-webpack5": "9.1.8",
+    "eslint-plugin-storybook": "9.1.8",
+    "prop-types": "^15.8.1",
+    "storybook": "9.1.8",
+    "webpack": "^5.101.3"
+  }
+}

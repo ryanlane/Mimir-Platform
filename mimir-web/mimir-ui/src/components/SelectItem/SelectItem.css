@@ -1,0 +1,95 @@
+.select-item {
+  --focus-ring: 0 0 0 2px rgba(59,130,246,0.5);
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--spacing-md);
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, background .2s;
+  font: inherit;
+}
+
+.select-item:hover:not(.is-disabled) {
+  border-color: var(--color-border-strong, #cbd5e1);
+}
+
+.select-item.is-checked {
+  border-color: var(--color-accent, #3b82f6);
+  box-shadow: 0 0 0 1px var(--color-accent, #3b82f6);
+  background: var(--color-active, #f8fafc);
+}
+
+.select-item.is-disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+.select-item-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0; /* redundant but explicit */
+}
+
+.select-item:has(.select-item-input:focus-visible) {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.select-item-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.select-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: 600;
+  color: var(--color-text, #111827);
+}
+
+.select-item-title { font-size: .875rem; line-height: 1.2; }
+
+.select-item-description {
+  font-size: .75rem;
+  color: var(--color-text-secondary, #64748b);
+  line-height: 1.3;
+}
+
+.select-item-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  margin-right: 3px;
+  color: var(--color-text, #3b82f6);
+}
+
+.select-item-indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-strong, #cbd5e1);
+  margin-top: 2px;
+  position: relative;
+  flex-shrink: 0;
+  display: none;
+}
+
+.select-item.is-checked .select-item-indicator {
+  border-color: var(--color-accent, #3b82f6);
+  background: radial-gradient(circle at center, var(--color-accent, #3b82f6) 45%, transparent 47%);
+}

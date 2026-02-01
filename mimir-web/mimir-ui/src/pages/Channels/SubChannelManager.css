@@ -1,0 +1,307 @@
+/* Sub-Channel Manager Styles */
+.subchannel-manager-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.subchannel-manager {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.subchannel-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.subchannel-manager-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.subchannel-manager-body {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* Error Message */
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+/* Sub-Channel Form */
+.subchannel-form {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.subchannel-form h3 {
+  margin: 0 0 16px 0;
+  color: #111827;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  color: #374151;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+
+
+/* Sub-Channels Section */
+.subchannels-section {
+  margin-top: 20px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.section-header h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.empty-state p {
+  margin: 8px 0;
+}
+
+/* Sub-Channels Grid */
+.subchannels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.subchannel-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  transition: box-shadow 0.2s;
+}
+
+.subchannel-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.subchannel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.subchannel-header h4 {
+  margin: 0;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.subchannel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.action-btn {
+  background: none;
+  border: none;
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.action-btn.delete:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.subchannel-description {
+  color: #6b7280;
+  font-size: 14px;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.subchannel-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+
+/* Responsive Design */
+@media (max-width: 768px){
+  .subchannel-manager-overlay {
+    padding: 10px;
+  }
+  
+  .subchannel-manager {
+    max-height: 95vh;
+  }
+  
+  .subchannel-manager-header {
+    padding: 16px;
+  }
+  
+  .subchannel-manager-body {
+    padding: 16px;
+  }
+  
+  .subchannels-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .section-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+}
+
+/* Dark mode support (if needed) */
+@media (prefers-color-scheme: dark) {
+  .subchannel-manager {
+    background: #1f2937;
+    color: #f9fafb;
+  }
+  
+  .subchannel-manager-header {
+    border-bottom-color: #374151;
+  }
+  
+  .subchannel-manager-header h2,
+  .section-header h3,
+  .subchannel-header h4 {
+    color: #f9fafb;
+  }
+  
+  .subchannel-form {
+    background: #374151;
+    border-color: #4b5563;
+  }
+  
+  .subchannel-card {
+    background: #374151;
+    border-color: #4b5563;
+  }
+  
+  .form-group input,
+  .form-group textarea {
+    background: #1f2937;
+    border-color: #4b5563;
+    color: #f9fafb;
+  }
+  
+  
+  .detail-item code {
+    background: #4b5563;
+    color: #f9fafb;
+  }
+}

@@ -1,0 +1,198 @@
+@import url('./fonts.css');
+
+/* ========= Base tokens ========= */
+:root {
+  --font-base: "Lato", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  color-scheme: light dark; /* allow UA controls to adapt */
+
+    /* Text */
+  --color-text: #1A1A1A;
+  --color-text-secondary: #3D4A44;
+  --color-text-tertiary: #64706A;
+  --color-text-on-dark: #E8F0EB;
+
+  /* Brand */
+  --color-primary: #036600;
+  --color-primary-hover: #024d00;
+  --color-accent: #00C851;
+  --color-accent-hover: #00E676;
+  --color-focus-ring: #00FF30AA;
+
+  /* Surfaces */
+  --color-background: #F3F8F6;
+  --color-background-alt: #EAF2EE;
+  --color-surface: #E2EDE9;
+  --color-surface-hover: #D6E7E1;
+  --color-border: #D0DDD7;
+
+  /* States */
+  --color-success: #036600;
+  --color-warning: #CC6324;
+  --color-error: #C62828;
+  --color-active: #B2F7C540;
+
+  /* Extras */
+  --color-icon: #333E39;
+  --color-mimir-green: #00FF30C0;
+  --color-mimir-blue: #D2FBFF;
+  --color-mimir-dark-green: #036600;
+
+  --elevation-1: 0 1px 3px rgba(0 0 0 / 10%);
+  --elevation-2: 0 4px 12px rgba(0 0 0 / 12%);
+  --gradient-accent: linear-gradient(135deg, #0066cc, #004c99);
+
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-xxl: 3rem;
+
+  /* Breakpoints (doc only; not usable in media queries yet) */
+  --bp-mobile-sm: 320px;
+  --bp-mobile-md: 480px;
+  --bp-tablet-sm: 768px;
+  --bp-tablet-lg: 1024px;
+  --bp-desktop:   1280px;
+  --bp-wide:      1440px;
+
+  /* Native control color */
+  accent-color: var(--color-accent);
+}
+
+/* Base application */
+html, body {
+  font-family: var(--font-base);
+  background: var(--color-background);
+  color: var(--color-text);
+  padding: 0;
+  margin: 0;
+}
+
+/* Forced colors: keep semantics but don’t fight the OS */
+@media (forced-colors: active) {
+  :root { color-scheme: light dark; }
+}
+
+/* ========= OS dark-mode defaults ========= */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text: #FFFFFFD0;
+    --color-text-secondary: #FFFFFFA0;
+    --color-text-tertiary: #ffffff84;
+    --color-primary: #f5f7fa;
+    --color-secondary: #121418;
+    --color-tertiary: #9aa0ab;
+    --color-background: #0f1115;
+    --color-background-alt: #1b1f24;
+    --color-surface: #1f242b;
+    --color-border: #2c323a;
+    --color-accent: #3b4b59;
+    --color-accent-hover: #5f788d;
+    --color-success: #736b1e;
+    --color-warning: #cc6324;
+    --color-error: #bf1b1b;
+    --color-focus-ring: #bfa07a;
+    --color-icon: #FFFFFFA0;
+    --color-mimir-green: #80ff0082;
+    --elevation-1: 0 1px 2px rgba(0 0 0 / 60%), 0 0 0 1px rgba(255 255 255 / 4%);
+    --elevation-2: 0 4px 16px -4px rgba(0 0 0 / 70%);
+    --gradient-accent: linear-gradient(135deg, #3d82f6, #1e3a8a);
+    --color-surface-hover: #272d35;
+  }
+
+  /* Scrollbars */
+  html { scrollbar-color: #2c323a #121417; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: #121417; }
+  ::-webkit-scrollbar-thumb { background: #2c323a; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a424d; }
+}
+
+/* ========= Explicit theme overrides (win over OS setting) ========= */
+/* Place AFTER the media block so explicit choice wins */
+:root[data-theme='light'] {
+  /* Text */
+  --color-text: #1A1A1A;
+  --color-text-secondary: #3D4A44;
+  --color-text-tertiary: #64706A;
+  --color-text-on-dark: #E8F0EB;
+
+  /* Brand */
+  --color-primary: #036600;
+  --color-accent: #00C851;
+  --color-accent-hover: #00E676;
+  --color-focus-ring: #00FF30AA;
+
+  /* Surfaces */
+  --color-background: #fafeff;
+  --color-background-alt: #CFF3F8;
+  --color-surface: #e1f0f1;
+  --color-surface-card: #e1f0f1D4;
+  --color-surface-hover: #B9E5EC;
+  --color-border: #A4D7E0;
+
+  /* States */
+  --color-success: #036600;
+  --color-warning: #CC6324;
+  --color-error: #C62828;
+  --color-active: #B2F7C540;
+
+  /* Extras */
+  --color-icon: #333E39;
+  --color-mimir-green: #00FF30C0;
+  --color-mimir-blue: #D2FBFF;
+  --color-mimir-dark-green: #036600;
+  --elevation-1: 0 1px 3px rgba(0 0 0 / 10%);
+  --elevation-2: 0 4px 12px rgba(0 0 0 / 12%);
+  --gradient-accent: linear-gradient(135deg, #0066cc, #004c99);
+}
+
+:root[data-theme='dark'] {
+  /* Text */
+  --color-text: #EAF4F6;             /* primary readable text, soft white-blue */
+  --color-text-secondary: #B7C9C6;   /* muted secondary text */
+  --color-text-tertiary: #7C8E8A;    /* subdued tertiary tone */
+  --color-text-on-dark: #FFFFFF;     /* for buttons or elevated surfaces */
+
+  /* Brand */
+  --color-primary: #00ff2f92;          /* signature neon green from logo */
+  --color-primary-hover: #00cc2970;    /* slightly dimmed for hover */
+  --color-accent: #00E0BE;           /* teal-cyan accent for hover and focus */
+  --color-accent-hover: #4FFFE2;
+  --color-focus-ring: #00FF30AA;     /* maintain recognizable glow */
+
+  /* Surfaces */
+  --color-background: #0B1314;       /* deep bluish-green black (main background) */
+  --color-background-alt: #111C1E;   /* slightly lighter for section contrast */
+  --color-surface: #162325;          /* card/panel background */
+  --color-surface-hover: #1D2C2E;    /* hover elevation */
+  --color-border: #2A3C3F;           /* low-saturation cyan-gray border */
+
+  /* States */
+  --color-success: #48ff76a1;          /* brightened green over dark base */
+  --color-warning: #FF8C42;          /* slightly warmer to contrast against teal */
+  --color-error: #FF4B4B;            /* vibrant but not garish red */
+  --color-active: #00C2A820;         /* subtle teal transparency overlay */
+
+  /* Extras */
+  --color-icon: #9BB3AF;             /* balanced neutral icon tone */
+  --color-mimir-green: #00FF30C0;    /* signature glow */
+  --color-mimir-blue: #1A2B2D;       /* soft cool tint for ambient backgrounds */
+  --color-mimir-dark-green: #0C3310; /* deep grounding hue */
+
+  --elevation-1: 0 1px 2px rgba(0 0 0 / 60%), 0 0 0 1px rgba(255 255 255 / 4%);
+  --elevation-2: 0 4px 16px -4px rgba(0 0 0 / 70%);
+  --gradient-accent: linear-gradient(135deg, #3d82f6, #1e3a8a);
+  --color-surface-hover: #272d35;
+}
+
+/* Accessibility helpers */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+/* @media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+} */

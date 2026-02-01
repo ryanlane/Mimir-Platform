@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Placeholder Mimir logo. Replace path data with real logo when available. -->
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mimir Logo">
+  <defs>
+    <linearGradient id="mimirGradient" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="104" height="104" rx="22" stroke="url(#mimirGradient)" stroke-width="8" fill="none" />
+  <path d="M40 82V38L60 58L80 38V82" stroke="url(#mimirGradient)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="60" cy="72" r="6" fill="#8B5CF6" />
+</svg>

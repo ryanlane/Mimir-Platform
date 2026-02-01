@@ -1,0 +1,83 @@
+.a2hs-nudge {
+	position: fixed;
+	bottom: 1rem;
+	right: 1rem;
+	background: #1e293b;
+	color: #fff;
+	border-radius: 14px;
+	box-shadow: 0 8px 30px -4px rgba(0,0,0,0.4);
+	padding: .85rem 1rem;
+	z-index: 999;
+	display: flex;
+	animation: a2hs-enter 280ms ease;
+	max-width: 320px;
+	font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+}
+
+.a2hs-content {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.a2hs-text {
+	display: flex;
+	flex-direction: column;
+	line-height: 1.15;
+	font-size: .9rem;
+}
+
+.a2hs-sub {
+	font-weight: 400;
+	opacity: .8;
+	margin-top: 2px;
+	font-size: .72rem;
+}
+
+.a2hs-actions {
+	display: flex;
+	gap: .4rem;
+}
+
+.a2hs-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: .35rem;
+	font-size: .7rem;
+	border: none;
+	cursor: pointer;
+	border-radius: 8px;
+	padding: .45rem .7rem;
+	font-weight: 500;
+	line-height: 1;
+	background: #334155;
+	color: #fff;
+	transition: background .18s, transform .18s;
+}
+
+.a2hs-btn.primary { background: #2563eb; }
+.a2hs-btn.primary:hover { background: #1d4ed8; }
+
+.a2hs-btn.ghost { background: transparent; color: #cbd5e1; }
+.a2hs-btn.ghost:hover { background: #334155; }
+
+.a2hs-btn:active { transform: translateY(1px); }
+
+@keyframes a2hs-enter {
+	from {
+		opacity: 0;
+		transform: translateY(12px) scale(.96);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@media (max-width: 600px) {
+	.a2hs-nudge {
+		left: .75rem;
+		right: .75rem;
+		bottom: .75rem;
+	}
+}

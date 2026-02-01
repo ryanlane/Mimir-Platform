@@ -1,0 +1,122 @@
+/* Header component styles */
+.header {
+	padding: 0 0 1.25rem;
+	margin: 0 0 1.25rem;
+	border-bottom: 1px solid var(--color-border);
+	width: 100%;
+}
+
+.header-content {
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
+    color: var(--color-text-secondary);
+}
+
+/* New flex bar to allow actions on the right */
+.header-bar {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1.25rem;
+	flex-wrap: wrap; /* allow wrapping on very small screens */
+}
+
+.header-main {
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
+	min-width: 0; /* allow text truncation if added later */
+}
+
+.header-text {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	color: var(--color-text-secondary);
+}
+
+.header-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex: 0 0 auto;
+}
+
+/* Cluster wraps actions + optional rightSlot */
+.header-right-cluster {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.75rem;
+	flex: 0 1 auto;
+}
+
+.header-slot[data-slot] {
+	display: flex;
+	align-items: stretch;
+}
+
+.header-action-item > * {
+	/* Ensure buttons align nicely even if raw elements */
+	vertical-align: middle;
+}
+
+
+.header-icon {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+}
+
+.header-title {
+	font-size: 1.6rem;
+	line-height: 1.15;
+	margin: 0 0 0.25rem;
+	font-weight: 600;
+    color: var(--color-text);
+}
+
+.header-description {
+	margin: 0;
+	font-size: 0.85rem;
+	max-width: 60ch;
+	color: var(--color-text-secondary);
+}
+
+@media (max-width: 640px) {
+	.header {
+		padding-bottom: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.header-bar {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 0.75rem;
+	}
+
+	.header-actions {
+		align-self: flex-start; /* actions appear under title */
+	}
+	.header-right-cluster {
+		align-self: stretch;
+		width: 100%;
+		justify-content: flex-start; /* keep natural flow on mobile */
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.header-slot[data-slot] {
+		width: 100%;
+	}
+	.header-icon {
+		width: 42px;
+		height: 42px;
+		border-radius: 10px;
+	}
+	.header-title {
+		font-size: 1.35rem;
+	}
+}
