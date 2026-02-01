@@ -122,7 +122,7 @@ services:
 
   discovery:
     build:
-      context: ./mimir-discovery
+      context: ./mimir-discovery/python
       dockerfile: Dockerfile
     container_name: mimir-discovery
     profiles: ["discovery"]
