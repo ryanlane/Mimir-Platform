@@ -1,0 +1,29 @@
+# Prometheus configuration for Mimir API OpenTelemetry metrics
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Mimir API metrics
+  - job_name: 'mimir-api'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:5000']  # Adjust host/port as needed
+    metrics_path: '/metrics'
+    
+  # Add additional Mimir services here
+  # - job_name: 'mimir-display-clients'
+  #   scrape_interval: 30s
+  #   static_configs:
+  #     - targets: ['display-1:8080', 'display-2:8080']
+
+# Optional: Add alerting rules
+# rule_files:
+#   - "mimir_alerts.yml"
+
+# Optional: Configure Alertmanager
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093

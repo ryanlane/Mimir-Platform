@@ -1,0 +1,50 @@
+# /etc/systemd/system/mimir-api.service
+# UPDATED FOR REFACTORED DEPLOYMENT
+[Unit]
+Description=Mimir API Service - Multi-display content management system (Refactored)
+Documentation=https://github.com/ryanlane/mimir-api
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mimir
+Group=mimir
+# CORRECTED: Actual deployment path
+WorkingDirectory=/opt/mimir/mimir-api
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/mimir/mimir-api
+
+# Load environment variables from config file
+EnvironmentFile=-/etc/mimir/mimir-api.env
+
+# UPDATED: Entry point for refactored app factory with production workers
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 5000 --workers 2
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+Restart=always
+RestartSec=5
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Enhanced security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/mimir-api
+ReadWritePaths=/var/opt/mimir/mimir-api
+ReadWritePaths=/tmp
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mimir-api
+
+[Install]
+WantedBy=multi-user.target
