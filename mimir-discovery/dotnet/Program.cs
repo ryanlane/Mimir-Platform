@@ -57,6 +57,31 @@ static Dictionary<string, string> ToProperties(object? properties)
     return output;
 }
 
+static void EnsureDisplayIdentity(Dictionary<string, string> props, string instanceName, string hostName)
+{
+    if (string.IsNullOrWhiteSpace(instanceName)) return;
+
+    var derivedId = instanceName;
+    if (instanceName.StartsWith("mimir-display-", StringComparison.OrdinalIgnoreCase))
+    {
+        derivedId = instanceName.Substring("mimir-display-".Length);
+    }
+    derivedId = derivedId.Trim().TrimEnd('.');
+
+    if (!props.ContainsKey("display_id") && !string.IsNullOrWhiteSpace(derivedId))
+    {
+        props["display_id"] = derivedId;
+    }
+    if (!props.ContainsKey("display_name") && !string.IsNullOrWhiteSpace(derivedId))
+    {
+        props["display_name"] = $"Display ({derivedId})";
+    }
+    if (!props.ContainsKey("hostname") && !string.IsNullOrWhiteSpace(hostName))
+    {
+        props["hostname"] = hostName;
+    }
+}
+
 static int? ParseWebhookPort(IDictionary<string, string> props, int? fallback)
 {
     if (props.TryGetValue("webhook_port", out var raw) || props.TryGetValue("webhookPort", out raw))
@@ -215,6 +240,7 @@ async Task<Dictionary<string, ServiceSnapshot>> ScanAsync()
             var instance = svc.Name ?? host.DisplayName ?? host.Id ?? "unknown";
             var serviceName = instance.Contains("._", StringComparison.Ordinal) ? instance : $"{instance}.{serviceType}";
             var props = ToProperties(svc.Properties);
+            EnsureDisplayIdentity(props, instance, host.DisplayName ?? host.Id ?? string.Empty);
             var webhookPort = ParseWebhookPort(props, svc.Port);
 
             var snapshot = new ServiceSnapshot(
