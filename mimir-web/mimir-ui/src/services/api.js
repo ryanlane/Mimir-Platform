@@ -364,6 +364,7 @@ export const api = {
   getDisplays: (params = {}) => apiClient.get('/displays', { params }),
   unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${encodeURIComponent(displayId)}/scene`),
   getUnassignedDisplays: (includeDiscovered = true) => apiClient.get('/displays/unassigned', { params: { include_discovered: includeDiscovered } }),
+  bootstrapDisplay: (displayId, payload = {}) => apiClient.post(`/displays/bootstrap/${displayId}`, payload),
   getDisplayDetails: (displayId) => apiClient.get(`/displays/${displayId}`),
   getDiscoveredDisplayAssignments: (displayId) => apiClient.get(`/displays/${displayId}/scene`),
   assignSceneToDisplay: (displayId, sceneId, subchannelId = null) => {

@@ -1,13 +1,13 @@
 // Display Card component for individual display clients
 import React, { useState, useEffect } from 'react';
 import './DisplayCard.css';
-import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe, Settings as SettingsIcon } from 'lucide-react';
 import { api } from '../../services/api';
 import Button from '../../components/Button/Button';
 import Icon from '../../components/Icon/Icon';
 import Modal from '../../components/Modal/Modal';
 
-const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiClient = api }) => {
+const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onConfigure, configureStatus, apiClient = api }) => {
   // const [imageLoading, setImageLoading] = useState(false); // (unused after image section commented out)
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -179,6 +179,11 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
     }
     return result;
   })();
+
+  const canConfigure = display.displayType === 'discovered' && display.webhook_port;
+  const configureLoading = configureStatus?.loading;
+  const configureError = configureStatus?.error;
+  const configureSuccess = configureStatus?.success;
 
   const handleManualUpdate = async () => {
     if (!sceneAssignment) return;
@@ -481,6 +486,19 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
                 >
                   Edit
                 </Button>
+                {canConfigure && (
+                  <Button
+                    icon={<SettingsIcon size={14} />}
+                    iconSize={14}
+                    variant="ghost"
+                    onClick={() => onConfigure && onConfigure(display)}
+                    loading={configureLoading}
+                    disabled={configureLoading}
+                    title="Re-configure display"
+                  >
+                    Reconfigure
+                  </Button>
+                )}
                 
                 {canManualUpdate && (
                   <Button
@@ -512,16 +530,41 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, apiC
           ) : (
             <div className="scene-unassigned">
               <div className="no-scene">No scene assigned</div>
-              <Button
-                icon="Plus"
-                iconSize={14}
-                size="md"
-                variant='primary'
-                onClick={() => onAssignScene(display)}
-              >
-                Assign Scene
-              </Button>           
+              <div className="scene-buttons">
+                {canConfigure && (
+                  <Button
+                    icon={<SettingsIcon size={14} />}
+                    iconSize={14}
+                    size="md"
+                    variant='primary'
+                    onClick={() => onConfigure && onConfigure(display)}
+                    loading={configureLoading}
+                    disabled={configureLoading}
+                  >
+                    Configure
+                  </Button>
+                )}
+                <Button
+                  icon="Plus"
+                  iconSize={14}
+                  size="md"
+                  variant={canConfigure ? 'secondary' : 'primary'}
+                  onClick={() => onAssignScene(display)}
+                >
+                  Assign Scene
+                </Button>
+              </div>
              
+            </div>
+          )}
+          {(configureError || configureSuccess) && (
+            <div style={{ marginTop: '0.35rem', fontSize: '0.7rem' }}>
+              {configureError && (
+                <span style={{ color: '#d9534f' }}>⚠ {configureError}</span>
+              )}
+              {configureSuccess && !configureError && (
+                <span style={{ color: '#28a745' }}>Configured</span>
+              )}
             </div>
           )}
           {canManualUpdate && (manualUpdateError || manualUpdateSuccess) && (

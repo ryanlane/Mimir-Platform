@@ -59,6 +59,7 @@ const Displays = () => {
   // UI state
   const [showSceneAssignment, setShowSceneAssignment] = useState(false);
   const [selectedDisplay, setSelectedDisplay] = useState(null);
+  const [configStatus, setConfigStatus] = useState({});
   
   // Filtering and search
   const [searchTerm, setSearchTerm] = useState('');
@@ -293,6 +294,36 @@ const Displays = () => {
       setLoading(false);
     }
   }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter, includeDiscovered, isLoading]);
+
+  const handleConfigureDisplay = useCallback(async (display) => {
+    if (!display?.id) return;
+    setConfigStatus(prev => ({
+      ...prev,
+      [display.id]: { loading: true, error: null, success: false }
+    }));
+    try {
+      await api.bootstrapDisplay(display.id, {});
+      setConfigStatus(prev => ({
+        ...prev,
+        [display.id]: { loading: false, error: null, success: true }
+      }));
+      setTimeout(() => {
+        setConfigStatus(prev => {
+          const next = { ...prev };
+          if (next[display.id]?.success) {
+            next[display.id] = { loading: false, error: null, success: false };
+          }
+          return next;
+        });
+      }, 5000);
+    } catch (e) {
+      const message = e?.response?.data?.detail || e?.message || 'Configure failed';
+      setConfigStatus(prev => ({
+        ...prev,
+        [display.id]: { loading: false, error: message, success: false }
+      }));
+    }
+  }, []);
 
   // Load displays when feature detection completes or filters change
   useEffect(() => {
@@ -832,6 +863,8 @@ const Displays = () => {
                   setSelectedDisplay(display);
                   setShowSceneAssignment(true);
                 }}
+                onConfigure={handleConfigureDisplay}
+                configureStatus={configStatus[display.id]}
                 onEdit={(display, action) => {
                   if (action === 'approve' && display.displayType === 'discovered') {
                     // Optimistic state update

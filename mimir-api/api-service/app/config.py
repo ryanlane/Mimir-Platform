@@ -199,8 +199,23 @@ class Settings(BaseSettings):
     mqtt_enabled: bool = Field(True, validation_alias=AliasChoices("MQTT_ENABLED",))
     mqtt_broker_host: str = Field("localhost", validation_alias=AliasChoices("MQTT_BROKER_HOST", "MQTT_HOST"))
     mqtt_broker_port: int = Field(1883, validation_alias=AliasChoices("MQTT_BROKER_PORT", "MQTT_PORT"))
+    mqtt_public_host: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MQTT_PUBLIC_HOST", "MQTT_ADVERTISED_HOST"),
+        description="Optional externally reachable hostname for clients.",
+    )
+    mqtt_public_port: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MQTT_PUBLIC_PORT", "MQTT_ADVERTISED_PORT"),
+        description="Optional externally reachable port for clients.",
+    )
     mqtt_username: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_USERNAME", "MQTT_USER"))
     mqtt_password: str | None = Field(default=None, validation_alias=AliasChoices("MQTT_PASSWORD", "MQTT_PASS"))
+    mqtt_expose_credentials: bool = Field(
+        False,
+        validation_alias=AliasChoices("MQTT_EXPOSE_CREDENTIALS",),
+        description="If true, expose MQTT username/password in the client config endpoint.",
+    )
     mqtt_client_id_prefix: str = Field("mimir", validation_alias=AliasChoices("MQTT_CLIENT_ID_PREFIX",))
 
     # --- MQTT Discovery (hybrid Redis) ---

@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
+import httpx
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
@@ -41,6 +42,23 @@ class MdnsIngestEvent(BaseModel):
 
 class MdnsIngestBody(BaseModel):
     events: list[MdnsIngestEvent]
+
+
+class MqttConfigResponse(BaseModel):
+    enabled: bool
+    host: str
+    port: int
+    username: str | None = None
+    password: str | None = None
+    platform_url: str | None = None
+
+
+class MqttBootstrapRequest(BaseModel):
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    platform_url: str | None = None
 
 def get_db():
     """Database dependency"""
@@ -91,6 +109,74 @@ async def ingest_mdns_events(body: MdnsIngestBody, request: Request):
             errors.append(f"{e.service_name}: {exc}")
 
     return {"ingested": ingested, "errors": errors}
+
+
+@router.get("/mqtt/config", response_model=MqttConfigResponse)
+async def get_mqtt_config():
+    """Return MQTT broker configuration for display clients."""
+    host = settings.mqtt_public_host or settings.mqtt_broker_host
+    port = settings.mqtt_public_port or settings.mqtt_broker_port
+    platform_url = getattr(settings, "public_base_url", None)
+    payload: dict[str, object] = {
+        "enabled": settings.mqtt_enabled,
+        "host": host,
+        "port": port,
+        "platform_url": platform_url,
+    }
+    if settings.mqtt_expose_credentials:
+        payload["username"] = settings.mqtt_username
+        payload["password"] = settings.mqtt_password
+    return payload  # type: ignore[return-value]
+
+
+def _pick_webhook_address(addresses: list[str]) -> str | None:
+    for addr in addresses:
+        if ":" not in addr:
+            return addr
+    return addresses[0] if addresses else None
+
+
+@router.post("/bootstrap/{display_id}")
+async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest):
+    """Push broker config to a discovered display webhook."""
+    display = mdns_discovery_service.get_display_by_id(display_id)
+    if not display:
+        raise HTTPException(status_code=404, detail="Display not found in discovery cache")
+    if not display.addresses or not display.webhook_port:
+        raise HTTPException(status_code=409, detail="Display has no webhook endpoint")
+
+    addr = _pick_webhook_address(display.addresses)
+    if not addr:
+        raise HTTPException(status_code=409, detail="Display has no usable address")
+
+    host = body.host or settings.mqtt_public_host or settings.mqtt_broker_host
+    port = body.port or settings.mqtt_public_port or settings.mqtt_broker_port
+    platform_url = body.platform_url or getattr(settings, "public_base_url", None)
+
+    payload: dict[str, object] = {
+        "host": host,
+        "port": port,
+        "platform_url": platform_url,
+    }
+    if settings.mqtt_expose_credentials:
+        payload["username"] = body.username or settings.mqtt_username
+        payload["password"] = body.password or settings.mqtt_password
+    elif body.username or body.password:
+        payload["username"] = body.username
+        payload["password"] = body.password
+
+    url = f"http://{addr}:{display.webhook_port}/config"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code >= 300:
+                raise HTTPException(status_code=502, detail=f"Webhook failed: {res.status_code}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Webhook error: {e}") from e
+
+    return {"status": "sent", "webhook_url": url, "payload": payload}
 
 
 def _parse_resolution(discovered) -> tuple[int, int]:
