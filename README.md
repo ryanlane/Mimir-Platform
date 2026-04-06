@@ -41,7 +41,7 @@ Dev URLs:
 
 ## Configuration
 
-- API env defaults for Docker are in mimir-api/api-service/mimir-api.docker.env.
+- API env defaults for Docker are in mimir-api/mimir-api.docker.env.
 - For local overrides, you can create a separate env file and change `env_file` in docker-compose.yml.
 
 ## Database (Postgres)

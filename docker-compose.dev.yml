@@ -73,11 +73,11 @@ services:
 
   api:
     build:
-      context: ./mimir-api/api-service
+      context: ./mimir-api
       dockerfile: Dockerfile
     container_name: mimir-api
     env_file:
-      - ./mimir-api/api-service/mimir-api.docker.env
+      - ./mimir-api/mimir-api.docker.env
     environment:
       # Dev channel auto-reload: bind mounts can miss inotify events, so use polling in Docker dev.
       DEV_WATCHER_MODE: polling
@@ -90,11 +90,11 @@ services:
       - "5000:5000"
     volumes:
       # Live code reload
-      - ./mimir-api/api-service:/app
+      - ./mimir-api:/app
       # Persist uploads/media
       - mimir_api_uploads:/var/opt/mimir/mimir-api/uploads
       # CHANNELS_DIR is configured to /var/opt/mimir/mimir-api/channels in mimir-api.docker.env
-      - ./mimir-api/api-service/channels:/var/opt/mimir/mimir-api/channels
+      - ./mimir-api/channels:/var/opt/mimir/mimir-api/channels
       # Dev channel linking: mount repo plugins into the API container
       - ../plugins:/plugins
     depends_on:

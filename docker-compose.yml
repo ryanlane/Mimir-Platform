@@ -71,11 +71,11 @@ services:
 
   api:
     build:
-      context: ./mimir-api/api-service
+      context: ./mimir-api
       dockerfile: Dockerfile
     container_name: mimir-api
     env_file:
-      - ./mimir-api/api-service/mimir-api.docker.env
+      - ./mimir-api/mimir-api.docker.env
     environment:
       MQTT_HOST: mqtt
       MQTT_PORT: "1883"
@@ -87,7 +87,7 @@ services:
       # Persist uploads/media
       - mimir_api_uploads:/var/opt/mimir/mimir-api/uploads
       # Bind-mount channel plugins from repo (read-only)
-      - ./mimir-api/api-service/channels:/var/opt/mimir/mimir-api/channels:ro
+      - ./mimir-api/channels:/var/opt/mimir/mimir-api/channels:ro
     depends_on:
       db:
         condition: service_healthy

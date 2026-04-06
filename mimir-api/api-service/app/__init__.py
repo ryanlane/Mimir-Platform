@@ -1,1 +1,0 @@
-# Mimir API Application Package

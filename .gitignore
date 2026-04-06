@@ -212,11 +212,11 @@ Thumbs.db
 # ==========================================
 
 # Database files
-mimir-api/api-service/app.db
-mimir-api/api-service/mimir.db
+mimir-api/app.db
+mimir-api/mimir.db
 
 # Channel data directories (runtime-generated)
-mimir-api/api-service/channels/*/data/
+mimir-api/channels/*/data/
 
 # Build output
 mimir-web/mimir-ui/build/
@@ -227,10 +227,6 @@ mimir-web/mimir-ui/build/
 # Claude local settings
 .claude/settings.local.json
 
-# .NET build output
-/mimir-discovery/dotnet/bin/
-/mimir-discovery/dotnet/obj/
-
 # Legacy / removed files
-mimir-api/api-service/deploy.sh
-mimir-api/api-service/api-deploy.sh
+mimir-api/deploy.sh
+mimir-api/api-deploy.sh
