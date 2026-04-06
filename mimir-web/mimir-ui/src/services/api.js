@@ -80,6 +80,17 @@ window.addEventListener('storage', (e) => {
   }
 });
 
+// Same-tab updates (Settings UI)
+if (typeof window !== 'undefined') {
+  window.addEventListener('mimir:api-base-url-changed', () => {
+    apiClient = axios.create({
+      baseURL: getApiBaseUrl(),
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000,
+    });
+  });
+}
+
 // API service methods
 export const api = {
   // Scenes

@@ -24,6 +24,9 @@ from app.services.display_image_persistence import DisplayImagePersistenceServic
 from app.services.mqtt.presence import mqtt_presence_service
 from functools import lru_cache
 from app.services.image_swap import swap_summary, list_scene_swap, prune_swap
+from urllib.parse import urlparse
+import socket
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,72 @@ SENSITIVE_SUBSTRINGS = [
 def _should_redact(key: str) -> bool:
     upper = key.upper()
     return any(part in upper for part in SENSITIVE_SUBSTRINGS)
+
+
+class MqttTestRequest(BaseModel):
+    url: str | None = Field(None, description="MQTT broker URL (e.g., mqtt://host:1883)")
+    host: str | None = Field(None, description="MQTT broker host override")
+    port: int | None = Field(None, description="MQTT broker port override")
+    timeout_ms: int | None = Field(3000, description="Connection timeout in ms")
+
+
+@admin_router.post("/mqtt/test")
+async def test_mqtt_broker(req: MqttTestRequest):
+    """Test TCP connectivity to an MQTT broker host/port."""
+    host = req.host
+    port: int | None = req.port
+
+    raw_url = (req.url or "").strip()
+    if raw_url:
+        # Allow host:port without scheme
+        if "://" not in raw_url:
+            trimmed = raw_url.split("/")[0]
+            if ":" in trimmed:
+                host_part, port_part = trimmed.rsplit(":", 1)
+                host = host or (host_part.strip() or None)
+                if port is None and port_part.isdigit():
+                    port = int(port_part)
+            else:
+                host = host or trimmed
+        else:
+            parsed = urlparse(raw_url)
+            host = host or parsed.hostname
+            if port is None:
+                if parsed.port:
+                    port = parsed.port
+                elif parsed.scheme in ("mqtts", "ssl", "tls"):
+                    port = 8883
+                elif parsed.scheme in ("mqtt", "tcp"):
+                    port = 1883
+
+    if not host:
+        host = settings.mqtt_public_host or settings.mqtt_broker_host
+    if port is None:
+        port = settings.mqtt_public_port or settings.mqtt_broker_port
+
+    if not host or not port:
+        raise HTTPException(status_code=400, detail="MQTT host/port could not be resolved")
+
+    timeout = max(0.5, float(req.timeout_ms or 3000) / 1000.0)
+    start = time.monotonic()
+    try:
+        conn = socket.create_connection((host, int(port)), timeout=timeout)
+        conn.close()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "success": False,
+            "host": host,
+            "port": int(port),
+            "message": f"Connection failed: {exc}",
+        }
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+    return {
+        "success": True,
+        "host": host,
+        "port": int(port),
+        "latency_ms": elapsed_ms,
+        "message": f"Connected in {elapsed_ms}ms",
+    }
 
 @lru_cache(maxsize=1)
 def _candidate_env_files() -> list[dict[str, Any]]:

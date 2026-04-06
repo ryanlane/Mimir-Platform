@@ -122,6 +122,9 @@ var debug = logLevel == "debug";
 var browseAll = Truthy(Environment.GetEnvironmentVariable("MIMIR_BROWSE_ALL"));
 var statsEveryMs = EnvInt("MIMIR_STATS_MS", 10000);
 var browseUpdateMs = EnvInt("MIMIR_BROWSE_UPDATE_MS", 30000);
+var scanCount = EnvInt("MIMIR_MDNS_SCAN_COUNT", 2);
+var scanDelayMs = EnvInt("MIMIR_MDNS_SCAN_DELAY_MS", 200);
+var scanTimeMs = EnvInt("MIMIR_MDNS_SCAN_TIME_MS", 2000);
 var mdnsInterface = Env("MIMIR_MDNS_INTERFACE", string.Empty);
 var mdnsPort = EnvInt("MIMIR_MDNS_PORT", 0);
 
@@ -165,6 +168,8 @@ Console.WriteLine($"  serviceType={serviceType}");
 Console.WriteLine($"  batchMs={batchMs}");
 Console.WriteLine($"  browseUpdateMs={browseUpdateMs}");
 Console.WriteLine($"  statsMs={statsEveryMs}");
+Console.WriteLine($"  scanCount={scanCount} scanDelayMs={scanDelayMs}");
+Console.WriteLine($"  scanTimeMs={scanTimeMs}");
 Console.WriteLine($"  token={(string.IsNullOrWhiteSpace(token) ? "unset" : "set")}");
 if (!string.IsNullOrWhiteSpace(mdnsInterface)) Console.WriteLine($"  mdnsInterface={mdnsInterface}");
 if (mdnsPort > 0) Console.WriteLine($"  mdnsPort={mdnsPort}");
@@ -226,35 +231,95 @@ void Enqueue(DiscoveryEvent ev)
 
 async Task<Dictionary<string, ServiceSnapshot>> ScanAsync()
 {
-    var results = await ZeroconfResolver.ResolveAsync(serviceType);
     var output = new Dictionary<string, ServiceSnapshot>(StringComparer.OrdinalIgnoreCase);
 
-    foreach (var host in results)
+    var scans = Math.Max(1, scanCount);
+    for (var i = 0; i < scans; i++)
     {
-        var addresses = new List<string>();
-        if (!string.IsNullOrWhiteSpace(host.IPAddress)) addresses.Add(host.IPAddress);
-        addresses.Sort(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var svc in host.Services.Values)
+        var results = await ResolveWithOptionsAsync(serviceType, scanTimeMs, scans);
+        foreach (var host in results)
         {
-            var instance = svc.Name ?? host.DisplayName ?? host.Id ?? "unknown";
-            var serviceName = instance.Contains("._", StringComparison.Ordinal) ? instance : $"{instance}.{serviceType}";
-            var props = ToProperties(svc.Properties);
-            EnsureDisplayIdentity(props, instance, host.DisplayName ?? host.Id ?? string.Empty);
-            var webhookPort = ParseWebhookPort(props, svc.Port);
+            var addresses = new List<string>();
+            if (!string.IsNullOrWhiteSpace(host.IPAddress)) addresses.Add(host.IPAddress);
+            addresses.Sort(StringComparer.OrdinalIgnoreCase);
 
-            var snapshot = new ServiceSnapshot(
-                serviceName,
-                webhookPort,
-                addresses,
-                props
-            );
+            foreach (var svc in host.Services.Values)
+            {
+                var instance = svc.Name ?? host.DisplayName ?? host.Id ?? "unknown";
+                var serviceName = instance.Contains("._", StringComparison.Ordinal) ? instance : $"{instance}.{serviceType}";
+                var props = ToProperties(svc.Properties);
+                EnsureDisplayIdentity(props, instance, host.DisplayName ?? host.Id ?? string.Empty);
+                var webhookPort = ParseWebhookPort(props, svc.Port);
 
-            output[serviceName] = snapshot;
+                var snapshot = new ServiceSnapshot(
+                    serviceName,
+                    webhookPort,
+                    addresses,
+                    props
+                );
+
+                output[serviceName] = snapshot;
+            }
+        }
+
+        if (i < scans - 1)
+        {
+            await Task.Delay(Math.Max(0, scanDelayMs));
         }
     }
 
     return output;
+}
+
+async Task<IReadOnlyList<IZeroconfHost>> ResolveWithOptionsAsync(string type, int scanMs, int retries)
+{
+    try
+    {
+        var resolverType = typeof(ZeroconfResolver);
+        var optsType = resolverType.Assembly.GetType("Zeroconf.ResolveOptions");
+        if (optsType != null)
+        {
+            var opts = Activator.CreateInstance(optsType);
+            var scanProp = optsType.GetProperty("ScanTime");
+            if (scanProp?.PropertyType == typeof(TimeSpan))
+            {
+                scanProp.SetValue(opts, TimeSpan.FromMilliseconds(Math.Max(500, scanMs)));
+            }
+            var retriesProp = optsType.GetProperty("Retries");
+            if (retriesProp?.PropertyType == typeof(int))
+            {
+                retriesProp.SetValue(opts, Math.Max(1, retries));
+            }
+
+            var method = resolverType
+                .GetMethods()
+                .FirstOrDefault(m =>
+                {
+                    if (m.Name != "ResolveAsync") return false;
+                    var p = m.GetParameters();
+                    return p.Length >= 2 && p[0].ParameterType == typeof(string) && p[1].ParameterType == optsType;
+                });
+
+            if (method != null)
+            {
+                var parameters = method.GetParameters().Length switch
+                {
+                    2 => new object?[] { type, opts },
+                    3 => new object?[] { type, opts, CancellationToken.None },
+                    _ => new object?[] { type, opts }
+                };
+                dynamic task = method.Invoke(null, parameters)!;
+                var results = await task;
+                return results;
+            }
+        }
+    }
+    catch
+    {
+        // fall back below
+    }
+
+    return await ZeroconfResolver.ResolveAsync(type);
 }
 
 while (!cts.IsCancellationRequested)

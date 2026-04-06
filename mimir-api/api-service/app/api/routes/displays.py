@@ -112,11 +112,16 @@ async def ingest_mdns_events(body: MdnsIngestBody, request: Request):
 
 
 @router.get("/mqtt/config", response_model=MqttConfigResponse)
-async def get_mqtt_config():
+async def get_mqtt_config(request: Request):
     """Return MQTT broker configuration for display clients."""
-    host = settings.mqtt_public_host or settings.mqtt_broker_host
+    request_host = request.url.hostname if request and request.url else None
+    host = settings.mqtt_public_host or request_host or settings.mqtt_broker_host
     port = settings.mqtt_public_port or settings.mqtt_broker_port
-    platform_url = getattr(settings, "public_base_url", None)
+    platform_url = None
+    if getattr(settings, "public_host", None):
+        platform_url = getattr(settings, "public_base_url", None)
+    if not platform_url:
+        platform_url = str(request.base_url).rstrip("/") if request else None
     payload: dict[str, object] = {
         "enabled": settings.mqtt_enabled,
         "host": host,
@@ -137,7 +142,7 @@ def _pick_webhook_address(addresses: list[str]) -> str | None:
 
 
 @router.post("/bootstrap/{display_id}")
-async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest):
+async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest, request: Request):
     """Push broker config to a discovered display webhook."""
     display = mdns_discovery_service.get_display_by_id(display_id)
     if not display:
@@ -149,9 +154,14 @@ async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest):
     if not addr:
         raise HTTPException(status_code=409, detail="Display has no usable address")
 
-    host = body.host or settings.mqtt_public_host or settings.mqtt_broker_host
+    request_host = request.url.hostname if request and request.url else None
+    host = body.host or settings.mqtt_public_host or request_host or settings.mqtt_broker_host
     port = body.port or settings.mqtt_public_port or settings.mqtt_broker_port
-    platform_url = body.platform_url or getattr(settings, "public_base_url", None)
+    platform_url = body.platform_url
+    if not platform_url and getattr(settings, "public_host", None):
+        platform_url = getattr(settings, "public_base_url", None)
+    if not platform_url and request:
+        platform_url = str(request.base_url).rstrip("/")
 
     payload: dict[str, object] = {
         "host": host,

@@ -166,6 +166,8 @@ const Settings = () => {
   const [apiConnectionStatus, setApiConnectionStatus] = useState(null);
   const [testingApi, setTestingApi] = useState(false);
   const [testingWs, setTestingWs] = useState(false);
+  const [testingMqtt, setTestingMqtt] = useState(false);
+  const [mqttConnectionStatus, setMqttConnectionStatus] = useState(null);
 
   // Developer mode
   const [developerMode, setDeveloperMode] = useState(
@@ -228,6 +230,7 @@ const Settings = () => {
     }
     // Clear previous test results
     setApiConnectionStatus(null);
+    window.dispatchEvent(new CustomEvent('mimir:api-base-url-changed', { detail: { baseUrl: url } }));
   };
 
   const handleWsUrlChange = (url) => {
@@ -246,6 +249,7 @@ const Settings = () => {
     } else {
       localStorage.removeItem('mimir-mqtt-broker-url');
     }
+    setMqttConnectionStatus(null);
   };
 
   const testWebSocketConnection = () => {
@@ -333,6 +337,7 @@ const Settings = () => {
   useEffect(() => {
     window.mimirApiBaseUrl = apiBaseUrl;
     localStorage.setItem('mimir-api-base-url', apiBaseUrl);
+    window.dispatchEvent(new CustomEvent('mimir:api-base-url-changed', { detail: { baseUrl: apiBaseUrl } }));
   }, [apiBaseUrl]);
 
   useEffect(() => {
@@ -384,6 +389,38 @@ const Settings = () => {
       setTestingApi(false);
     }
   }, [apiBaseUrl]);
+
+  const testMqttConnection = useCallback(async () => {
+    setTestingMqtt(true);
+    setMqttConnectionStatus(null);
+    try {
+      const base = apiBaseUrl?.trim() ? apiBaseUrl.replace(/\/$/, '') : '';
+      const url = `${base}/api/admin/mqtt/test`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: mqttBrokerUrl?.trim() || null }),
+        signal: AbortSignal.timeout(5000)
+      });
+
+      if (!res.ok) {
+        setMqttConnectionStatus({ success: false, error: `MQTT test failed (Status: ${res.status})` });
+        return;
+      }
+      const data = await res.json();
+      if (data?.success) {
+        setMqttConnectionStatus({ success: true, message: data.message || 'MQTT broker reachable' });
+      } else {
+        setMqttConnectionStatus({ success: false, error: data?.message || 'MQTT broker not reachable' });
+      }
+    } catch (error) {
+      setMqttConnectionStatus({ success: false, error: `MQTT test failed: ${error.message}` });
+    } finally {
+      setTestingMqtt(false);
+    }
+  }, [apiBaseUrl, mqttBrokerUrl]);
 
   // Don't auto-test API connection on load to prevent console errors
   // Users can manually test using the "Test Connection" button
@@ -496,10 +533,23 @@ const Settings = () => {
                   placeholder="e.g., mqtt://192.168.1.50:1883 (leave blank for default)"
                   className="url-input"
                 />
+                <button 
+                  className="btn btn-outline" 
+                  type="button" 
+                  onClick={testMqttConnection} 
+                  disabled={testingMqtt}
+                >
+                  {testingMqtt ? 'Testing...' : 'Test'}
+                </button>
               </div>
               <small className="input-help">
                 Current: {getCurrentUrls().mqttUrl}
               </small>
+              {mqttConnectionStatus && (
+                <div className={`connection-status-message ${mqttConnectionStatus.success ? 'success' : 'error'}`}>
+                  {mqttConnectionStatus.message || mqttConnectionStatus.error}
+                </div>
+              )}
             </div>
 
             {apiConnectionStatus && (

@@ -78,6 +78,7 @@ class _Listener(ServiceListener):
 
     def remove_service(self, zeroconf: Zeroconf, service_type: str, name: str) -> None:
         # No ServiceInfo on remove.
+        print(f"[discovery] lost service_name={name}")
         self._q.put(MdnsEvent(event="lost", service_name=name, seen_at=_iso_now()))
 
     def _emit_upsert(self, event: str, service_type: str, name: str) -> None:
@@ -93,6 +94,14 @@ class _Listener(ServiceListener):
                     port = int(props["webhook_port"])
                 except Exception:
                     port = None
+            display_id = props.get("display_id") or name
+            display_name = props.get("display_name") or display_id
+            hostname = props.get("hostname") or "unknown"
+            addrs_str = ",".join(addrs) if addrs else "-"
+            print(
+                f"[discovery] {event} display_id={display_id} name={display_name} host={hostname} "
+                f"addr={addrs_str} webhook_port={port}"
+            )
             self._q.put(
                 MdnsEvent(
                     event=event,

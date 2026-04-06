@@ -84,6 +84,10 @@ Outcomes:
 - If you see lots of `[discovery] up(raw)` lines but none with `type: mimir-display`, your devices may not be advertising `_mimir-display._tcp` on that LAN segment.
 - If you see no `up(raw)` lines at all, Windows is not receiving mDNS multicast (often Windows Firewall, VPN, or Wi-Fi AP isolation).
 
+## Note about .NET agent
+
+If the .NET discovery agent only returns a single device while others are visible via `avahi-browse`, use this Node agent or the Python agent instead. The .NET resolver can be inconsistent on some Windows network stacks.
+
 ## Packaging idea (future)
 
 - Package as a single Windows executable using `pkg` or `nexe`.

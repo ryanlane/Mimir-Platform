@@ -222,9 +222,13 @@ const Displays = () => {
 
       // Normalize the display data and set source based on displayType
       const normalizedDisplays = allDisplays.map(display => {
+        const displayType = display.displayType || display.display_type || display.source || 'registered';
+        const webhookPort = display.webhook_port ?? display.webhookPort ?? null;
         const normalized = {
           ...display,
-          source: display.displayType || 'registered', // Use displayType as source
+          displayType,
+          webhook_port: webhookPort,
+          source: displayType, // Use displayType as source
           is_online: display.isOnline !== undefined ? display.isOnline : display.is_online,
           last_seen: display.lastSeen || display.last_seen,
           resolution: display.resolution || (display.width && display.height ? [display.width, display.height] : null)
