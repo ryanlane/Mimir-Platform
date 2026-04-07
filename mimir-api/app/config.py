@@ -118,6 +118,13 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("CORS_ORIGINS", "CORS_ALLOW_ORIGINS"),
         description="Raw CORS origins environment value (JSON array or comma-separated).",
     )
+    # Extra origins appended to cors_origins without replacing the base list.
+    # Useful for LAN/remote deployments: set CORS_ORIGINS_EXTRA=http://192.168.1.50:8080
+    cors_origins_extra_raw: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CORS_ORIGINS_EXTRA"),
+        description="Additional CORS origins to append (comma-separated or JSON array).",
+    )
     # Final parsed list (intentionally given a dummy alias so env var CORS_ORIGINS maps ONLY to cors_origins_raw)
     # Without this, pydantic_settings will also try to feed the raw env value into this list field
     # (because the field name uppercases to CORS_ORIGINS) and attempt JSON decoding before our model validator runs.
@@ -137,30 +144,32 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _finalize_cors(self):
-        """Populate `cors_origins` from `cors_origins_raw`.
+        """Populate `cors_origins` from `cors_origins_raw` + `cors_origins_extra_raw`.
 
-        Accepts either a JSON array (e.g. '["https://a","https://b"])' or a
-        simple comma-separated list (e.g. 'https://a, https://b'). Whitespace and
-        empty segments are stripped. Malformed JSON falls back to comma parsing.
+        Both fields accept either a JSON array (e.g. '["https://a","https://b"]') or a
+        comma-separated list (e.g. 'https://a, https://b'). Whitespace and empty
+        segments are stripped. Malformed JSON falls back to comma parsing.
+
+        CORS_ORIGINS_EXTRA appends to the base list without replacing it, making it
+        easy to add LAN/remote origins (e.g. http://192.168.1.50:8080) without
+        having to duplicate the full default list.
         """
-        raw = self.cors_origins_raw
-        if not raw:
-            self.cors_origins = []
-            return self
-        s = raw.strip()
-        # JSON array path
-        if s.startswith("["):
-            import json
-            try:
-                loaded = json.loads(s)
-            except json.JSONDecodeError:
-                loaded = None
-            else:
-                if isinstance(loaded, list):
-                    self.cors_origins = [str(item).strip() for item in loaded if str(item).strip()]
-                    return self
-        # Comma-separated fallback
-        self.cors_origins = [part.strip() for part in s.split(",") if part.strip()]
+        def _parse(raw: str | None) -> list[str]:
+            if not raw:
+                return []
+            s = raw.strip()
+            if s.startswith("["):
+                import json
+                try:
+                    loaded = json.loads(s)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    if isinstance(loaded, list):
+                        return [str(item).strip() for item in loaded if str(item).strip()]
+            return [part.strip() for part in s.split(",") if part.strip()]
+
+        self.cors_origins = _parse(self.cors_origins_raw) + _parse(self.cors_origins_extra_raw)
         return self
 
     # --- Logging ---

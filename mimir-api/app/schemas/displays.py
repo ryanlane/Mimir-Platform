@@ -167,6 +167,24 @@ class DisplayImage(BaseModel):
         populate_by_name = True
 
 
+class PairClaimRequest(BaseModel):
+    """Submit a 6-character pairing code to claim a display."""
+    code: str = Field(description="6-character pairing code shown on the display")
+    name: str | None = Field(None, description="Optional friendly name for the display")
+    location: str | None = Field(None, description="Optional physical location")
+
+
+class PairStatusResponse(BaseModel):
+    """Status of a pending pairing code."""
+    code: str
+    status: str  # "pending" | "not_found"
+    device_id: str | None = None
+    expires_in: int | None = Field(None, alias="expiresIn", description="Approximate TTL in seconds")
+
+    class Config:
+        populate_by_name = True
+
+
 class LegacyDisplayStatusResponse(BaseModel):
     """Legacy display status response for backward compatibility"""
     hardware: DisplayHardware

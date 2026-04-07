@@ -91,8 +91,8 @@ services:
     volumes:
       # Live code reload
       - ./mimir-api:/app
-      # Persist uploads/media
-      - mimir_api_uploads:/var/opt/mimir/mimir-api/uploads
+      # Uploads stored in ./data/uploads so they're easy to back up alongside the repo
+      - ./data/uploads:/var/opt/mimir/mimir-api/uploads
       # CHANNELS_DIR is configured to /var/opt/mimir/mimir-api/channels in mimir-api.docker.env
       - ./mimir-api/channels:/var/opt/mimir/mimir-api/channels
       # Dev channel linking: mount repo plugins into the API container
@@ -110,7 +110,9 @@ services:
       - -lc
       - |
         set -e
+        echo "--- Running database migrations ---"
         alembic upgrade head
+        echo "--- Migrations complete, starting API ---"
         exec uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5000/api/health"]
@@ -168,7 +170,6 @@ services:
 
 volumes:
   redis_data:
-  mimir_api_uploads:
   mimir_web_node_modules:
   postgres_data:
   pgadmin_data:

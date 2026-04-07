@@ -3,7 +3,12 @@ import { apiCache, CACHE_CONFIGS, invalidateCache } from './apiCache';
 
 // API base URL with intelligent defaults
 function getApiBaseUrl() {
-  // 1) Explicit configuration via global/window or localStorage
+  // 1) Build-time env var — set REACT_APP_API_URL at build or in .env for fixed deployments
+  if (process.env.REACT_APP_API_URL) {
+    return ensureApiSuffix(process.env.REACT_APP_API_URL);
+  }
+
+  // 2) Runtime override via Settings UI (persisted to localStorage) or window global
   const raw =
     (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
     (typeof localStorage !== 'undefined' && localStorage.getItem('mimir-api-base-url'));
@@ -12,7 +17,7 @@ function getApiBaseUrl() {
     return ensureApiSuffix(raw);
   }
 
-  // 2) Smart fallback based on current environment
+  // 3) Smart fallback based on current environment
   if (typeof window !== 'undefined' && window.location) {
     const { hostname, origin, port, protocol } = window.location;
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
@@ -36,8 +41,8 @@ function getApiBaseUrl() {
     return 'http://localhost:5000/api';
   }
 
-  // 3) Final static fallback (can be overridden in Settings)
-  return 'http://172.31.79.107:5000/api';
+  // 4) Last-resort static fallback
+  return 'http://localhost:5000/api';
 }
 
 function ensureApiSuffix(base) {
@@ -495,6 +500,11 @@ export const api = {
   createOverlay: (overlay) => apiClient.post('/overlays', overlay),
   updateOverlay: (overlayId, data) => apiClient.put(`/overlays/${overlayId}`, data),
   deleteOverlay: (overlayId) => apiClient.delete(`/overlays/${overlayId}`),
+
+  // Display pairing (short-code / QR registration)
+  claimPairCode: (code, name, location) =>
+    apiClient.post('/displays/pair', { code, name, location }),
+  getPairCodeStatus: (code) => apiClient.get(`/displays/pair/${code}/status`),
 
   // Health & metrics helpers
   getHealth: () => apiClient.get('/health'),

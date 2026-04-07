@@ -15,6 +15,8 @@ from app.schemas.displays import (
     DisplayClientResponse,
     DisplayClientUpdate,
     DisplayClientListResponse,
+    PairClaimRequest,
+    PairStatusResponse,
 )
 from app.schemas.common import PaginationMeta
 from app.services.mdns_discovery import mdns_discovery_service
@@ -943,6 +945,107 @@ async def stop_discovery_service():
     """Stop the mDNS discovery service"""
     await mdns_discovery_service.stop_discovery()
     return {"status": "stopped", "message": "mDNS discovery service stopped"}
+
+
+# ---------------------------------------------------------------------------
+# Pairing endpoints — short-code / QR registration without mDNS
+# ---------------------------------------------------------------------------
+
+@router.get("/pair/{code}/status", response_model=PairStatusResponse, tags=["pairing"])
+async def get_pair_code_status(code: str):
+    """Check whether a 6-character pairing code is pending and waiting to be claimed.
+
+    Displays can poll this to show a 'waiting...' vs 'paired!' state without
+    consuming the code.
+    """
+    from app.services.mqtt.pairing import pairing_service
+    status = await pairing_service.get_pair_status(code)
+    if not status:
+        return PairStatusResponse(code=code.upper(), status="not_found")
+    return PairStatusResponse(**status)
+
+
+@router.post("/pair", response_model=DisplayClientResponse, tags=["pairing"])
+async def claim_pair_code(body: PairClaimRequest, db: Session = Depends(get_db)):
+    """Claim a 6-character pairing code to register a display.
+
+    The display generates the code and shows it on screen (alongside a QR code).
+    The user enters the code here; the API creates the display record and sends
+    a finalize_registration command back to the display via MQTT.
+    """
+    from app.services.mqtt.pairing import pairing_service
+    from app.services.mqtt.registration import AutoRegistrationService
+    from datetime import datetime, timezone
+    import secrets
+
+    # Look up and consume the pending pair entry
+    try:
+        entry = await pairing_service.claim_pair(body.code)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    device_id: str = entry["device_id"]
+    capabilities: dict = entry.get("capabilities") or {}
+    metadata: dict = entry.get("metadata") or {}
+
+    # Resolve display name and location (body overrides metadata)
+    name = body.name or metadata.get("name") or device_id
+    location = body.location or metadata.get("location") or "Unknown"
+    hostname = metadata.get("hostname") or device_id
+    resolution = (
+        capabilities.get("resolution")
+        or capabilities.get("native_resolution")
+        or [800, 480]
+    )
+    orientation = capabilities.get("orientation", "landscape")
+    client_version = metadata.get("client_version", "unknown")
+    tags = metadata.get("tags") or []
+
+    # Upsert display in DB (idempotent on hostname)
+    existing = db.query(DisplayClient).filter(DisplayClient.hostname == hostname).first()
+    if existing:
+        # Update key fields
+        existing.name = name
+        existing.location = location
+        existing.is_online = True
+        existing.last_seen = datetime.now(timezone.utc)
+        existing.client_version = client_version
+        existing.resolution = resolution
+        existing.orientation = orientation
+        existing.discovery_method = "pairing_code"
+        db.commit()
+        db.refresh(existing)
+        display = existing
+    else:
+        display = DisplayClient(
+            name=name,
+            description=metadata.get("description", "Paired via code"),
+            location=location,
+            hostname=hostname,
+            display_type="registered",
+            discovery_method="pairing_code",
+            is_online=True,
+            last_seen=datetime.now(timezone.utc),
+            client_version=client_version,
+            resolution=resolution,
+            orientation=orientation,
+            refresh_rate_hz=capabilities.get("refresh_rate_hz", 1),
+            tags=tags,
+        )
+        db.add(display)
+        db.commit()
+        db.refresh(display)
+
+    # Send finalize_registration to the display via MQTT
+    reg_service = AutoRegistrationService()
+    reg_key = secrets.token_hex(16)
+    await reg_service._send_finalize_command(
+        device_id=device_id,
+        display_id=str(display.id),
+        registration_key=reg_key,
+    )
+
+    return DisplayClientResponse.model_validate(display)
 
 
 # @router.get("/unassigned")

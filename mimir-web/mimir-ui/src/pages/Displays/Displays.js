@@ -8,6 +8,7 @@ import featureDetection from '../../services/featureDetection';
 import DisplayCard from './DisplayCard';
 import PullToRefresh from '../../components/PullToRefresh/PullToRefresh';
 import SceneAssignment from './SceneAssignment';
+import DisplayPairing from '../../components/DisplayPairing/DisplayPairing';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import './Displays.css';
 import Header from '../../components/Header/Header';
@@ -60,6 +61,17 @@ const Displays = () => {
   const [showSceneAssignment, setShowSceneAssignment] = useState(false);
   const [selectedDisplay, setSelectedDisplay] = useState(null);
   const [configStatus, setConfigStatus] = useState({});
+  const [showPairing, setShowPairing] = useState(false);
+  // Pre-fill pairing code from ?pair=ABC123 query param (QR code flow)
+  const [initialPairCode] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('pair') || '';
+  });
+
+  // Auto-open pairing modal when ?pair= is present in URL
+  useEffect(() => {
+    if (initialPairCode) setShowPairing(true);
+  }, [initialPairCode]);
   
   // Filtering and search
   const [searchTerm, setSearchTerm] = useState('');
@@ -667,6 +679,13 @@ const Displays = () => {
           description="Manage display clients and scene assignments"
           actions={[
             <Button
+              key="pair"
+              variant="primary"
+              onClick={() => setShowPairing(true)}
+            >
+              + Add Display
+            </Button>,
+            <Button
               key="refresh"
               variant="secondary"
               className="desktop-only-refresh"
@@ -915,6 +934,17 @@ const Displays = () => {
 
       {/* Modals */}
       
+
+      {showPairing && (
+        <DisplayPairing
+          initialCode={initialPairCode}
+          onClose={() => setShowPairing(false)}
+          onPaired={(display) => {
+            setShowPairing(false);
+            refreshDisplays();
+          }}
+        />
+      )}
 
       {showSceneAssignment && selectedDisplay && (
         <SceneAssignment

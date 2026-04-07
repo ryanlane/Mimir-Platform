@@ -28,7 +28,7 @@ db + redis + mqtt → api → web
 
 ## What's Working Well
 
-**Separation of concerns in the API** — routes, services, schemas, models, and infrastructure are cleanly separated under `mimir-api/api-service/app/`.
+**Separation of concerns in the API** — routes, services, schemas, models, and infrastructure are cleanly separated under `mimir-api/app/`.
 
 **Dev/prod parity** — the dev compose override pattern (source mounts, polling-based file watching, dev servers) is the right approach and is well executed.
 
@@ -62,47 +62,42 @@ db + redis + mqtt → api → web
 
 ### 4. MQTT Has No Authentication
 
-**Problem:** Mosquitto is configured with anonymous access. Any device on the network can publish or subscribe to any topic.
-
-**Recommendation:** Add a commented-out auth configuration block in `mosquitto/mosquitto.conf` and document the steps to enable it. For a local/home deployment this may be acceptable, but it should be a deliberate, documented choice rather than an overlooked default.
+**Resolved:** Anonymous access is kept as the default (appropriate for local/home deployments), but `mosquitto/mosquitto.conf` now includes a full step-by-step comment block explaining how to generate a password file, enable `password_file` auth, mount it in compose, and set the corresponding `MQTT_USER`/`MQTT_PASSWORD` env vars in the API service.
 
 ---
 
 ### 5. Automatic Alembic Migrations on Startup
 
-**Problem:** The API runs `alembic upgrade head` at container start. This is fine for a single-instance local setup, but could cause issues if two API containers start simultaneously (both attempt to migrate) or if a migration fails and the API starts in a partially-migrated state.
-
-**Recommendation:** For current usage (single-instance local + deploy) this is fine to keep. Consider adding prominent error logging if the migration step fails so the root cause is immediately visible. A separate `mimir-migrate` one-shot service in compose is the cleaner long-term pattern.
+**Resolved:** `set -e` was already in place so a migration failure halts the container rather than starting the API in a broken state. Added explicit `echo` log lines around the migration step in both `docker-compose.yml` and `docker-compose.dev.yml` so failures are immediately visible in container logs.
 
 ---
 
 ### 6. Upload Volume Has No Backup Strategy
 
-**Problem:** User uploads live in the `mimir_api_uploads` named Docker volume. If the volume is deleted or the host is lost, all uploaded content is gone. There is no documented backup procedure.
-
-**Recommendation:** Document how to back up and restore the `mimir_api_uploads` volume. Consider switching to a bind mount (e.g., `./data/uploads:/var/opt/mimir/mimir-api/uploads`) so upload data lives in the project directory and is trivially backed up alongside the rest of the project.
+**Resolved:** Switched from the `mimir_api_uploads` named Docker volume to a bind mount at `./data/uploads`. Upload data now lives in the project directory alongside the repo, making it easy to include in any backup or rsync strategy. A `.gitignore` keeps the directory tracked in git without committing its contents.
 
 ---
 
 ### 7. CORS Origins Are Hardcoded for Localhost
 
-**Problem:** `CORS_ORIGINS` in the env file lists only `localhost:8080` and `localhost:3000`. Accessing the service from another machine on the LAN (by IP or hostname) will fail CORS checks without manual env file editing.
-
-**Recommendation:** Document this clearly. Consider adding a `CORS_ORIGINS_EXTRA` env var that appends to the default list so users can extend origins without replacing the entire string.
+**Resolved:** Added `CORS_ORIGINS_EXTRA` support to `app/config.py`. It is parsed the same way as `CORS_ORIGINS` (comma-separated or JSON array) and appended to the base list without replacing it. Documented with an example in `mimir-api.docker.env`. LAN or remote deployments can now set `CORS_ORIGINS_EXTRA=http://192.168.1.50:8080` without touching the default list.
 
 ---
 
 ### 8. Frontend API URL Is Implicit
 
-**Problem:** If the React app calls the API via `localhost` or a hardcoded address, it breaks when accessed from any other machine on the network.
+**Resolved:** The runtime URL detection logic was already solid (uses `window.location.hostname` when not on localhost, handles HTTPS). Two fixes applied:
+- Added `REACT_APP_API_URL` as the priority-1 check in `getApiBaseUrl()` so build/deploy-time configuration is possible without the Settings UI
+- Replaced a hardcoded stale IP as the final fallback with `http://localhost:5000/api`
+- Added `REACT_APP_API_URL` as a commented example in the `web` service in `docker-compose.yml`
 
-**Recommendation:** Ensure the frontend API base URL is driven by a `REACT_APP_API_URL` environment variable (or equivalent), and document the correct value to set for LAN deployments.
+For LAN deployments, users can either set `REACT_APP_API_URL=http://<host>:5000` in compose, or use the API URL field in the Settings page at runtime.
 
 ---
 
 ### 9. mDNS / Bonjour Discovery Is Fundamentally Constrained Inside Docker
 
-**Problem:** mDNS uses multicast (UDP `224.0.0.251:5353`). Docker's bridge network does not forward multicast between the container network and the host's physical NIC. LAN devices broadcasting via Bonjour/mDNS are invisible to containers by default.
+**Context:** mDNS uses multicast (UDP `224.0.0.251:5353`). Docker's bridge network does not forward multicast between the container network and the host's physical NIC. LAN devices broadcasting via Bonjour/mDNS are invisible to containers by default.
 
 On WSL2 + Docker Desktop (the primary dev environment), the problem is compounded — there are three network boundaries between a container and a LAN device:
 
@@ -125,11 +120,11 @@ Even `network_mode: host` only places the container on the WSL2 VM's network, no
 | Discovery sidecar in compose (`network_mode: host`) | No | Yes | Low |
 | External discovery agent (run on Windows host natively) | Yes | Yes | Medium — requires a host process |
 | mDNS reflector/proxy (avahi reflector, mdns-repeater) | No | Fragile | High |
-| Device self-registration via MQTT or HTTP | Yes | Yes | Low — requires device-side support |
+| Device self-registration via MQTT | Yes | Yes | Low — requires device-side support |
 
-**Recommendation:** The current approach — an optional external discovery agent that calls back to the API via `MDNS_EXTERNAL_FEED_ENABLED` — is the correct one for a Docker + WSL2 environment. mDNS-based passive discovery should be treated as a convenience feature for native Linux deployments, not a core reliability path.
+**Status:** The MQTT self-registration path is already fully implemented in `app/services/mqtt/registration.py`. Devices can publish to `mimir/registry/v1/register` with their identity and capabilities; the API upserts them in the database, replies with an assigned ID, and sends a `finalize_registration` command back. This flow works entirely within Docker's network model with no dependency on multicast or host networking.
 
-The more robust long-term direction for zero-config device onboarding is **MQTT self-registration**: devices publish their identity to a well-known topic on connect, and the API registers them automatically. This works entirely within Docker's network model and has no dependency on multicast or host networking.
+mDNS passive discovery remains available as a convenience for native Linux deployments via the optional external discovery sidecar (`MDNS_EXTERNAL_FEED_ENABLED`). For all other environments, MQTT self-registration is the recommended onboarding path.
 
 ---
 
@@ -144,19 +139,21 @@ The more robust long-term direction for zero-config device onboarding is **MQTT 
 | Discovery service | Resolved — unused Node.js and .NET implementations removed |
 | Directory depth in `mimir-api/` | Resolved — flattened, cruft removed |
 | Secrets / credentials | Accepted — self-hosted, user-managed defaults |
-| MQTT security | Anonymous by default, undocumented |
-| Data persistence / backup | No strategy documented |
-| LAN / remote deployment | Needs CORS + API URL guidance |
-| DB migrations | Fine for current use, brittle at scale |
-| mDNS discovery in Docker | Fundamentally limited; external agent is the right path |
+| MQTT security | Resolved — anonymous default kept, auth steps documented in mosquitto.conf |
+| Data persistence / backup | Resolved — uploads moved to ./data/uploads bind mount |
+| LAN / remote deployment | Resolved — CORS_ORIGINS_EXTRA added; REACT_APP_API_URL supported; stale IP fallback removed |
+| DB migrations | Acceptable — `set -e` halts on failure; log lines added for visibility |
+| mDNS discovery in Docker | Already solved — MQTT self-registration fully implemented; mDNS is optional convenience |
 
 ---
 
-## Priority Actions
+## Completed Actions
 
-1. Remove or archive the unused Node.js and .NET discovery implementations in `mimir-discovery/`
-2. Flatten `mimir-api/api-service/` → `mimir-api/`
-3. Document default credentials and how to override CORS origins and API URL for LAN deployments
-4. Switch uploads to a bind mount so data is easy to locate and back up
-5. Add a comment block to `mosquitto/mosquitto.conf` showing how to enable authentication
-6. Treat mDNS as a Linux-only convenience feature; invest in MQTT self-registration as the primary device onboarding path
+All items from the original review have been addressed:
+
+1. ✅ Removed unused Node.js and .NET discovery implementations from `mimir-discovery/`
+2. ✅ Flattened `mimir-api/api-service/` → `mimir-api/`; removed outer-level cruft and legacy tests
+3. ✅ Default credentials accepted as-is (self-hosted); `CORS_ORIGINS_EXTRA` added for LAN origins; `REACT_APP_API_URL` supported for deploy-time API URL override
+4. ✅ Uploads moved from named Docker volume to `./data/uploads` bind mount
+5. ✅ `mosquitto/mosquitto.conf` now includes step-by-step auth setup instructions
+6. ✅ MQTT self-registration was already fully implemented in `app/services/mqtt/registration.py`

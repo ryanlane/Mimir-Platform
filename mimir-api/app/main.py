@@ -119,6 +119,13 @@ async def lifespan(app: FastAPI):
                 logger.info("🔍 MQTT discovery registry started (hybrid Redis)")
             except Exception as e:  # pragma: no cover
                 logger.warning(f"Failed to start discovery registry: {e}")
+        # Start short-code pairing service
+        try:
+            from app.services.mqtt.pairing import pairing_service
+            await pairing_service.start()
+            logger.info("🔗 Pairing service started (short-code / QR registration)")
+        except Exception as e:  # pragma: no cover
+            logger.warning(f"Failed to start pairing service: {e}")
         # Eagerly start the async publisher loop so the first refresh does not race the lazy start
         try:  # defensive – publisher start should not block overall startup
             publisher_instance = MQTTSceneAssignmentPublisher.get()

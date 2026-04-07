@@ -84,8 +84,8 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Persist uploads/media
-      - mimir_api_uploads:/var/opt/mimir/mimir-api/uploads
+      # Uploads stored in ./data/uploads so they're easy to back up alongside the repo
+      - ./data/uploads:/var/opt/mimir/mimir-api/uploads
       # Bind-mount channel plugins from repo (read-only)
       - ./mimir-api/channels:/var/opt/mimir/mimir-api/channels:ro
     depends_on:
@@ -101,7 +101,9 @@ services:
       - -lc
       - |
         set -e
+        echo "--- Running database migrations ---"
         alembic upgrade head
+        echo "--- Migrations complete, starting API ---"
         exec uvicorn app.main:app --host 0.0.0.0 --port 5000
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5000/api/health"]
@@ -116,6 +118,11 @@ services:
     container_name: mimir-web
     ports:
       - "8080:80"
+    environment:
+      # Override the API URL for LAN/remote deployments where the browser reaches
+      # the API from a different host or port than the default runtime detection.
+      # Example: REACT_APP_API_URL=http://192.168.1.50:5000
+      REACT_APP_API_URL: ""
     depends_on:
       api:
         condition: service_healthy
@@ -139,7 +146,6 @@ services:
 
 volumes:
   redis_data:
-  mimir_api_uploads:
   postgres_data:
   pgadmin_data:
   mqtt_data:

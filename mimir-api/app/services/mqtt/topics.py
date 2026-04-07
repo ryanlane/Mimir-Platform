@@ -17,3 +17,10 @@ def heartbeat_topic_wildcard() -> str:
 
 def api_status_topic(client_id: str) -> str:
     return f"{PREFIX}/api/{client_id}/status"
+
+# Pairing topics
+PAIR_REQUEST_TOPIC = f"{PREFIX}/registry/pair"       # device → server: pairing request with 6-char code
+PAIR_ACK_TOPIC_FMT = f"{PREFIX}/{{device_id}}/pair/ack"  # server → device: acknowledgment
+
+def pair_ack_topic(device_id: str) -> str:
+    return f"{PREFIX}/{device_id}/pair/ack"
