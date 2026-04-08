@@ -5,6 +5,7 @@ import AddToHomeScreenNudge from './components/AddToHomeScreen/AddToHomeScreenNu
 import Dashboard from './pages/Dashboard/Dashboard';
 import Scenes from './pages/Scenes/Scenes';
 import Channels from './pages/Channels/Channels';
+import ChannelDetail from './pages/Channels/ChannelDetail';
 import Settings from './pages/Settings/Settings';
 import Displays from './pages/Displays/Displays';
 import { ErrorBoundary, useToast, ToastContainer, NetworkStatus } from './components/ErrorHandling/ErrorHandling';
@@ -104,6 +105,7 @@ function AppContent() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/scenes" element={<Scenes />} />
             <Route path="/channels" element={<Channels />} />
+            <Route path="/channels/:channelId" element={<ChannelDetail />} />
             <Route path="/displays" element={<Displays />} />
             <Route path="/settings" element={<Settings />} />
             {/* Catch-all route for unmatched paths */}

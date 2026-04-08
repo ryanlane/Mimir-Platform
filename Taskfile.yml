@@ -1,0 +1,346 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+# ── Environment ──────────────────────────────────────────────────────────────
+# Copy .env.example to .env and set PUBLIC_HOST to your LAN IP before using
+# the hardware-facing tasks.
+dotenv: [".env"]
+
+vars:
+  DEV_COMPOSE: docker-compose.dev.yml
+  PROD_COMPOSE: docker-compose.yml
+  WSL_COMPOSE: docker-compose.wsl.yml
+  API_DIR: mimir-api
+  UI_DIR: mimir-web/mimir-ui
+
+# ── Task groups ───────────────────────────────────────────────────────────────
+tasks:
+
+  # ── Default ─────────────────────────────────────────────────────────────────
+  default:
+    desc: List all available tasks
+    cmds:
+      - task --list
+
+  # ============================================================================
+  # DEV  — live-reload stack for daily development
+  # ============================================================================
+
+  dev:
+    desc: Start the full dev stack (API hot-reload + React dev server)
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} up --build
+
+  dev:build:
+    desc: Rebuild dev images without starting
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} build
+
+  dev:down:
+    desc: Stop and remove dev containers (keeps volumes)
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} down
+
+  dev:reset:
+    desc: Tear down dev stack AND wipe all volumes (fresh DB)
+    prompt: This will delete all dev data. Continue?
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} down -v
+
+  dev:logs:
+    desc: Follow logs for all dev services
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} logs -f
+
+  dev:logs:api:
+    desc: Follow API logs only
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} logs -f api
+
+  dev:discovery:
+    desc: Start dev stack with the mDNS discovery sidecar (Linux/WSL only)
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} --profile discovery up --build
+
+  # ============================================================================
+  # WSL  — bridge-networked local stack for WSL/Windows browser access
+  # ============================================================================
+
+  wsl:up:
+    desc: Start the WSL-friendly stack
+    cmds:
+      - docker compose -f {{.WSL_COMPOSE}} up -d
+
+  wsl:up:build:
+    desc: Build and start the WSL-friendly stack
+    cmds:
+      - docker compose -f {{.WSL_COMPOSE}} up -d --build
+
+  wsl:down:
+    desc: Stop the WSL-friendly stack (keeps volumes)
+    cmds:
+      - docker compose -f {{.WSL_COMPOSE}} down
+
+  wsl:logs:
+    desc: Follow logs for the WSL-friendly stack
+    cmds:
+      - docker compose -f {{.WSL_COMPOSE}} logs -f
+
+  wsl:logs:api:
+    desc: Follow API logs for the WSL-friendly stack
+    cmds:
+      - docker compose -f {{.WSL_COMPOSE}} logs -f api
+
+  # ============================================================================
+  # PROD  — production stack
+  # ============================================================================
+
+  up:
+    desc: Start production stack
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} up -d
+
+  up:build:
+    desc: Build and start production stack
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} up -d --build
+
+  down:
+    desc: Stop production stack (keeps volumes)
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} down
+
+  restart:
+    desc: Restart all production services
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} restart
+
+  restart:api:
+    desc: Restart only the API container
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} restart api
+
+  logs:
+    desc: Follow production logs
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} logs -f
+
+  logs:api:
+    desc: Follow production API logs only
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} logs -f api
+
+  # ============================================================================
+  # DB  — migrations and admin
+  # ============================================================================
+
+  db:migrate:
+    desc: Run Alembic migrations inside the running API container
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} exec api alembic upgrade head
+
+  db:migrate:prod:
+    desc: Run Alembic migrations in the production API container
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} exec api alembic upgrade head
+
+  db:revision:
+    desc: "Create a new Alembic migration (usage: task db:revision -- 'add thing')"
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} exec api alembic revision --autogenerate -m "{{.CLI_ARGS}}"
+
+  db:history:
+    desc: Show Alembic migration history
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} exec api alembic history
+
+  db:psql:
+    desc: Open a psql shell on the dev database
+    cmds:
+      - docker compose -f {{.DEV_COMPOSE}} exec db psql -U mimir -d mimir
+
+  # ============================================================================
+  # API  — linting, formatting, tests
+  # ============================================================================
+
+  api:lint:
+    desc: Run ruff + mypy on the API source
+    dir: "{{.API_DIR}}"
+    cmds:
+      - .venv/bin/ruff check app/
+      - .venv/bin/mypy app/
+
+  api:format:
+    desc: Auto-format API source (ruff fix + black + isort)
+    dir: "{{.API_DIR}}"
+    cmds:
+      - .venv/bin/ruff check --fix app/
+      - .venv/bin/black app/
+      - .venv/bin/isort app/
+
+  api:test:
+    desc: Run the full API test suite
+    dir: "{{.API_DIR}}"
+    cmds:
+      - .venv/bin/python run_tests.py --all
+
+  api:test:unit:
+    desc: Run API unit tests only
+    dir: "{{.API_DIR}}"
+    cmds:
+      - .venv/bin/python run_tests.py --unit
+
+  api:test:coverage:
+    desc: Run API tests with a coverage report
+    dir: "{{.API_DIR}}"
+    cmds:
+      - .venv/bin/python run_tests.py --all --coverage
+
+  api:install:
+    desc: Install / sync API Python dependencies into .venv
+    dir: "{{.API_DIR}}"
+    cmds:
+      - python3 -m venv .venv
+      - .venv/bin/pip install -e ".[dev]"
+
+  # ============================================================================
+  # UI  — frontend development
+  # ============================================================================
+
+  ui:install:
+    desc: Install npm dependencies for the web UI
+    dir: "{{.UI_DIR}}"
+    cmds:
+      - npm ci
+
+  ui:dev:
+    desc: Start the React dev server locally (no Docker)
+    dir: "{{.UI_DIR}}"
+    cmds:
+      - npm start
+
+  ui:build:
+    desc: Build the React production bundle
+    dir: "{{.UI_DIR}}"
+    cmds:
+      - npm run build
+
+  ui:lint:
+    desc: Lint the React source
+    dir: "{{.UI_DIR}}"
+    cmds:
+      - npm run lint
+
+  ui:test:
+    desc: Run frontend tests
+    dir: "{{.UI_DIR}}"
+    cmds:
+      - npm test -- --watchAll=false
+
+  # ============================================================================
+  # DISPLAY  — manage physical display devices over SSH
+  # ============================================================================
+
+  display:deploy:
+    desc: "Deploy latest code to a display over SSH (usage: task display:deploy -- pi@192.168.1.x)"
+    summary: |
+      Copies the client repo to the display and runs update_display.sh.
+      Example: task display:deploy -- pi@colorframe05.local
+    cmds:
+      - |
+        TARGET={{.CLI_ARGS}}
+        if [ -z "$TARGET" ]; then echo "Usage: task display:deploy -- user@host"; exit 1; fi
+        rsync -az --exclude .venv --exclude __pycache__ --exclude .git \
+          ../clients/mimir-display/ ${TARGET}:/opt/mimir-display/
+        ssh ${TARGET} "cd /opt/mimir-display && sudo bash scripts/update_display.sh"
+
+  display:ssh:
+    desc: "SSH into a display (usage: task display:ssh -- pi@192.168.1.x)"
+    cmds:
+      - ssh {{.CLI_ARGS}}
+
+  display:logs:
+    desc: "Stream journald logs from a display (usage: task display:logs -- pi@192.168.1.x)"
+    cmds:
+      - ssh {{.CLI_ARGS}} "journalctl -u mimir-display -f"
+
+  display:status:
+    desc: "Show service status on a display (usage: task display:status -- pi@192.168.1.x)"
+    cmds:
+      - ssh {{.CLI_ARGS}} "systemctl status mimir-display"
+
+  display:restart:
+    desc: "Restart the mimir-display service (usage: task display:restart -- pi@192.168.1.x)"
+    cmds:
+      - ssh {{.CLI_ARGS}} "sudo systemctl restart mimir-display"
+
+  # ============================================================================
+  # MQTT  — broker inspection and debugging
+  # ============================================================================
+
+  mqtt:sub:
+    desc: Subscribe to all Mimir MQTT topics (requires mosquitto-clients)
+    cmds:
+      - mosquitto_sub -h localhost -p 1883 -t 'mimir/#' -v
+
+  mqtt:pub:
+    desc: "Publish a test MQTT message (usage: task mqtt:pub -- topic payload)"
+    cmds:
+      - mosquitto_pub -h localhost -p 1883 -t {{.CLI_ARGS}}
+
+  # ============================================================================
+  # HEALTH  — quick sanity checks
+  # ============================================================================
+
+  health:
+    desc: Deep health check from inside the running API container
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} exec -T api curl -sf http://localhost:5000/api/health | python3 -m json.tool
+
+  health:prod:
+    desc: Deep health check against the production server (uses PUBLIC_HOST from .env)
+    cmds:
+      - curl -sf http://{{.PUBLIC_HOST | default "localhost"}}:5000/api/health | python3 -m json.tool
+
+  health:wsl:
+    desc: Deep health check against the WSL-friendly local API
+    cmds:
+      - curl -sf http://localhost:5000/api/health | python3 -m json.tool
+
+  health:watch:
+    desc: Poll the health endpoint inside the running API container every 3 seconds
+    cmds:
+      - watch -n 3 'docker compose -f {{.PROD_COMPOSE}} exec -T api curl -sf http://localhost:5000/api/health | python3 -m json.tool'
+
+  # ============================================================================
+  # CLEAN  — housekeeping
+  # ============================================================================
+
+  clean:
+    desc: Remove Python cache files from the repo
+    cmds:
+      - find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+      - find . -type f -name "*.pyc" -delete 2>/dev/null || true
+      - find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+
+  clean:ui:
+    desc: Remove the React build output
+    dir: "{{.UI_DIR}}"
+    cmds:
+      - rm -rf build
+
+  # ============================================================================
+  # SETUP  — first-time developer setup
+  # ============================================================================
+
+  setup:
+    desc: First-time setup — install API deps, UI deps, and copy .env files
+    cmds:
+      - task: api:install
+      - task: ui:install
+      - cmd: |
+          if [ ! -f .env ]; then
+            cp .env.example .env 2>/dev/null || echo "No .env.example found — create .env manually if needed"
+          else
+            echo ".env already exists, skipping"
+          fi

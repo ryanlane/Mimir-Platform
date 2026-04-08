@@ -157,6 +157,74 @@
   border-color: #7c6af7;
 }
 
+.pairing-advanced {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pairing-advanced-text {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #9ca0bd;
+}
+
+.pairing-advanced-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7f86ad;
+}
+
+.pairing-advanced-code {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  background: #0d0d1a;
+  border: 1px solid #2a2a4a;
+  color: #d7daf7;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.pairing-advanced-warning {
+  padding: 0.8rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid rgba(224, 166, 90, 0.35);
+  background: rgba(224, 166, 90, 0.08);
+}
+
+.pairing-advanced-warning-text {
+  margin: 0 0 0.75rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #f0c98d;
+}
+
+.pairing-advanced-warning-text code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.74rem;
+}
+
+.pairing-advanced-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #b9c7ff;
+}
+
+.pairing-advanced-error {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #e0a65a;
+}
+
 /* Actions */
 .pairing-actions {
   display: flex;

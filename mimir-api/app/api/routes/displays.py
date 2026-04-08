@@ -3,6 +3,7 @@
 Provides endpoints to query and manage display clients (registered & discovered).
 """
 from pathlib import Path
+from urllib.parse import urlparse
 import uuid
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
@@ -62,6 +63,31 @@ class MqttBootstrapRequest(BaseModel):
     password: str | None = None
     platform_url: str | None = None
 
+
+def _request_host_if_reachable(request: Request | None) -> str | None:
+    host = request.url.hostname if request and request.url else None
+    return host if settings._is_client_reachable_host(host) else None
+
+
+def _platform_url_for_clients(request: Request | None) -> str | None:
+    request_host = _request_host_if_reachable(request)
+    if request_host and request:
+        return str(request.base_url).rstrip("/")
+    return getattr(settings, "public_base_url", None)
+
+
+def _mqtt_host_for_clients(request: Request | None) -> str:
+    public_base_url = _platform_url_for_clients(request)
+    public_base_host = urlparse(public_base_url).hostname if public_base_url else None
+    return (
+        settings.mqtt_public_host
+        or settings.public_mdns_host
+        or _request_host_if_reachable(request)
+        or public_base_host
+        or settings._discover_primary_ipv4()
+        or settings.mqtt_broker_host
+    )
+
 def get_db():
     """Database dependency"""
     db = SessionLocal()
@@ -116,14 +142,9 @@ async def ingest_mdns_events(body: MdnsIngestBody, request: Request):
 @router.get("/mqtt/config", response_model=MqttConfigResponse)
 async def get_mqtt_config(request: Request):
     """Return MQTT broker configuration for display clients."""
-    request_host = request.url.hostname if request and request.url else None
-    host = settings.mqtt_public_host or request_host or settings.mqtt_broker_host
+    host = _mqtt_host_for_clients(request)
     port = settings.mqtt_public_port or settings.mqtt_broker_port
-    platform_url = None
-    if getattr(settings, "public_host", None):
-        platform_url = getattr(settings, "public_base_url", None)
-    if not platform_url:
-        platform_url = str(request.base_url).rstrip("/") if request else None
+    platform_url = _platform_url_for_clients(request)
     payload: dict[str, object] = {
         "enabled": settings.mqtt_enabled,
         "host": host,
@@ -156,14 +177,19 @@ async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest, 
     if not addr:
         raise HTTPException(status_code=409, detail="Display has no usable address")
 
-    request_host = request.url.hostname if request and request.url else None
-    host = body.host or settings.mqtt_public_host or request_host or settings.mqtt_broker_host
+    host = (
+        body.host
+        or settings.mqtt_public_host
+        or settings.public_mdns_host
+        or _request_host_if_reachable(request)
+        or urlparse(_platform_url_for_clients(request) or "").hostname
+        or settings._discover_primary_ipv4()
+        or settings.mqtt_broker_host
+    )
     port = body.port or settings.mqtt_public_port or settings.mqtt_broker_port
     platform_url = body.platform_url
-    if not platform_url and getattr(settings, "public_host", None):
-        platform_url = getattr(settings, "public_base_url", None)
-    if not platform_url and request:
-        platform_url = str(request.base_url).rstrip("/")
+    if not platform_url:
+        platform_url = _platform_url_for_clients(request)
 
     payload: dict[str, object] = {
         "host": host,
@@ -310,6 +336,40 @@ def _extract_supported_formats(discovered) -> list[str] | None:
                 if parts:
                     return parts
     return None
+
+
+def _build_client_config(
+    display_name: str = "",
+    display_location: str = "",
+) -> dict:
+    """Build the config dict pushed inside finalize_registration.
+
+    The display client persists this to device_config.json so the device
+    self-configures without manual .env editing after pairing.
+    """
+    mqtt_host = (
+        settings.mqtt_public_host
+        or settings.public_mdns_host
+        or settings.mqtt_broker_host
+    )
+    mqtt_port = settings.mqtt_public_port or settings.mqtt_broker_port
+
+    # public_base_url already does full resolution (public_host → mqtt_broker_host → hostname)
+    platform_url: str = settings.public_base_url
+
+    cfg: dict = {
+        "platform_url": platform_url,
+        "display_name": display_name or None,
+        "display_location": display_location or None,
+        "mqtt_host": mqtt_host,
+        "mqtt_port": mqtt_port,
+    }
+    if settings.mqtt_expose_credentials:
+        cfg["mqtt_username"] = settings.mqtt_username
+        cfg["mqtt_password"] = settings.mqtt_password
+
+    # Drop None values — client only overwrites keys that are present
+    return {k: v for k, v in cfg.items() if v is not None}
 
 
 def _build_discovered_display_response(discovered):
@@ -1036,13 +1096,21 @@ async def claim_pair_code(body: PairClaimRequest, db: Session = Depends(get_db))
         db.commit()
         db.refresh(display)
 
-    # Send finalize_registration to the display via MQTT
+    # Build config to push to the display so it can self-configure without
+    # manual .env edits on the device.
+    client_config = _build_client_config(
+        display_name=display.name,
+        display_location=display.location or "",
+    )
+
+    # Send finalize_registration (with config) to the display via MQTT
     reg_service = AutoRegistrationService()
     reg_key = secrets.token_hex(16)
     await reg_service._send_finalize_command(
         device_id=device_id,
         display_id=str(display.id),
         registration_key=reg_key,
+        client_config=client_config,
     )
 
     return DisplayClientResponse.model_validate(display)

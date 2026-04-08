@@ -1,5 +1,11 @@
 name: mimir
 
+# Default use: run app services in Docker on a native Ubuntu server.
+# For physical displays on a LAN, copy .env.hybrid.example to .env and set
+# PUBLIC_HOST / MQTT_PUBLIC_HOST to the server's real LAN address.
+# Preferred discovery path on Ubuntu: run mimir-discovery natively on the host.
+# The optional discovery service below is mainly for convenience on native Linux.
+
 services:
   db:
     image: postgres:16-alpine
@@ -57,8 +63,7 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
     container_name: mimir-mqtt
-    ports:
-      - "1883:1883"
+    network_mode: "host"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mqtt_data:/mosquitto/data
@@ -74,15 +79,26 @@ services:
       context: ./mimir-api
       dockerfile: Dockerfile
     container_name: mimir-api
+    network_mode: "host"
     env_file:
       - ./mimir-api/mimir-api.docker.env
     environment:
-      MQTT_HOST: mqtt
-      MQTT_PORT: "1883"
+      # API runs on the host network, so dependencies must be reached through
+      # the host-published ports rather than Docker service DNS.
+      - DB_URL=postgresql+psycopg2://mimir:mimir@127.0.0.1:5432/mimir
+      - REDIS_HOST=127.0.0.1
+      - REDIS_PORT=6379
+      - MQTT_HOST=127.0.0.1
+      - MQTT_PORT=1883
+      # Public-facing values for physical devices.
+      # On an Ubuntu server, set these in the root .env file using
+      # .env.hybrid.example as the template.
+      - PUBLIC_HOST
+      - PUBLIC_MDNS_HOST
+      - MQTT_PUBLIC_HOST
+      - MQTT_PUBLIC_PORT
       # MQTT_USER: ""
       # MQTT_PASSWORD: ""
-    ports:
-      - "5000:5000"
     volumes:
       # Uploads stored in ./data/uploads so they're easy to back up alongside the repo
       - ./data/uploads:/var/opt/mimir/mimir-api/uploads
@@ -121,24 +137,29 @@ services:
     environment:
       # Override the API URL for LAN/remote deployments where the browser reaches
       # the API from a different host or port than the default runtime detection.
-      # Example: REACT_APP_API_URL=http://192.168.1.50:5000
-      REACT_APP_API_URL: ""
+      # Example: REACT_APP_API_URL=http://mimir.local:5000
+      - REACT_APP_API_URL
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
 
-  discovery:
+  discovery:    
     build:
       context: ./mimir-discovery/python
       dockerfile: Dockerfile
     container_name: mimir-discovery
-    profiles: ["discovery"]
+    # Optional discovery helper for native Linux only.
+    # Preferred production path on Ubuntu: run discovery natively on the host
+    # via mimir-discovery.service.example so the server exposes its real LAN identity.
+    # Avoid relying on this container for Windows/WSL2 hardware validation.
     network_mode: "host"
+    profiles: ["discovery"]    
     environment:
-      MIMIR_API_BASE: "http://127.0.0.1:5000"
+      - MIMIR_API_BASE=http://127.0.0.1:5000
+      - MIMIR_PUBLIC_HOSTNAME
       # Optional shared secret; must match API MDNS_EXTERNAL_FEED_TOKEN if set
-      MIMIR_DISCOVERY_TOKEN: "${MIMIR_DISCOVERY_TOKEN:-}"
+      - MIMIR_DISCOVERY_TOKEN
     depends_on:
       api:
         condition: service_healthy

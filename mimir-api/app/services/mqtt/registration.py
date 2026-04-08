@@ -322,18 +322,34 @@ class AutoRegistrationService:
         except Exception as e:  # noqa: BLE001
             logger.error("Failed publishing registration reply to %s: %s", reply_to, e)
 
-    async def _send_finalize_command(self, *, device_id: str, display_id: str, registration_key: str):
-        """Send finalize_registration command to device's /cmd topic."""
+    async def _send_finalize_command(
+        self,
+        *,
+        device_id: str,
+        display_id: str,
+        registration_key: str,
+        client_config: dict | None = None,
+    ):
+        """Send finalize_registration command to device's /cmd topic.
+
+        client_config is an optional dict that the display client persists to
+        device_config.json so it survives reboots without manual .env editing.
+        Recognised keys: platform_url, display_name, display_location,
+        mqtt_host, mqtt_port, mqtt_username, mqtt_password.
+        """
         if not self.mqtt_client:
             return
         cmd_topic = f"mimir/{device_id}/cmd"
-        payload = {
+        payload: dict = {
             "type": "finalize_registration",
             "display_id": display_id,
             "registration_key": registration_key,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "version": 1,
+            "source": "pairing_code",
         }
+        if client_config:
+            payload["config"] = client_config
         try:
             await self.mqtt_client.publish(cmd_topic, json.dumps(payload), qos=1)
             logger.info("Sent finalize_registration to %s display_id=%s", device_id, display_id)

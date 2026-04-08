@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Info, Plus, FolderOpen } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
@@ -6,7 +7,6 @@ import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import featureDetection from '../../services/featureDetection';
 import Header from '../../components/Header/Header';
 import Button from '../../components/Button/Button';
-import ChannelSettings from './ChannelSettings';
 import ChannelCard from './ChannelCard';
 import InstallChannel from './InstallChannel';
 import LinkDevChannel from './LinkDevChannel';
@@ -15,10 +15,9 @@ import './Channels.css';
 // Legacy in-memory cache removed; persistent IndexedDB cache now used.
 
 const Channels = () => {
+    const navigate = useNavigate();
     const [channels, setChannels] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [showSettings, setShowSettings] = useState(false);
-    const [selectedChannel, setSelectedChannel] = useState(null);
     const [showInstallModal, setShowInstallModal] = useState(false);
     const [showLinkDevModal, setShowLinkDevModal] = useState(false);
 
@@ -129,8 +128,7 @@ const Channels = () => {
     }, []);
 
     const handleSettings = (channel) => {
-      setSelectedChannel(channel);
-      setShowSettings(true);
+      navigate(`/channels/${encodeURIComponent(channel.id)}`);
     };
 
     const handleToggleEnabled = useCallback(async (channel) => {
@@ -299,17 +297,6 @@ const Channels = () => {
               Install Channel
             </Button>
           </div>
-        )}
-
-        {showSettings && selectedChannel && (
-          <ChannelSettings
-            channel={selectedChannel}
-            onClose={() => {
-              setShowSettings(false);
-              setSelectedChannel(null);
-              loadChannels();
-            }}
-          />
         )}
 
         <InstallChannel

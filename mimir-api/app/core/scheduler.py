@@ -20,7 +20,7 @@ class SchedulerService:
     
     def __init__(self):
         self.scheduler: Optional[AsyncIOScheduler] = None
-        self.is_running = False
+        self._is_running = False
         
     def setup_scheduler(self):
         """Initialize the APScheduler with memory job store"""
@@ -53,11 +53,11 @@ class SchedulerService:
     
     async def start(self):
         """Start the scheduler"""
-        if self.scheduler and not self.is_running:
+        if self.scheduler and not self._is_running:
             try:
                 self._start_time = datetime.now(timezone.utc)
                 self.scheduler.start()
-                self.is_running = True
+                self._is_running = True
                 logger.info("APScheduler started")
                 
                 # Setup default jobs
@@ -69,13 +69,23 @@ class SchedulerService:
     
     async def stop(self):
         """Stop the scheduler gracefully"""
-        if self.scheduler and self.is_running:
+        if self.scheduler and self._is_running:
             try:
                 self.scheduler.shutdown(wait=True)
-                self.is_running = False
+                self._is_running = False
                 logger.info("APScheduler stopped")
             except Exception as e:
                 logger.error(f"Error stopping scheduler: {e}")
+
+    def is_running(self) -> bool:
+        """Return whether the scheduler has been started successfully."""
+        return self._is_running
+
+    def get_job_count(self) -> int:
+        """Return the number of registered scheduler jobs."""
+        if not self.scheduler:
+            return 0
+        return len(self.scheduler.get_jobs())
     
     async def _setup_default_jobs(self):
         """Setup the standard background jobs"""

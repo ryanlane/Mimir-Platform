@@ -1,6 +1,9 @@
 # app/config.py
 from __future__ import annotations
 
+import socket
+import re
+
 from pydantic import Field, AliasChoices, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -104,6 +107,11 @@ class Settings(BaseSettings):
     public_host: str | None = Field(
         default=None,
         validation_alias=AliasChoices("PUBLIC_HOST", "API_PUBLIC_HOST", "EXTERNAL_HOST"),
+    )
+    public_mdns_host: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PUBLIC_MDNS_HOST", "API_PUBLIC_MDNS_HOST"),
+        description="Optional mDNS-resolvable hostname such as mimir.local for client bootstrap.",
     )
     public_port: int | None = Field(
         default=None,
@@ -227,6 +235,71 @@ class Settings(BaseSettings):
     )
     mqtt_client_id_prefix: str = Field("mimir", validation_alias=AliasChoices("MQTT_CLIENT_ID_PREFIX",))
 
+    @staticmethod
+    def _normalize_optional_host(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @staticmethod
+    def _is_loopback_host(candidate: str | None) -> bool:
+        if not candidate:
+            return True
+        normalized = candidate.strip().strip("[]").lower()
+        return normalized in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+    @staticmethod
+    def _looks_internal_container_host(candidate: str | None) -> bool:
+        if not candidate:
+            return False
+        normalized = candidate.strip().lower()
+        base_host = normalized[:-6] if normalized.endswith(".local") else normalized
+        if re.fullmatch(r"[0-9a-f]{12,64}", base_host):
+            return True
+        if "." in normalized and not normalized.endswith(".local"):
+            return False
+        internal_names = {
+            "api",
+            "db",
+            "mqtt",
+            "redis",
+            "web",
+            "discovery",
+            "mimir-api",
+            "mimir-db",
+            "mimir-mqtt",
+            "mimir-redis",
+            "mimir-web",
+            "mimir-discovery",
+        }
+        return normalized in internal_names or base_host in internal_names
+
+    @classmethod
+    def _is_client_reachable_host(cls, candidate: str | None) -> bool:
+        normalized = cls._normalize_optional_host(candidate)
+        if not normalized:
+            return False
+        if cls._is_loopback_host(normalized) or cls._looks_internal_container_host(normalized):
+            return False
+        return True
+
+    @staticmethod
+    def _discover_primary_ipv4() -> str | None:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect(("8.8.8.8", 80))
+            ip = sock.getsockname()[0]
+            sock.close()
+            return ip
+        except OSError:
+            return None
+
+    @field_validator("public_host", "public_mdns_host", "mqtt_public_host", mode="before")
+    @classmethod
+    def _normalize_optional_hosts(cls, value):
+        return cls._normalize_optional_host(value)
+
     # --- MQTT Discovery (hybrid Redis) ---
     mqtt_discovery_enabled: bool = Field(
         True,
@@ -293,40 +366,26 @@ class Settings(BaseSettings):
 
         Resolution strategy (first successful wins):
         1. Explicit public_host (env override)
-        2. mqtt_broker_host (often already a LAN-resolvable hostname)
-        3. Local system hostname (socket.gethostname())
-        4. hostname + ".local" (for mDNS-capable environments)
-        5. Primary outbound IPv4 (UDP connect probe)
-        6. Fallback 127.0.0.1 (last resort)
+        2. Explicit public_mdns_host (for example: mimir.local)
+        3. mqtt_broker_host (often already a LAN-resolvable hostname)
+        4. Local system hostname (socket.gethostname())
+        5. hostname + ".local" (for mDNS-capable environments)
+        6. Primary outbound IPv4 (UDP connect probe)
+        7. Fallback 127.0.0.1 (last resort)
 
         Ports: omit when standard (80 http / 443 https). This avoids confusing some
         embedded HTTP clients that mishandle explicit default ports.
         """
-        import socket
-
         scheme = self.public_scheme or "http"
-
-        # Helper to test if host resolves to at least one non-loopback address
-        def _host_resolves(candidate: str | None) -> bool:
-            if not candidate:
-                return False
-            try:
-                infos = socket.getaddrinfo(candidate, None)
-            except OSError:
-                return False
-            for _family, _type, _proto, _canon, sockaddr in infos:
-                ip = sockaddr[0]
-                if not (ip.startswith("127.") or ip in ("::1",)):
-                    return True
-            return False
 
         # Candidate hostnames in priority order (deduplicated later)
         hostname = socket.gethostname()
         candidates: list[str | None] = [
             self.public_host,
-            self.mqtt_broker_host,
+            self.public_mdns_host,
             hostname,
             f"{hostname}.local",
+            self._discover_primary_ipv4(),
         ]
 
         seen = set()
@@ -335,21 +394,12 @@ class Settings(BaseSettings):
             if not cand or cand in seen:
                 continue
             seen.add(cand)
-            if _host_resolves(cand):
+            if self._is_client_reachable_host(cand):
                 chosen_host = cand
                 break
 
         if chosen_host is None:
-            # Derive primary outbound IP (does not create traffic, just local routing decision)
-            ip = None
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                s.connect(("8.8.8.8", 80))  # any public IP works; no packets sent until write
-                ip = s.getsockname()[0]
-                s.close()
-            except OSError:
-                pass
-            chosen_host = ip or "127.0.0.1"
+            chosen_host = "127.0.0.1"
 
         port = self.public_port if self.public_port is not None else self.api_port
         if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):

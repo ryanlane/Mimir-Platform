@@ -1,0 +1,20 @@
+[Unit]
+Description=Mimir mDNS Discovery (Host Network)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mimir/service/mimir-discovery/python
+Environment=MIMIR_API_BASE=http://127.0.0.1:5000
+# Environment=MIMIR_DISCOVERY_TOKEN=change-me
+# Optional if you want the discovery service to advertise a friendly hostname.
+# Environment=MIMIR_PUBLIC_HOSTNAME=mimir.local
+ExecStart=/opt/mimir/service/mimir-discovery/python/run_local.sh
+Restart=always
+RestartSec=3
+User=mimir
+Group=mimir
+
+[Install]
+WantedBy=multi-user.target

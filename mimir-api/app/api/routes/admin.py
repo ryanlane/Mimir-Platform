@@ -197,36 +197,132 @@ def get_db():
         db.close()
 
 
-@health_router.get("/health")
-@health_router.head("/health") 
-async def health_check():
-    """System health check endpoint"""
-    scheduler_status = "unknown"
-    scheduler_jobs = 0
-    
-    if scheduler_service:
+async def _check_database() -> dict:
+    """Probe the database with a real query."""
+    t0 = time.monotonic()
+    try:
+        db = SessionLocal()
         try:
-            scheduler_status = "running" if scheduler_service.is_running() else "stopped"
-            scheduler_jobs = len(scheduler_service.scheduler.get_jobs())
-        except Exception:
-            scheduler_status = "error"
-    
+            db.execute(__import__("sqlalchemy").text("SELECT 1"))
+            return {"status": "ok", "latency_ms": round((time.monotonic() - t0) * 1000, 1)}
+        finally:
+            db.close()
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "latency_ms": round((time.monotonic() - t0) * 1000, 1)}
+
+
+async def _check_redis() -> dict:
+    """PING the Redis broker."""
+    if not settings.redis_enabled:
+        return {"status": "disabled"}
+    t0 = time.monotonic()
+    try:
+        import redis.asyncio as aioredis  # type: ignore
+        dsn = settings.redis_dsn or f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}"
+        r = aioredis.from_url(dsn, socket_connect_timeout=2, socket_timeout=2)
+        await r.ping()
+        await r.aclose()
+        return {"status": "ok", "latency_ms": round((time.monotonic() - t0) * 1000, 1)}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "latency_ms": round((time.monotonic() - t0) * 1000, 1)}
+
+
+async def _check_mqtt() -> dict:
+    """Verify the MQTT broker is reachable via a real TCP connect."""
+    if not settings.mqtt_enabled:
+        return {"status": "disabled"}
+    host = settings.mqtt_broker_host
+    port = settings.mqtt_broker_port
+    t0 = time.monotonic()
+    try:
+        # presence service tells us whether the internal client is connected
+        connected = getattr(mqtt_presence_service, "is_running", False)
+        if callable(connected):
+            connected = connected()
+        # Also do a quick TCP probe so we can report broker reachability
+        # independently of the internal client state
+        loop = __import__("asyncio").get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: socket.create_connection((host, port), timeout=2).close(),
+        )
+        return {
+            "status": "ok",
+            "broker": f"{host}:{port}",
+            "presence_client": "connected" if connected else "disconnected",
+            "latency_ms": round((time.monotonic() - t0) * 1000, 1),
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "broker": f"{host}:{port}",
+            "error": str(exc),
+            "latency_ms": round((time.monotonic() - t0) * 1000, 1),
+        }
+
+
+async def _check_websocket() -> dict:
+    """Report live WebSocket connection counts from the in-process manager."""
+    try:
+        from app.services.websocket_manager import websocket_manager
+        stats = websocket_manager.get_connection_stats()
+        return {
+            "status": "ok",
+            "total_connections": stats["total_connections"],
+            "dashboard_connections": stats["dashboard_connections"],
+            "display_connections": stats["display_connections"],
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+def _check_scheduler() -> dict:
+    try:
+        running = scheduler_service.is_running() if scheduler_service else False
+        jobs = scheduler_service.get_job_count() if running else 0
+        return {"status": "running" if running else "stopped", "jobs": jobs}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+@health_router.get("/health")
+@health_router.head("/health")
+async def health_check():
+    """Deep health check — probes every backing service and returns a unified status.
+
+    HTTP 200 means the API itself is up. Inspect each component's ``status``
+    field to determine whether individual dependencies are healthy.
+    Overall ``status`` is ``"degraded"`` when any enabled component reports an error.
+    """
+    import asyncio as _asyncio
+
+    db_check, redis_check, mqtt_check, ws_check = await _asyncio.gather(
+        _check_database(),
+        _check_redis(),
+        _check_mqtt(),
+        _check_websocket(),
+    )
+    scheduler_check = _check_scheduler()
+
+    components = {
+        "database": db_check,
+        "redis": redis_check,
+        "mqtt": mqtt_check,
+        "websocket": ws_check,
+        "scheduler": scheduler_check,
+    }
+
+    # Overall status: degraded if any enabled component has an error
+    overall = "ok"
+    for v in components.values():
+        if v.get("status") == "error":
+            overall = "degraded"
+            break
+
     return {
-        "status": "healthy",
-        "database": {
-            "status": "connected"
-        },
-        "channels": {
-            "status": "operational"
-        },
-        "websocket": {
-            "status": "operational"
-        },
-        "scheduler": {
-            "status": scheduler_status,
-            "jobs": scheduler_jobs
-        },
-        "uptime": "running"
+        "status": overall,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **components,
     }
 
 
