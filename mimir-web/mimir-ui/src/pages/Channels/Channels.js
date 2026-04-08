@@ -55,7 +55,7 @@ const Channels = () => {
             }
           }
         });
-        const channelsData = data.channels || [];
+        const channelsData = data?.channels || [];
         setChannels(channelsData);
         if (featureDetection.supportsChannelHealth()) {
           loadAllChannelHealth(channelsData);

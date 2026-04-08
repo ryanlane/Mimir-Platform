@@ -17,7 +17,8 @@ async function staleWhileRevalidate({ store, key, ttl, fetcher, onUpdate }) {
   // 1. Try cached first
   const cached = await idb.get(store, key);
   let served = null;
-  if (cached) {
+  // Guard against stale cache entries from older code that didn't wrap in { data: ... }
+  if (cached && cached.data !== undefined) {
     served = { data: cached.data, fromCache: true, stale: !isFresh(cached, ttl) };
   }
   // 2. Always kick off network fetch in background

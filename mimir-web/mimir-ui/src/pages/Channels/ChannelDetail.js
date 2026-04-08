@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Heart, Power, RefreshCw, Trash2, Unlink, AlertCircle,
+  ArrowLeft, Heart, Power, RefreshCw, Trash2, Unlink, AlertCircle, ChevronDown,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
@@ -147,6 +147,7 @@ const ChannelDetail = () => {
   const [componentError, setComponentError] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [actionPending, setActionPending] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Load everything needed for the detail page
   const load = useCallback(async () => {
@@ -333,131 +334,122 @@ const ChannelDetail = () => {
       </div>
 
       <div className="cd-layout">
-        {/* ── Sidebar ────────────────────────────────────────────────── */}
-        <aside className="cd-sidebar">
-          <div className="cd-sidebar-header">
-            <h1 className="cd-channel-name">
-              {config?.name || channel.name}
-              {isDev && <span className="badge badge-dev">DEV</span>}
-              {!isEnabled && <span className="badge badge-disabled">Disabled</span>}
-            </h1>
-            {(config?.description || channel.description) && (
-              <p className="cd-channel-desc">
-                {config?.description || channel.description}
-              </p>
-            )}
-          </div>
-
-          {/* Meta */}
-          <div className="cd-meta">
-            {channel.version && (
-              <div className="cd-meta-row">
-                <span className="cd-meta-label">Version</span>
-                <span>{channel.version}</span>
+        {/* ── Info panel ─────────────────────────────────────────────── */}
+        <div className="cd-sidebar">
+          {/* Always-visible header row */}
+          <button
+            className="cd-panel-toggle"
+            onClick={() => setCollapsed(c => !c)}
+            aria-expanded={!collapsed}
+          >
+            <div className="cd-panel-summary">
+              <h1 className="cd-channel-name">
+                {config?.name || channel.name}
+                {isDev && <span className="badge badge-dev">DEV</span>}
+                {!isEnabled && <span className="badge badge-disabled">Disabled</span>}
+              </h1>
+              <div className="cd-status-block">
+                <div className={`cd-status-pill cd-status-${isEnabled ? (channel.status?.lastError ? 'error' : channel.status?.usingFallback ? 'warning' : 'success') : 'disabled'}`}>
+                  {isEnabled
+                    ? channel.status?.lastError ? 'Error' : channel.status?.usingFallback ? 'Fallback' : 'Active'
+                    : 'Disabled'}
+                </div>
+                {health && isEnabled && (
+                  <div className={`cd-health-pill ${health.healthy ? 'healthy' : 'unhealthy'}`}>
+                    <Heart size={13} />
+                    {health.healthy ? 'Healthy' : 'Issues'}
+                  </div>
+                )}
               </div>
-            )}
-            <div className="cd-meta-row">
-              <span className="cd-meta-label">ID</span>
-              <span className="cd-mono">{channel.id}</span>
             </div>
-            {isDev && channel.dev_path && (
-              <div className="cd-meta-row">
-                <span className="cd-meta-label">Path</span>
-                <span className="cd-mono cd-dev-path">{channel.dev_path}</span>
-              </div>
-            )}
-            {channel.status?.lastUpdate && (
-              <div className="cd-meta-row">
-                <span className="cd-meta-label">Last update</span>
-                <span>{new Date(channel.status.lastUpdate).toLocaleString()}</span>
-              </div>
-            )}
-          </div>
+            <ChevronDown size={16} className={`cd-chevron${collapsed ? ' cd-chevron-collapsed' : ''}`} />
+          </button>
 
-          {/* Status / Health */}
-          <div className="cd-status-block">
-            <div className={`cd-status-pill cd-status-${isEnabled ? (channel.status?.lastError ? 'error' : channel.status?.usingFallback ? 'warning' : 'success') : 'disabled'}`}>
-              {isEnabled
-                ? channel.status?.lastError
-                  ? 'Error'
-                  : channel.status?.usingFallback
-                  ? 'Fallback'
-                  : 'Active'
-                : 'Disabled'}
-            </div>
-            {health && isEnabled && (
-              <div className={`cd-health-pill ${health.healthy ? 'healthy' : 'unhealthy'}`}>
-                <Heart size={13} />
-                {health.healthy ? 'Healthy' : 'Issues'}
+          {/* Collapsible body */}
+          {!collapsed && (
+            <div className="cd-panel-body">
+              <div className="cd-panel-body-left">
+                {(config?.description || channel.description) && (
+                  <p className="cd-channel-desc">
+                    {config?.description || channel.description}
+                  </p>
+                )}
+                <div className="cd-meta">
+                  {channel.version && (
+                    <div className="cd-meta-row">
+                      <span className="cd-meta-label">Version</span>
+                      <span>{channel.version}</span>
+                    </div>
+                  )}
+                  <div className="cd-meta-row">
+                    <span className="cd-meta-label">ID</span>
+                    <span className="cd-mono">{channel.id}</span>
+                  </div>
+                  {isDev && channel.dev_path && (
+                    <div className="cd-meta-row">
+                      <span className="cd-meta-label">Path</span>
+                      <span className="cd-mono cd-dev-path">{channel.dev_path}</span>
+                    </div>
+                  )}
+                  {channel.status?.lastUpdate && (
+                    <div className="cd-meta-row">
+                      <span className="cd-meta-label">Last update</span>
+                      <span>{new Date(channel.status.lastUpdate).toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
+                {channel.status?.lastError && (
+                  <div className="cd-error-msg">
+                    <AlertCircle size={14} />
+                    <span>{channel.status.lastError}</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {channel.status?.lastError && (
-            <div className="cd-error-msg">
-              <AlertCircle size={14} />
-              <span>{channel.status.lastError}</span>
+              <div className="cd-actions">
+                {isDev && (
+                  <Button
+                    variant="secondary"
+                    onClick={handleReloadDev}
+                    icon={<RefreshCw size={14} />}
+                    size="sm"
+                    disabled={actionPending}
+                  >
+                    Reload
+                  </Button>
+                )}
+                {!isDev && (
+                  <Button
+                    variant={isEnabled ? 'secondary' : 'primary'}
+                    onClick={handleToggleEnabled}
+                    icon={<Power size={14} />}
+                    size="sm"
+                    disabled={actionPending}
+                  >
+                    {isEnabled ? 'Disable' : 'Enable'}
+                  </Button>
+                )}
+                {confirmRemove ? (
+                  <div className="cd-confirm-remove">
+                    <span>{isDev ? 'Unlink' : 'Uninstall'}?</span>
+                    <Button variant="danger" onClick={isDev ? handleUnlinkDev : handleUninstall} size="sm" disabled={actionPending}>Yes</Button>
+                    <Button variant="secondary" onClick={() => setConfirmRemove(false)} size="sm">No</Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="danger"
+                    onClick={() => setConfirmRemove(true)}
+                    icon={isDev ? <Unlink size={14} /> : <Trash2 size={14} />}
+                    size="sm"
+                    disabled={actionPending}
+                  >
+                    {isDev ? 'Unlink' : 'Uninstall'}
+                  </Button>
+                )}
+              </div>
             </div>
           )}
-
-          {/* Actions */}
-          <div className="cd-actions">
-            {isDev && (
-              <Button
-                variant="secondary"
-                onClick={handleReloadDev}
-                icon={<RefreshCw size={14} />}
-                size="sm"
-                disabled={actionPending}
-              >
-                Reload
-              </Button>
-            )}
-
-            {!isDev && (
-              <Button
-                variant={isEnabled ? 'secondary' : 'primary'}
-                onClick={handleToggleEnabled}
-                icon={<Power size={14} />}
-                size="sm"
-                disabled={actionPending}
-              >
-                {isEnabled ? 'Disable' : 'Enable'}
-              </Button>
-            )}
-
-            {confirmRemove ? (
-              <div className="cd-confirm-remove">
-                <span>{isDev ? 'Unlink' : 'Uninstall'}?</span>
-                <Button
-                  variant="danger"
-                  onClick={isDev ? handleUnlinkDev : handleUninstall}
-                  size="sm"
-                  disabled={actionPending}
-                >
-                  Yes
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => setConfirmRemove(false)}
-                  size="sm"
-                >
-                  No
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="danger"
-                onClick={() => setConfirmRemove(true)}
-                icon={isDev ? <Unlink size={14} /> : <Trash2 size={14} />}
-                size="sm"
-                disabled={actionPending}
-              >
-                {isDev ? 'Unlink' : 'Uninstall'}
-              </Button>
-            )}
-          </div>
-        </aside>
+        </div>
 
         {/* ── Plugin content area ─────────────────────────────────────── */}
         <main className="cd-content">
