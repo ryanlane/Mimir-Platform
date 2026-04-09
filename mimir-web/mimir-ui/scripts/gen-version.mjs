@@ -25,6 +25,7 @@ import path from 'path';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const SRC_VERSION_FILE = path.join(ROOT, 'src', 'version.js');
 const PUBLIC_VERSION_FILE = path.join(ROOT, 'public', 'version.json');
+const PUBLIC_SW_VERSION_FILE = path.join(ROOT, 'public', 'sw-version.js');
 
 function getGitShortSha() {
   try {
@@ -123,6 +124,13 @@ writeFileSync(SRC_VERSION_FILE, versionJs, 'utf8');
 
 // Write version.json (pretty for easy diff)
 writeFileSync(PUBLIC_VERSION_FILE, JSON.stringify(buildInfo, null, 2) + '\n', 'utf8');
+
+// Write a small service worker companion so the SW cache namespace rotates on every build.
+writeFileSync(
+  PUBLIC_SW_VERSION_FILE,
+  `self.__MIMIR_SW_VERSION__ = '${newVersion}';\n`,
+  'utf8'
+);
 
 console.log(`Generated version: ${newVersion}`);
 console.log(`Critical: ${critical}  minClient: ${minClient}`);

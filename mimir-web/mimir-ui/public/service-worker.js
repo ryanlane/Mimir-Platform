@@ -2,12 +2,18 @@
 // Service Worker for Mimir UI (public/ version)
 // Notes:
 // - Served verbatim from /service-worker.js (CRA copies public assets)
-// - Increment APP_VERSION on deploys to trigger fresh app-shell cache
+// - Version is injected at build time via /sw-version.js to trigger fresh caches on deploy
 // - Keep APP_SHELL_ASSETS lean (index + offline + manifest + favicon). Hashed build files are runtime-cached.
 
-const APP_VERSION = 'v1';
+try {
+  importScripts('/sw-version.js');
+} catch {
+  // Fall back to a static cache namespace if version injection is unavailable.
+}
+
+const APP_VERSION = self.__MIMIR_SW_VERSION__ || 'v1';
 const APP_SHELL_CACHE = `mimir-app-shell-${APP_VERSION}`;
-const RUNTIME_CACHE = 'mimir-runtime';
+const RUNTIME_CACHE = `mimir-runtime-${APP_VERSION}`;
 const OFFLINE_FALLBACK_PAGE = '/offline.html';
 
 const APP_SHELL_ASSETS = [
@@ -30,7 +36,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys => Promise.all(
       keys
-        .filter(k => k.startsWith('mimir-app-shell-') && k !== APP_SHELL_CACHE)
+        .filter(k => (k.startsWith('mimir-app-shell-') || k.startsWith('mimir-runtime-')) && k !== APP_SHELL_CACHE && k !== RUNTIME_CACHE)
         .map(k => caches.delete(k))
     )).then(() => self.clients.claim())
   );
@@ -48,15 +54,6 @@ async function networkFirst(request) {
     if (cached) return cached;
     throw err;
   }
-}
-
-async function cacheFirst(request) {
-  const cache = await caches.open(APP_SHELL_CACHE);
-  const cached = await cache.match(request);
-  if (cached) return cached;
-  const response = await fetch(request);
-  if (response.ok) cache.put(request, response.clone());
-  return response;
 }
 
 self.addEventListener('fetch', event => {
@@ -89,7 +86,7 @@ self.addEventListener('fetch', event => {
   }
 
   if (/\.(?:png|jpg|jpeg|svg|gif|webp|ico|css|js|woff2?)$/i.test(url.pathname)) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(networkFirst(request));
     return;
   }
 
