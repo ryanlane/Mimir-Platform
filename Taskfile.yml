@@ -71,6 +71,11 @@ tasks:
     cmds:
       - docker compose -f {{.WSL_COMPOSE}} up -d
 
+  wsl:build:
+    desc: Build WSL-friendly images without starting services
+    cmds:
+      - docker compose -f {{.WSL_COMPOSE}} build
+
   wsl:up:build:
     desc: Build and start the WSL-friendly stack
     cmds:
@@ -99,6 +104,11 @@ tasks:
     desc: Start production stack
     cmds:
       - docker compose -f {{.PROD_COMPOSE}} up -d
+
+  build:
+    desc: Build production images without starting services
+    cmds:
+      - docker compose -f {{.PROD_COMPOSE}} build
 
   up:build:
     desc: Build and start production stack

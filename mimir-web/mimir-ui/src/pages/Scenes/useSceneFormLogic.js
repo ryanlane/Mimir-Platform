@@ -97,14 +97,36 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
     const supportInfo = {}; const requirementsInfo = {}; const subData = {}; const pushCaps = {};
     for (const channel of channels) {
       try {
-        const manifestResp = await api.getChannelManifest(channel.id);
+        const manifestResp = await api.getChannelManifest(channel.id, { forceRefresh: true });
         const manifest = manifestResp.data || {};
+        let liveSubchannels = [];
+        try {
+          const subchannelsResp = await api.getSubChannels(channel.id, { forceRefresh: true });
+          liveSubchannels = Array.isArray(subchannelsResp?.data) ? subchannelsResp.data : [];
+        } catch (subchannelsError) {
+          liveSubchannels = [];
+        }
         const hasGalleries = manifest.galleries && Array.isArray(manifest.galleries) && manifest.galleries.length > 0;
         const hasSubchannels = manifest.subchannels && Array.isArray(manifest.subchannels) && manifest.subchannels.length > 0;
-        const supportsSubchannels = hasGalleries || hasSubchannels;
+        const hasLiveSubchannels = liveSubchannels.length > 0;
+        const supportsSubchannels = Boolean(
+          hasLiveSubchannels ||
+          hasGalleries ||
+          hasSubchannels ||
+          manifest.capabilities?.supports_gallery ||
+          manifest.capabilities?.supports_subchannels ||
+          manifest.supports_subchannels
+        );
         supportInfo[channel.id] = supportsSubchannels;
         requirementsInfo[channel.id] = { requires_subchannel_selection: false };
-        if (hasGalleries) {
+        if (hasLiveSubchannels) {
+          subData[channel.id] = liveSubchannels.map(sc => ({
+            id: sc.id,
+            name: sc.name,
+            image_count: sc.image_count,
+            type: 'subchannel'
+          }));
+        } else if (hasGalleries) {
           subData[channel.id] = manifest.galleries.map(g => ({ id: g.id, name: g.name, image_count: g.image_count, type: 'gallery' }));
         } else if (hasSubchannels) {
           subData[channel.id] = manifest.subchannels.map(sc => ({ id: sc.id, name: sc.name, type: 'subchannel' }));

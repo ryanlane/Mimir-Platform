@@ -311,14 +311,17 @@ const Displays = () => {
     }
   }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter, includeDiscovered, isLoading]);
 
-  const handleConfigureDisplay = useCallback(async (display) => {
+  const handlePairDisplay = useCallback(async (display) => {
     if (!display?.id) return;
     setConfigStatus(prev => ({
       ...prev,
       [display.id]: { loading: true, error: null, success: false }
     }));
     try {
-      await api.bootstrapDisplay(display.id, {});
+      await api.bootstrapDisplay(display.id, {
+        display_name: display.name || undefined,
+        display_location: display.location || undefined,
+      });
       setConfigStatus(prev => ({
         ...prev,
         [display.id]: { loading: false, error: null, success: true }
@@ -333,7 +336,7 @@ const Displays = () => {
         });
       }, 5000);
     } catch (e) {
-      const message = e?.response?.data?.detail || e?.message || 'Configure failed';
+      const message = e?.response?.data?.detail || e?.message || 'Pairing failed';
       setConfigStatus(prev => ({
         ...prev,
         [display.id]: { loading: false, error: message, success: false }
@@ -886,7 +889,7 @@ const Displays = () => {
                   setSelectedDisplay(display);
                   setShowSceneAssignment(true);
                 }}
-                onConfigure={handleConfigureDisplay}
+                onConfigure={handlePairDisplay}
                 configureStatus={configStatus[display.id]}
                 onEdit={(display, action) => {
                   if (action === 'approve' && display.displayType === 'discovered') {

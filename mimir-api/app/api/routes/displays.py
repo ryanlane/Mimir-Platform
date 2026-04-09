@@ -2,16 +2,21 @@
 
 Provides endpoints to query and manage display clients (registered & discovered).
 """
+import base64
+import ipaddress
+import json
+import socket
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 import uuid
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 import httpx
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
-from app.db.models import DisplayClient, DisplaySceneImage
+from app.db.models import ContentLease, DisplayClient, DisplaySceneImage
 from app.schemas.displays import (
     DisplayClientResponse,
     DisplayClientUpdate,
@@ -62,6 +67,22 @@ class MqttBootstrapRequest(BaseModel):
     username: str | None = None
     password: str | None = None
     platform_url: str | None = None
+    display_name: str | None = None
+    display_location: str | None = None
+
+
+class ProvisionRegisterRequest(BaseModel):
+    reg_token: str
+    device_id: str
+    hostname: str
+    capabilities: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
+
+
+class SetupProvisionRequest(BaseModel):
+    setup_url: str
+    display_name: str | None = None
+    display_location: str | None = None
 
 
 def _request_host_if_reachable(request: Request | None) -> str | None:
@@ -157,6 +178,105 @@ async def get_mqtt_config(request: Request):
     return payload  # type: ignore[return-value]
 
 
+_PROVISION_TOKEN_TTL = 600
+_PROVISION_TOKENS: dict[str, float] = {}
+
+
+def _issue_provision_token() -> str:
+    import secrets as _secrets
+
+    reg_token = _secrets.token_hex(24)
+    _PROVISION_TOKENS[reg_token] = time.monotonic() + _PROVISION_TOKEN_TTL
+    return reg_token
+
+
+def _consume_provision_token(reg_token: str) -> bool:
+    expires_at = _PROVISION_TOKENS.pop(reg_token, None)
+    return isinstance(expires_at, float) and expires_at > time.monotonic()
+
+
+def _build_provision_bundle_payload(request: Request | None) -> dict[str, object]:
+    payload = {
+        "v": 1,
+        "platform_url": _platform_url_for_clients(request) or "",
+        "mqtt_host": _mqtt_host_for_clients(request) or "",
+        "mqtt_port": settings.mqtt_public_port or settings.mqtt_broker_port,
+        "reg_token": _issue_provision_token(),
+    }
+    if settings.mqtt_expose_credentials:
+        payload["mqtt_username"] = settings.mqtt_username
+        payload["mqtt_password"] = settings.mqtt_password
+    return payload
+
+
+def _encode_provision_bundle(payload: dict[str, object]) -> str:
+    return base64.b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
+
+
+def _host_resolves_to_private_network(hostname: str) -> bool:
+    try:
+        parsed_ip = ipaddress.ip_address(hostname)
+        return parsed_ip.is_private or parsed_ip.is_link_local
+    except ValueError:
+        pass
+
+    try:
+        resolved = {
+            info[4][0].split("%", 1)[0]
+            for info in socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+        }
+    except OSError:
+        return False
+
+    if not resolved:
+        return False
+
+    try:
+        return all(
+            ipaddress.ip_address(address).is_private or ipaddress.ip_address(address).is_link_local
+            for address in resolved
+        )
+    except ValueError:
+        return False
+
+
+def _normalize_setup_url(raw_url: str) -> str:
+    candidate = (raw_url or "").strip()
+    if not candidate:
+        raise HTTPException(status_code=400, detail="Setup URL is required")
+
+    if "://" not in candidate:
+        candidate = f"http://{candidate}"
+
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=400, detail="Setup URL must use http or https")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Setup URL must include a hostname")
+    if not settings._is_client_reachable_host(parsed.hostname):
+        raise HTTPException(status_code=400, detail="Setup URL must point to a reachable display host")
+    if not _host_resolves_to_private_network(parsed.hostname):
+        raise HTTPException(status_code=400, detail="Setup URL must resolve to a private network address")
+
+    normalized_path = parsed.path or "/setup"
+    if normalized_path == "/":
+        normalized_path = "/setup"
+
+    return parsed._replace(path=normalized_path.rstrip("/") or "/setup", params="", query="", fragment="").geturl()
+
+
+def _provision_url_from_setup_url(setup_url: str) -> str:
+    parsed = urlparse(setup_url)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/setup"):
+        provision_path = f"{path[:-6]}/provision" or "/provision"
+    elif path in {"", "/"}:
+        provision_path = "/provision"
+    else:
+        provision_path = "/provision"
+    return parsed._replace(path=provision_path, params="", query="", fragment="").geturl()
+
+
 def _pick_webhook_address(addresses: list[str]) -> str | None:
     for addr in addresses:
         if ":" not in addr:
@@ -164,9 +284,57 @@ def _pick_webhook_address(addresses: list[str]) -> str | None:
     return addresses[0] if addresses else None
 
 
+@router.get("/provision-bundle")
+async def get_provision_bundle(request: Request):
+    """Generate a one-time provision bundle for QR/manual onboarding."""
+    payload = _build_provision_bundle_payload(request)
+    return {
+        "bundle": _encode_provision_bundle(payload),
+        "payload": payload,
+    }
+
+
+@router.post("/provision-from-setup")
+async def provision_from_setup_url(body: SetupProvisionRequest, request: Request):
+    """Send a one-time provision bundle to a display setup endpoint."""
+    setup_url = _normalize_setup_url(body.setup_url)
+    provision_url = _provision_url_from_setup_url(setup_url)
+    payload = _build_provision_bundle_payload(request)
+    if body.display_name:
+        payload["display_name"] = body.display_name
+    if body.display_location:
+        payload["display_location"] = body.display_location
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            response = await client.post(
+                provision_url,
+                json={"bundle": _encode_provision_bundle(payload)},
+            )
+            if response.status_code >= 300:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Display setup service rejected provisioning ({response.status_code})",
+                )
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Unable to reach display setup service: {exc}",
+        ) from exc
+
+    return {
+        "status": "sent",
+        "setup_url": setup_url,
+        "provision_url": provision_url,
+        "message": "Provisioning sent. The display should finish registering within a few seconds.",
+    }
+
+
 @router.post("/bootstrap/{display_id}")
 async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest, request: Request):
-    """Push broker config to a discovered display webhook."""
+    """Push full onboarding config to a discovered display webhook."""
     display = mdns_discovery_service.get_display_by_id(display_id)
     if not display:
         raise HTTPException(status_code=404, detail="Display not found in discovery cache")
@@ -190,12 +358,19 @@ async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest, 
     platform_url = body.platform_url
     if not platform_url:
         platform_url = _platform_url_for_clients(request)
+    reg_token = _issue_provision_token()
 
     payload: dict[str, object] = {
         "host": host,
         "port": port,
         "platform_url": platform_url,
+        "reg_token": reg_token,
+        "source": "mdns_bootstrap",
     }
+    if body.display_name:
+        payload["display_name"] = body.display_name
+    if body.display_location:
+        payload["display_location"] = body.display_location
     if settings.mqtt_expose_credentials:
         payload["username"] = body.username or settings.mqtt_username
         payload["password"] = body.password or settings.mqtt_password
@@ -215,6 +390,77 @@ async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest, 
         raise HTTPException(status_code=502, detail=f"Webhook error: {e}") from e
 
     return {"status": "sent", "webhook_url": url, "payload": payload}
+
+
+@router.post("/provision-register", response_model=DisplayClientResponse, tags=["pairing"])
+async def provision_register(body: ProvisionRegisterRequest, db: Session = Depends(get_db)):
+    """Register a display after webhook/bootstrap provisioning."""
+    from app.services.mqtt.registration import AutoRegistrationService
+    from datetime import datetime, timezone
+    import secrets
+
+    if not _consume_provision_token(body.reg_token):
+        raise HTTPException(status_code=401, detail="Invalid or expired provision token")
+
+    device_id = body.device_id
+    capabilities = body.capabilities or {}
+    metadata = body.metadata or {}
+    name = metadata.get("name") or body.hostname or device_id
+    location = metadata.get("location") or "Unknown"
+    hostname = body.hostname or device_id
+    resolution = capabilities.get("resolution") or capabilities.get("native_resolution") or [800, 480]
+    orientation = capabilities.get("orientation", "landscape")
+    client_version = metadata.get("client_version", "unknown")
+    tags = metadata.get("tags") or []
+
+    existing = db.query(DisplayClient).filter(DisplayClient.hostname == hostname).first()
+    if existing:
+        existing.name = name
+        existing.location = location
+        existing.is_online = True
+        existing.last_seen = datetime.now(timezone.utc)
+        existing.client_version = client_version
+        existing.orientation = orientation
+        existing.discovery_method = "provision_bundle"
+        db.commit()
+        db.refresh(existing)
+        display = existing
+    else:
+        display = DisplayClient(
+            name=name,
+            description=metadata.get("description", "Registered via provision bundle"),
+            location=location,
+            hostname=hostname,
+            display_type="registered",
+            discovery_method="provision_bundle",
+            is_online=True,
+            last_seen=datetime.now(timezone.utc),
+            client_version=client_version,
+            orientation=orientation,
+            tags=tags,
+        )
+        if isinstance(resolution, (list, tuple)) and len(resolution) >= 2:
+            display.width = int(resolution[0])
+            display.height = int(resolution[1])
+        db.add(display)
+        db.commit()
+        db.refresh(display)
+
+    client_config = _build_client_config(
+        display_name=display.name,
+        display_location=display.location or "",
+    )
+
+    reg_service = AutoRegistrationService()
+    reg_key = secrets.token_hex(16)
+    await reg_service._send_finalize_command(
+        device_id=device_id,
+        display_id=str(display.id),
+        registration_key=reg_key,
+        client_config=client_config,
+    )
+
+    return DisplayClientResponse.model_validate(display)
 
 
 def _parse_resolution(discovered) -> tuple[int, int]:
@@ -825,20 +1071,31 @@ async def update_display_client(
     
     return DisplayClientResponse.model_validate(client)
 
-# Since we have migrated to a more dynamic discovery and registration model,
-# we are deprecating manual deletion of display clients to avoid accidental removals.
+@router.delete("/{display_id}")
+async def delete_display_client(display_id: str, db: Session = Depends(get_db)):
+    """Delete a registered display from the service side.
 
-# @router.delete("/{display_id}")
-# async def delete_display_client(display_id: str, db: Session = Depends(get_db)):
-#     """Delete display client"""
-#     client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-#     if not client:
-#         raise HTTPException(status_code=404, detail="Display client not found")
-    
-#     db.delete(client)
-#     db.commit()
-    
-#     return {"message": "Display client deleted successfully"}
+    This is the service-side reset path for a device that has been wiped or
+    needs to be re-paired. If the device is still discoverable over mDNS after
+    deletion, it will reappear in the UI as an unpaired discovered display.
+    """
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Display client not found")
+
+    deleted_leases = db.query(ContentLease).filter(ContentLease.display_id == display_id).delete(synchronize_session=False)
+    deleted_images = db.query(DisplaySceneImage).filter(DisplaySceneImage.display_id == display_id).delete(synchronize_session=False)
+    db.delete(client)
+    db.commit()
+
+    display_last_image_store.delete(display_id)
+
+    return {
+        "message": "Display client deleted successfully",
+        "display_id": display_id,
+        "deleted_content_leases": deleted_leases,
+        "deleted_image_records": deleted_images,
+    }
 
 
 # @router.put("/{display_id}/scene/{scene_id}")

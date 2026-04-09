@@ -122,6 +122,54 @@ class SceneService:
             "enabled": best_job.enabled,
         }
 
+    def update_scene(self, scene_id: str, scene_data: Dict[str, Any]) -> Optional[Scene]:
+        """Update scene by ID"""
+        scene = self.get_scene_by_id(scene_id)
+        if not scene:
+            return None
+        if "name" in scene_data:
+            scene.name = scene_data["name"]
+        if "channels" in scene_data:
+            scene.channels = scene_data["channels"]
+        if "overlay" in scene_data:
+            scene.overlays = scene_data["overlay"]
+        if "schedule" in scene_data:
+            scene.timing_config = scene_data["schedule"]
+        if "distribution_mode" in scene_data:
+            scene.distribution_mode = scene_data["distribution_mode"]
+        if "is_active" in scene_data:
+            scene.is_active = scene_data["is_active"]
+        if "update_strategy" in scene_data:
+            scene.update_strategy = scene_data["update_strategy"]
+        if "push_fallback_poll_seconds" in scene_data:
+            scene.push_fallback_poll_seconds = scene_data["push_fallback_poll_seconds"]
+        self.db.commit()
+        self.db.refresh(scene)
+        return scene
+
+    def delete_scene(self, scene_id: str) -> bool:
+        """Delete scene by ID"""
+        scene = self.get_scene_by_id(scene_id)
+        if not scene:
+            return False
+        self.db.delete(scene)
+        self.db.commit()
+        return True
+
+    def activate_scene(self, scene_id: str) -> bool:
+        """Activate a scene and deactivate others"""
+        self.db.query(Scene).update({"is_active": False})
+        scene = self.get_scene_by_id(scene_id)
+        if not scene:
+            return False
+        scene.is_active = True
+        self.db.commit()
+        return True
+
+    def get_active_scene(self) -> Optional[Scene]:
+        """Get the currently active scene"""
+        return self.db.query(Scene).filter(Scene.is_active == True).first()  # noqa: E712
+
 
 def _unit_seconds(unit: str) -> int:
     mapping = {
@@ -132,59 +180,3 @@ def _unit_seconds(unit: str) -> int:
         "month": 2592000,  # Approx 30d
     }
     return mapping.get(unit, 60)
-    
-    def update_scene(self, scene_id: str, scene_data: Dict[str, Any]) -> Optional[Scene]:
-        """Update scene by ID"""
-        scene = self.get_scene_by_id(scene_id)
-        if not scene:
-            return None
-        
-        # Update scene attributes
-        if "name" in scene_data:
-            scene.name = scene_data["name"]
-        if "channels" in scene_data:
-            scene.channels = scene_data["channels"]
-        if "overlay" in scene_data:
-            scene.overlays = scene_data["overlay"]  # Map 'overlay' to 'overlays' column
-        if "schedule" in scene_data:
-            scene.timing_config = scene_data["schedule"]  # Map 'schedule' to 'timing_config' column
-        if "distribution_mode" in scene_data:
-            scene.distribution_mode = scene_data["distribution_mode"]  # New field
-        if "is_active" in scene_data:
-            scene.is_active = scene_data["is_active"]
-        if "update_strategy" in scene_data:
-            scene.update_strategy = scene_data["update_strategy"]
-        if "push_fallback_poll_seconds" in scene_data:
-            scene.push_fallback_poll_seconds = scene_data["push_fallback_poll_seconds"]
-        
-        self.db.commit()
-        self.db.refresh(scene)
-        return scene
-    
-    def delete_scene(self, scene_id: str) -> bool:
-        """Delete scene by ID"""
-        scene = self.get_scene_by_id(scene_id)
-        if not scene:
-            return False
-        
-        self.db.delete(scene)
-        self.db.commit()
-        return True
-    
-    def activate_scene(self, scene_id: str) -> bool:
-        """Activate a scene and deactivate others"""
-        # First deactivate all scenes
-        self.db.query(Scene).update({"is_active": False})
-        
-        # Then activate the specified scene
-        scene = self.get_scene_by_id(scene_id)
-        if not scene:
-            return False
-        
-        scene.is_active = True
-        self.db.commit()
-        return True
-    
-    def get_active_scene(self) -> Optional[Scene]:
-        """Get the currently active scene"""
-        return self.db.query(Scene).filter(Scene.is_active == True).first()

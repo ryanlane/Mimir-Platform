@@ -56,6 +56,10 @@ class DisplayLastImageStore:
         with self._lock:
             return self._records.get(device_id)
 
+    def delete(self, device_id: str) -> bool:
+        with self._lock:
+            return self._records.pop(device_id, None) is not None
+
     def all(self) -> Dict[str, DisplayImageRecord]:
         with self._lock:
             return dict(self._records)

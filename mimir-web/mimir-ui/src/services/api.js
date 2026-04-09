@@ -384,6 +384,7 @@ export const api = {
   getDisplayDetails: (displayId) => apiClient.get(`/displays/${displayId}`),
   getDiscoveredDisplayAssignments: (displayId) => apiClient.get(`/displays/${displayId}/scene`),
   getDisplayConnectionConfig: () => apiClient.get('/displays/mqtt/config'),
+  getProvisionBundle: () => apiClient.get('/displays/provision-bundle'),
   assignSceneToDisplay: (displayId, sceneId, subchannelId = null) => {
     const payload = { scene_id: sceneId };
     if (subchannelId) {

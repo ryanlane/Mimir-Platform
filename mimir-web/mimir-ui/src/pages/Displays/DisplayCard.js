@@ -494,9 +494,9 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                     onClick={() => onConfigure && onConfigure(display)}
                     loading={configureLoading}
                     disabled={configureLoading}
-                    title="Re-configure display"
+                    title="Re-pair display"
                   >
-                    Reconfigure
+                    Re-pair
                   </Button>
                 )}
                 
@@ -541,7 +541,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                     loading={configureLoading}
                     disabled={configureLoading}
                   >
-                    Configure
+                    Pair
                   </Button>
                 )}
                 <Button
@@ -563,7 +563,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                 <span style={{ color: '#d9534f' }}>⚠ {configureError}</span>
               )}
               {configureSuccess && !configureError && (
-                <span style={{ color: '#28a745' }}>Configured</span>
+                <span style={{ color: '#28a745' }}>Pairing started</span>
               )}
             </div>
           )}
