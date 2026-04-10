@@ -143,9 +143,10 @@ export const api = {
     return result;
   },
   
-  getChannelManifest: async (channelId) => {
+  getChannelManifest: async (channelId, options = {}) => {
+    const { forceRefresh = false } = options;
     const key = apiCache.generateKey(`/channels/${channelId}/manifest`);
-    const cached = apiCache.get(key);
+    const cached = !forceRefresh ? apiCache.get(key) : null;
     if (cached) {
       console.log(`📋 Cache hit: ${key}`);
       return cached;
@@ -208,9 +209,10 @@ export const api = {
     return result;
   },
 
-  getSubChannels: async (channelId) => {
+  getSubChannels: async (channelId, options = {}) => {
+    const { forceRefresh = false } = options;
     const key = apiCache.generateKey(`/channels/${channelId}/subchannels`);
-    const cached = apiCache.get(key);
+    const cached = !forceRefresh ? apiCache.get(key) : null;
     if (cached) {
       console.log(`📋 Cache hit: ${key}`);
       return cached;
@@ -241,7 +243,8 @@ export const api = {
     // Invalidate related caches
     invalidateCache([
       `/channels/${channelId}/subchannels`,
-      `/channels/${channelId}/subchannels/config`
+      `/channels/${channelId}/subchannels/config`,
+      `/channels/${channelId}/manifest`
     ]);
     return result;
   },
@@ -251,7 +254,8 @@ export const api = {
     // Invalidate related caches
     invalidateCache([
       `/channels/${channelId}/subchannels`,
-      `/channels/${channelId}/subchannels/${subChannelId}`
+      `/channels/${channelId}/subchannels/${subChannelId}`,
+      `/channels/${channelId}/manifest`
     ]);
     return result;
   },
@@ -261,7 +265,8 @@ export const api = {
     // Invalidate related caches
     invalidateCache([
       `/channels/${channelId}/subchannels`,
-      `/channels/${channelId}/subchannels/${subChannelId}`
+      `/channels/${channelId}/subchannels/${subChannelId}`,
+      `/channels/${channelId}/manifest`
     ]);
     return result;
   },
@@ -274,7 +279,8 @@ export const api = {
     // Invalidate sub-channel details cache as content assignment changes
     invalidateCache([
       `/channels/${channelId}/subchannels/${subChannelId}`,
-      `/channels/${channelId}/subchannels`
+      `/channels/${channelId}/subchannels`,
+      `/channels/${channelId}/manifest`
     ]);
     return result;
   },
@@ -384,11 +390,20 @@ export const api = {
   getDisplayDetails: (displayId) => apiClient.get(`/displays/${displayId}`),
   getDiscoveredDisplayAssignments: (displayId) => apiClient.get(`/displays/${displayId}/scene`),
   getDisplayConnectionConfig: () => apiClient.get('/displays/mqtt/config'),
-  getProvisionBundle: () => apiClient.get('/displays/provision-bundle'),
-  assignSceneToDisplay: (displayId, sceneId, subchannelId = null) => {
+    getProvisionBundle: () => apiClient.get('/displays/provision-bundle'),
+    provisionDisplayFromSetupUrl: (setupUrl, displayName, displayLocation) =>
+      apiClient.post('/displays/provision-from-setup', {
+        setup_url: setupUrl,
+        display_name: displayName,
+        display_location: displayLocation,
+      }),
+  assignSceneToDisplay: (displayId, sceneId, subchannelId = null, publicHostHint = null) => {
     const payload = { scene_id: sceneId };
     if (subchannelId) {
       payload.subchannel_id = subchannelId;
+    }
+    if (publicHostHint) {
+      payload.public_host_hint = publicHostHint;
     }
     return apiClient.post(`/displays/${encodeURIComponent(displayId)}/scene`, payload);
   },

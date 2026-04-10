@@ -10,9 +10,11 @@ import PullToRefresh from '../../components/PullToRefresh/PullToRefresh';
 import SceneAssignment from './SceneAssignment';
 import DisplayPairing from '../../components/DisplayPairing/DisplayPairing';
 import DebugPanel from '../../components/DebugPanel/DebugPanel';
+import Modal from '../../components/Modal/Modal';
 import './Displays.css';
 import Header from '../../components/Header/Header';
 import Button from '../../components/Button/Button';
+import { formatOrientationLabel, getOrientationOptionsForDisplay, normalizeOrientationValue } from './orientationOptions';
 
 // Global cache for displays data to prevent excessive API requests
 let displaysCache = null;
@@ -60,6 +62,11 @@ const Displays = () => {
   // UI state
   const [showSceneAssignment, setShowSceneAssignment] = useState(false);
   const [selectedDisplay, setSelectedDisplay] = useState(null);
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
+  const [settingsDisplay, setSettingsDisplay] = useState(null);
+  const [settingsOrientation, setSettingsOrientation] = useState('landscape');
+  const [savingDisplaySettings, setSavingDisplaySettings] = useState(false);
+  const [displaySettingsError, setDisplaySettingsError] = useState(null);
   const [configStatus, setConfigStatus] = useState({});
   const [showPairing, setShowPairing] = useState(false);
   // Pre-fill pairing code from ?pair=ABC123 query param (QR code flow)
@@ -313,6 +320,9 @@ const Displays = () => {
 
   const handlePairDisplay = useCallback(async (display) => {
     if (!display?.id) return;
+    const browserHost = typeof window !== 'undefined' && window.location
+      ? window.location.hostname
+      : '';
     setConfigStatus(prev => ({
       ...prev,
       [display.id]: { loading: true, error: null, success: false }
@@ -321,6 +331,7 @@ const Displays = () => {
       await api.bootstrapDisplay(display.id, {
         display_name: display.name || undefined,
         display_location: display.location || undefined,
+        public_host_hint: browserHost || undefined,
       });
       setConfigStatus(prev => ({
         ...prev,
@@ -604,6 +615,47 @@ const Displays = () => {
       alert('Failed to delete display: ' + error.message);
     }
   };
+
+  const openDisplaySettings = useCallback((display) => {
+    setSettingsDisplay(display);
+    setSettingsOrientation(normalizeOrientationValue(display.orientation));
+    setDisplaySettingsError(null);
+    setShowDisplaySettings(true);
+  }, []);
+
+  const closeDisplaySettings = useCallback(() => {
+    if (savingDisplaySettings) return;
+    setShowDisplaySettings(false);
+    setSettingsDisplay(null);
+    setDisplaySettingsError(null);
+  }, [savingDisplaySettings]);
+
+  const handleSaveDisplaySettings = useCallback(async () => {
+    if (!settingsDisplay) return;
+
+    setSavingDisplaySettings(true);
+    setDisplaySettingsError(null);
+    try {
+      const response = await api.updateDisplay(settingsDisplay.id, {
+        orientation: settingsOrientation,
+      });
+
+      setDisplays((prev) => prev.map((display) => {
+        if (display.id !== settingsDisplay.id) return display;
+        return {
+          ...display,
+          ...response.data,
+        };
+      }));
+
+      closeDisplaySettings();
+      await refreshDisplays();
+    } catch (err) {
+      setDisplaySettingsError(err?.response?.data?.detail || err?.message || 'Failed to update display settings');
+    } finally {
+      setSavingDisplaySettings(false);
+    }
+  }, [closeDisplaySettings, refreshDisplays, settingsDisplay, settingsOrientation]);
 
   // Filter displays based on search and filters
   const filteredDisplays = (Array.isArray(displays) ? displays : []).filter(display => {
@@ -921,6 +973,8 @@ const Displays = () => {
                       resolution: display.resolution || [display.width, display.height],
                       orientation: display.orientation || 'landscape'
                     });
+                  } else if (action === 'settings') {
+                    openDisplaySettings(display);
                   } else if (display.displayType === 'registered') {
                     console.log('Edit registered display:', display);
                   } else {
@@ -959,6 +1013,60 @@ const Displays = () => {
           onSuccess={handleSceneAssigned}
         />
       )}
+
+      <Modal
+        isOpen={showDisplaySettings && !!settingsDisplay}
+        onClose={closeDisplaySettings}
+        title={settingsDisplay ? `Display Settings - ${settingsDisplay.name}` : 'Display Settings'}
+        size="medium"
+      >
+        {settingsDisplay && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ color: 'var(--color-text-secondary)' }}>
+              Change how this display is oriented without editing the hardware `.env` file.
+            </div>
+
+            <div style={{ padding: '0.75rem', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'var(--color-surface-secondary)' }}>
+              <div style={{ fontWeight: 600 }}>{settingsDisplay.name}</div>
+              <div style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
+                Current orientation: {formatOrientationLabel(settingsDisplay.orientation)}
+              </div>
+            </div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <span style={{ fontWeight: 600 }}>Orientation</span>
+              <select
+                className="form-select"
+                value={settingsOrientation}
+                onChange={(e) => setSettingsOrientation(e.target.value)}
+                disabled={savingDisplaySettings}
+                style={{ padding: '0.75rem', borderRadius: '8px' }}
+              >
+                {getOrientationOptionsForDisplay(settingsDisplay).map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+              Landscape upside-down and the two portrait rotations are supported for rectangular displays. Square is only shown for square hardware.
+            </div>
+
+            {displaySettingsError && (
+              <div style={{ color: 'var(--color-error)' }}>{displaySettingsError}</div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <Button variant="secondary" onClick={closeDisplaySettings} disabled={savingDisplaySettings}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleSaveDisplaySettings} loading={savingDisplaySettings}>
+                Save Settings
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
       
   {/* DebugPanel now rendered inside Header via rightSlot */}
     </div>

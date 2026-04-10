@@ -52,6 +52,7 @@ class DisplayClientUpdate(BaseModel):
     name: str | None = None
     location: str | None = None
     description: str | None = None
+    orientation: str | None = None
     hostname: str | None = None
     webhook_port: int | None = Field(None, alias="webhookPort")
     client_version: str | None = Field(None, alias="clientVersion")

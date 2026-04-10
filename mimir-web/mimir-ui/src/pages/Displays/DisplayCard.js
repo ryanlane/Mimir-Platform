@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import Button from '../../components/Button/Button';
 import Icon from '../../components/Icon/Icon';
 import Modal from '../../components/Modal/Modal';
+import { formatOrientationLabel } from './orientationOptions';
 
 const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onConfigure, configureStatus, apiClient = api }) => {
   // const [imageLoading, setImageLoading] = useState(false); // (unused after image section commented out)
@@ -29,6 +30,12 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
 
   const SCHEDULE_CACHE_TTL_MS = 30_000; // 30s
 
+  const appendCacheBuster = (url) => {
+    if (!url) return null;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}ts=${Date.now()}`;
+  };
+
 
   // Fetch persisted last-image (per display+scene) if a scene is assigned
   useEffect(() => {
@@ -42,27 +49,40 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
       return () => { cancelled = true; };
     }
     setPersisted(p => ({ ...p, loading: true, error: null }));
-  apiClient.getPersistedLastImage(display.id, assignedSceneId)
-      .then(resp => {
-        if (cancelled) return;
-        const data = resp?.data || {};
-        setPersisted({
-          loading: false,
-          error: null,
-          thumb: data.thumbnail_url || data.image_url || null,
-          image: data.image_url || null,
-          updated_ts: data.updated_at || data.updated_ts || data.ts || null
-        });
-      })
-      .catch(err => {
-        if (cancelled) return;
-        // 404 simply means no persisted record yet; treat silently
-        if (err?.response?.status === 404) {
-          setPersisted(p => ({ ...p, loading: false }));
-        } else {
+    const displayIdentifiers = [...new Set([
+      display.id,
+      display.hostname,
+      display.device_id,
+      display.deviceId,
+    ].filter(Boolean))];
+
+    const fetchPersisted = async () => {
+      for (const identifier of displayIdentifiers) {
+        try {
+          const resp = await apiClient.getPersistedLastImage(identifier, assignedSceneId);
+          if (cancelled) return;
+          const data = resp?.data || {};
+          setPersisted({
+            loading: false,
+            error: null,
+            thumb: data.thumbnail_url || data.image_url || null,
+            image: data.image_url || null,
+            updated_ts: data.updated_at || data.updated_ts || data.created_at || data.ts || null
+          });
+          return;
+        } catch (err) {
+          if (cancelled) return;
+          if (err?.response?.status !== 404) {
             setPersisted(p => ({ ...p, loading: false, error: err?.message || 'persisted fetch failed' }));
+            return;
+          }
         }
-      });
+      }
+
+      setPersisted(p => ({ ...p, loading: false, thumb: null, image: null }));
+    };
+
+    fetchPersisted();
     return () => { cancelled = true; };
   }, [display.id, display.assigned_scene_id, display.current_image_url, apiClient]);
 
@@ -149,24 +169,34 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
     return () => { cancelled = true; };
   }, [display.assigned_scene_id, apiClient]);
 
+  const assignedSceneId = typeof display.assigned_scene_id === 'object' && display.assigned_scene_id?.id
+    ? display.assigned_scene_id.id
+    : display.assigned_scene_id;
+
+  const publicHostHint = (() => {
+    const host = window.location.hostname;
+    if (!host || host === 'localhost' || host === '127.0.0.1') return null;
+    return host;
+  })();
+
   const canManualUpdate = (() => {
     // Need at least an assigned scene
-    if (!sceneInfo) return false;
+    if (!assignedSceneId) return false;
     // We consider anything NOT explicitly 'realtime' as eligible
-    const notRealtime = sceneInfo.update_strategy !== 'realtime';
+    const notRealtime = sceneInfo ? sceneInfo.update_strategy !== 'realtime' : true;
     // If we have at least one assignment (thus a job_id) we can attempt manual trigger
     const hasAssignment = !!sceneAssignment;
     // If job details exist, ensure it's not disabled; if we don't have details, assume enabled (optimistic)
     const enabled = jobDetails ? jobDetails.enabled !== false : true;
     // Broader schedule detection: any of (scene.schedule present, job freq fields, approx_interval_seconds, or simply an assignment)
-    const hasSchedule = !!sceneInfo.schedule || !!jobDetails?.freq_unit || !!jobDetails?.approx_interval_seconds || hasAssignment;
-    const result = notRealtime && enabled && hasSchedule;
+    const hasSchedule = !!sceneInfo?.schedule || !!jobDetails?.freq_unit || !!jobDetails?.approx_interval_seconds || hasAssignment;
+    const result = enabled && (notRealtime || !hasSchedule);
     if (process.env.NODE_ENV !== 'production') {
       // Helpful debug once per render group (can be noisy; guard on scene id)
       try {
         // eslint-disable-next-line no-console
         console.debug('ManualUpdateCheck', {
-          sceneId: sceneInfo?.id,
+          sceneId: sceneInfo?.id || assignedSceneId,
           update_strategy: sceneInfo?.update_strategy,
           hasAssignment,
           jobEnabled: jobDetails?.enabled,
@@ -181,12 +211,13 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
   })();
 
   const canConfigure = display.displayType === 'discovered' && display.webhook_port;
+  const canEditSettings = Boolean(onEdit);
   const configureLoading = configureStatus?.loading;
   const configureError = configureStatus?.error;
   const configureSuccess = configureStatus?.success;
 
   const handleManualUpdate = async () => {
-    if (!sceneAssignment) return;
+    if (!assignedSceneId) return;
     setManualUpdateLoading(true);
     setManualUpdateError(null);
     setManualUpdateSuccess(false);
@@ -234,9 +265,6 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
       }
 
       // 2) Targeted refresh for just this display
-      const assignedSceneId = typeof display.assigned_scene_id === 'object' && display.assigned_scene_id?.id
-        ? display.assigned_scene_id.id
-        : display.assigned_scene_id;
       const deviceId = display.hostname || display.id;
       if (!assignedSceneId || !deviceId) {
         throw new Error('Missing scene or device for targeted refresh');
@@ -245,6 +273,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
         target_devices: [deviceId],
         reason: 'manual-ui',
         force: false,
+        public_host_hint: publicHostHint,
       });
       setManualUpdateSuccess(true);
       // After triggering the job, attempt a refresh of current image (slight delay may be needed externally)
@@ -258,10 +287,18 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
     }
   };
 
-  const fallbackThumb = display.current_image_url
-    ? `${apiClient.getDisplayImageUrl(display.id)}?thumb=1&ts=${Date.now()}`
-    : null;
+  const liveImageUrl = appendCacheBuster(display.current_image_url || null);
+  const fallbackThumb = liveImageUrl;
   const thumbnailUrl = persisted.thumb || fallbackThumb;
+
+  useEffect(() => {
+    setThumbError(false);
+    setThumbLoading(Boolean(thumbnailUrl));
+  }, [thumbnailUrl]);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [persisted.image, liveImageUrl, display.id]);
 
   // Image action handlers removed (image section currently commented out)
 
@@ -273,21 +310,53 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
       const n = Number(ts);
       return new Date(n < 1e12 ? n * 1000 : n); // seconds -> ms
     }
-    const d = new Date(ts);                     // ISO string, etc.
+    if (typeof ts === 'string') {
+      const trimmed = ts.trim();
+      const looksIsoWithoutZone = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(trimmed);
+      const d = new Date(looksIsoWithoutZone ? `${trimmed}Z` : trimmed);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(ts);                     // Date-like object, etc.
     return isNaN(d.getTime()) ? null : d;
   };
 
   const formatRelative = (ts) => {
     const date = normalizeTs(ts);
     if (!date) return '';
-    const diffMs = Date.now() - date.getTime();
-    const mins = Math.floor(diffMs / 60000);
-    const hours = Math.floor(mins / 60);
-    const days = Math.floor(hours / 24);
-    if (mins < 1)  return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
+    const diffMs = date.getTime() - Date.now();
+    const isFuture = diffMs > 0;
+    const absMs = Math.abs(diffMs);
+    const totalMinutes = Math.round(absMs / 60000);
+    const totalHours = Math.floor(totalMinutes / 60);
+    const totalDays = Math.floor(totalHours / 24);
+
+    if (absMs < 90 * 1000 || (isFuture && absMs < 5 * 60 * 1000)) {
+      return 'just now';
+    }
+
+    const formatUnit = (value, unit) => `${value} ${unit}${value === 1 ? '' : 's'}`;
+
+    if (totalMinutes < 60) {
+      return isFuture
+        ? `in ${formatUnit(totalMinutes, 'minute')}`
+        : `${formatUnit(totalMinutes, 'minute')} ago`;
+    }
+
+    if (totalHours < 24) {
+      const remainingMinutes = totalMinutes % 60;
+      const hourPart = formatUnit(totalHours, 'hour');
+      const minutePart = remainingMinutes ? ` ${formatUnit(remainingMinutes, 'minute')}` : '';
+      return isFuture
+        ? `in ${hourPart}${minutePart}`
+        : `${hourPart}${minutePart} ago`;
+    }
+
+    const remainingHours = totalHours % 24;
+    const dayPart = formatUnit(totalDays, 'day');
+    const hourPart = remainingHours ? ` ${formatUnit(remainingHours, 'hour')}` : '';
+    return isFuture
+      ? `in ${dayPart}${hourPart}`
+      : `${dayPart}${hourPart} ago`;
   };
 
   const getStatusColor = () => {
@@ -303,8 +372,10 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
       setLastImageUpdateTs(persisted.updated_ts);
     } else if (display.last_image_update_ts) {
       setLastImageUpdateTs(display.last_image_update_ts);
+    } else if (display.updated_at) {
+      setLastImageUpdateTs(display.updated_at);
     }
-  }, [persisted.updated_ts, display.last_image_update_ts]);
+  }, [persisted.updated_ts, display.last_image_update_ts, display.updated_at]);
 
   // Ticking re-render to keep relative time fresh without altering timestamp.
   const [timeTick, setTimeTick] = useState(0); // value not used directly, only triggers render
@@ -439,7 +510,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                 : display.width && display.height
                 ? `${display.width}×${display.height}`
                 : 'Unknown resolution'
-              } • {display.orientation || 'landscape'}
+              } • {formatOrientationLabel(display.orientation)}
             </span>
           </div>
 
@@ -452,9 +523,9 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
 
           <div className="detail-item" data-reltime-tick={timeTick}>
             <Calendar size={14} />
-            <span>
+            <span title={lastImageUpdateTs ? normalizeTs(lastImageUpdateTs)?.toLocaleString() || '' : ''}>
               Last updated:{' '}
-              {lastImageUpdateTs ? formatRelative(lastImageUpdateTs) : ''}
+              {lastImageUpdateTs ? formatRelative(lastImageUpdateTs) : 'Unknown'}
             </span>
           </div>
 
@@ -478,6 +549,17 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                 <span>Scene: <strong>{display.assigned_scene_name}</strong></span>
               </div>
               <div className="scene-buttons">
+                {canEditSettings && (
+                  <Button
+                    icon={<RotateCcw size={14} />}
+                    iconSize={14}
+                    variant="ghost"
+                    onClick={() => onEdit && onEdit(display, 'settings')}
+                    title="Display settings"
+                  >
+                    Settings
+                  </Button>
+                )}
                 <Button
                   icon="Edit"
                   iconSize={14}
@@ -510,7 +592,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                     variant={manualUpdateSuccess ? 'success' : 'secondary'}
                     className={manualUpdateSuccess ? 'btn-active' : ''}
                   >
-                    {manualUpdateLoading ? 'Updating...' : (manualUpdateSuccess ? 'Triggered' : 'Update')}
+                    {manualUpdateLoading ? 'Requesting...' : (manualUpdateSuccess ? 'Triggered' : 'Request Image')}
                   </Button>
                 )}
                 {/* {!canManualUpdate && (
@@ -531,6 +613,17 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
             <div className="scene-unassigned">
               <div className="no-scene">No scene assigned</div>
               <div className="scene-buttons">
+                {canEditSettings && (
+                  <Button
+                    icon={<RotateCcw size={14} />}
+                    iconSize={14}
+                    size="md"
+                    variant={canConfigure ? 'secondary' : 'ghost'}
+                    onClick={() => onEdit && onEdit(display, 'settings')}
+                  >
+                    Settings
+                  </Button>
+                )}
                 {canConfigure && (
                   <Button
                     icon={<SettingsIcon size={14} />}
@@ -591,7 +684,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <img
-            src={persisted.image || apiClient.getDisplayImageUrl(display.id)}
+            src={persisted.image || liveImageUrl || ''}
             alt={`Current display for ${display.name}`}
             onError={() => setImageError(true)}
             style={{
@@ -620,7 +713,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
               size="sm"
               onClick={() => {
                 const link = document.createElement('a');
-                link.href = persisted.image || apiClient.getDisplayImageUrl(display.id);
+                link.href = persisted.image || liveImageUrl || '';
                 link.download = `display-${display.name}-current.jpg`;
                 document.body.appendChild(link);
                 link.click();

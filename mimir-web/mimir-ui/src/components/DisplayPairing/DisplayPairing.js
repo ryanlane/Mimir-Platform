@@ -26,7 +26,7 @@ const INTERNAL_HOSTS = new Set([
 const IPV4_HOST_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
 const PAIR_CODE_RE = /^[A-Z2-9]{6}$/;
 
-async function provisionDisplayFromSetupUrl(setupUrl, displayName, displayLocation) {
+async function provisionDisplayFromSetupUrl(setupUrl, displayName, displayLocation, publicHostHint) {
   const response = await fetch(`${api.getApiBaseUrl()}/displays/provision-from-setup`, {
     method: 'POST',
     headers: {
@@ -36,6 +36,7 @@ async function provisionDisplayFromSetupUrl(setupUrl, displayName, displayLocati
       setup_url: setupUrl,
       display_name: displayName,
       display_location: displayLocation,
+      public_host_hint: publicHostHint,
     }),
   });
 
@@ -97,6 +98,19 @@ function isLikelyLanIpv4(value) {
   }
 
   return true;
+}
+
+function isLikelyDockerBridgeHost(value) {
+  if (!value) {
+    return false;
+  }
+
+  const hostname = extractHostname(value);
+  if (!hostname || !IPV4_HOST_RE.test(hostname)) {
+    return false;
+  }
+
+  return /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
 }
 
 function extractPort(value, fallbackPort) {
@@ -425,10 +439,22 @@ const DisplayPairing = ({ onClose, onPaired, initialCode = '' }) => {
     setScanError('');
 
     try {
+      const publicHostHint = browserReachableHost
+        || detectedLanHost
+        || (!isLikelyDockerBridgeHost(backendReachableHost) ? backendReachableHost : '')
+        || '';
+
+      if (!publicHostHint) {
+        setStatus('error');
+        setErrorMsg('Cannot determine the Mimir server LAN address from this browser session. Open Mimir using its LAN IP or set PUBLIC_HOST and MQTT_PUBLIC_HOST.');
+        return;
+      }
+
       const response = await provisionDisplayFromSetupUrl(
         normalizedSetupUrl,
         name || undefined,
         location || undefined,
+        publicHostHint,
       );
       setSetupUrl(response?.data?.setup_url || normalizedSetupUrl);
       setSuccessMsg(

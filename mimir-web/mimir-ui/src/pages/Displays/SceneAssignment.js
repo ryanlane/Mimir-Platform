@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Monitor, Play, CheckCircle, X, ChevronDown } from 'lucide-react';
 import Modal from '../../components/Modal/Modal';
+import { formatOrientationLabel } from './orientationOptions';
 import { api } from '../../services/api';
 import './Displays.css';
 import './SceneAssignment.css';
@@ -17,6 +18,11 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const [error, setError] = useState('');
+  const publicHostHint = (() => {
+    const host = window.location.hostname;
+    if (!host || host === 'localhost' || host === '127.0.0.1') return null;
+    return host;
+  })();
 
   useEffect(() => {
     const loadScenes = async () => {
@@ -57,10 +63,10 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
 
         // Use appropriate assignment endpoint based on display type
         if (display.displayType === 'discovered') {
-          await api.assignSceneToDisplay(display.id, sceneId, subchannelId);
+          await api.assignSceneToDisplay(display.id, sceneId, subchannelId, publicHostHint);
           console.log(`✅ Scene assigned to discovered display: ${sceneId} -> ${display.name}${subchannelId ? ` (subchannel: ${subchannelId})` : ''}`);
         } else {
-          await api.assignSceneToDisplay(display.id, sceneId, subchannelId);
+          await api.assignSceneToDisplay(display.id, sceneId, subchannelId, publicHostHint);
           console.log(`✅ Scene assigned to registered display: ${sceneId} -> ${display.name}${subchannelId ? ` (subchannel: ${subchannelId})` : ''}`);
         }
       } else {
@@ -189,7 +195,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                   )}
                 </div>
                 <div className="display-specs">
-                  {display.resolution[0]}×{display.resolution[1]} • {display.orientation}
+                  {display.resolution[0]}×{display.resolution[1]} • {formatOrientationLabel(display.orientation)}
                   {display.location && ` • ${display.location}`}
                 </div>
               </div>
@@ -338,7 +344,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                     </p>
                     <div className="preview-details">
                       <span>Resolution: {display.resolution[0]}×{display.resolution[1]}</span>
-                      <span>Orientation: {display.orientation}</span>
+                      <span>Orientation: {formatOrientationLabel(display.orientation)}</span>
                     </div>
                   </div>
                 )}

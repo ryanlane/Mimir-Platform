@@ -33,6 +33,19 @@
   width: 100%;
 }
 
+.form-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color-scheme: inherit;
+}
+
+.form-select option,
+.form-select optgroup {
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
+
 .form-input:focus,
 .form-select:focus,
 .form-textarea:focus {

@@ -102,6 +102,7 @@ class SceneRefreshService:
         force: bool = False,
         channel_subset: list[str] | None = None,
         target_devices: list[str] | None = None,
+        public_base_url_override: str | None = None,
     ) -> SceneRefreshResult:
         start = time.perf_counter()
         lock = self._get_lock(scene_id)
@@ -341,6 +342,7 @@ class SceneRefreshService:
                                             display_id=device_id,
                                             image_bytes=raw_bytes,
                                             content_type=content_type,
+                                            public_base_url=public_base_url_override,
                                         )
                                         if not per_display_url:
                                             errors.append(f"swap_save_failed:{device_id}")
@@ -380,6 +382,7 @@ class SceneRefreshService:
                                                         subchannel_id=sc_id,
                                                         assignment_id=assignment_id,
                                                         image_url=per_display_url,
+                                                        local_source_path=str(_path) if _path else None,
                                                         width=w,
                                                         height=h,
                                                         image_format=None,
@@ -491,6 +494,7 @@ class SceneRefreshService:
                                             display_id=device_id,
                                             image_bytes=raw_bytes,
                                             content_type=content_type,
+                                            public_base_url=public_base_url_override,
                                         )
                                         if not per_display_url:
                                             errors.append(f"swap_save_failed:{device_id}")
@@ -530,6 +534,7 @@ class SceneRefreshService:
                                                         subchannel_id=sc_id,
                                                         assignment_id=assignment_id,
                                                         image_url=per_display_url,
+                                                        local_source_path=str(_path) if _path else None,
                                                         width=w,
                                                         height=h,
                                                         image_format=None,
@@ -615,16 +620,26 @@ class SceneRefreshService:
                 discovered = mdns_discovery_service.get_discovered_displays()
                 for d in discovered:
                     if d.assigned_scene_id == scene.id or d.assigned_scene_id == str(scene.id):
-                        w, h = self._parse_resolution_string(d.resolution)
-                        orientation = d.properties.get("orientation", "landscape")
+                        props = getattr(d, "properties", {}) or {}
+                        resolution_value = (
+                            d.resolution
+                            or props.get("resolution")
+                            or props.get("native_resolution")
+                        )
+                        w, h = self._parse_resolution_string(resolution_value)
+                        orientation = props.get("orientation", "landscape")
                         # Ensure we never propagate a single missing dimension – default as a pair
                         if not (w and h and w > 0 and h > 0):
-                            if orientation == "portrait":
-                                w, h = 600, 800
+                            cap_res = props.get("cap.res") or props.get("res")
+                            if isinstance(cap_res, str):
+                                w, h = self._parse_resolution_string(cap_res)
+                        if not (w and h and w > 0 and h > 0):
+                            if "portrait" in orientation:
+                                w, h = 480, 800
                             elif orientation == "square":
                                 w, h = 600, 600
                             else:
-                                w, h = 800, 600
+                                w, h = 800, 480
                         collected[d.display_id] = {
                             "device_id": d.hostname or d.display_id,
                             "width": w,
@@ -644,12 +659,12 @@ class SceneRefreshService:
                 h = display.height or 0
                 orientation = display.orientation or "landscape"
                 if not (w and h and w > 0 and h > 0):
-                    if orientation == "portrait":
-                        w, h = 600, 800
+                    if "portrait" in orientation:
+                        w, h = 480, 800
                     elif orientation == "square":
                         w, h = 600, 600
                     else:
-                        w, h = 800, 600
+                        w, h = 800, 480
                 collected[display.id] = {
                     "device_id": display.hostname or display.id,
                     "width": w,
@@ -661,16 +676,16 @@ class SceneRefreshService:
     @staticmethod
     def _parse_resolution_string(res_str: str | None):  # type: ignore
         if not res_str or "x" not in res_str:
-            return 800, 600
+            return 800, 480
         try:
             w_str, h_str = res_str.lower().split("x", 1)
             w = int(w_str)
             h = int(h_str)
             if w <= 0 or h <= 0:
-                return 800, 600
+                return 800, 480
             return w, h
         except ValueError:
-            return 800, 600
+            return 800, 480
 
     def _convert_image_to_url(self, image_info: dict[str, Any]) -> str | None:
         # Simplified copy of scheduler conversion (future: factor to shared util)

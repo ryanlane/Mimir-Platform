@@ -20,6 +20,8 @@ export const ThemeContext = React.createContext(null);
 function AppContent() {
   const toast = useToast();
   const themeState = useSystemTheme();
+  const poorConnectionToastRef = React.useRef(null);
+  const offlineToastRef = React.useRef(null);
 
   // Provide toast context to the whole app
   React.createContext(toast);
@@ -96,6 +98,47 @@ function AppContent() {
     return () => window.removeEventListener('mimir:sw-skip-waiting', handler);
   }, []);
 
+  const clearPoorConnectionToast = React.useCallback(() => {
+    if (poorConnectionToastRef.current !== null) {
+      toast.removeToast(poorConnectionToastRef.current);
+      poorConnectionToastRef.current = null;
+    }
+  }, [toast]);
+
+  const clearOfflineToast = React.useCallback(() => {
+    if (offlineToastRef.current !== null) {
+      toast.removeToast(offlineToastRef.current);
+      offlineToastRef.current = null;
+    }
+  }, [toast]);
+
+  const handleNetworkStatusChange = React.useCallback((isOnline, quality) => {
+    if (!isOnline) {
+      clearPoorConnectionToast();
+      if (offlineToastRef.current === null) {
+        offlineToastRef.current = toast.error('Connection lost. Some features may not work properly.', {
+          duration: 0,
+          dismissible: false
+        });
+      }
+      return;
+    }
+
+    clearOfflineToast();
+
+    if (quality === 'poor') {
+      if (poorConnectionToastRef.current === null) {
+        poorConnectionToastRef.current = toast.warning('Poor connection detected. Performance may be affected.', {
+          duration: 0,
+          dismissible: false
+        });
+      }
+      return;
+    }
+
+    clearPoorConnectionToast();
+  }, [clearOfflineToast, clearPoorConnectionToast, toast]);
+
   return (
     <ThemeContext.Provider value={themeState}>
       {/* current theme: {theme} */}
@@ -124,13 +167,7 @@ function AppContent() {
       
       {/* Network Status Indicator */}
       <div className="network-status-container">
-        <NetworkStatus onStatusChange={(isOnline, quality) => {
-          if (!isOnline) {
-            toast.error('Connection lost. Some features may not work properly.');
-          } else if (quality === 'poor') {
-            toast.warning('Poor connection detected. Performance may be affected.');
-          }
-        }} />
+        <NetworkStatus onStatusChange={handleNetworkStatusChange} />
       </div>
     </ThemeContext.Provider>
   );

@@ -67,7 +67,14 @@ def ensure_swap_dir(scene_id: str, display_id: str) -> Path:
     return base
 
 
-def save_swap_image(*, scene_id: str, display_id: str, image_bytes: bytes, content_type: Optional[str]) -> Tuple[Optional[Path], Optional[str], int]:
+def save_swap_image(
+    *,
+    scene_id: str,
+    display_id: str,
+    image_bytes: bytes,
+    content_type: Optional[str],
+    public_base_url: Optional[str] = None,
+) -> Tuple[Optional[Path], Optional[str], int]:
     """Write bytes to per-display swap directory.
 
     Args:
@@ -99,7 +106,8 @@ def save_swap_image(*, scene_id: str, display_id: str, image_bytes: bytes, conte
         # Build public URL: /media/<relative-from-media-root>
         media_root = _resolve_media_root()
         rel = path.relative_to(media_root)
-        public_url = f"{settings.public_base_url}/media/{rel.as_posix()}"
+        public_root = (public_base_url or settings.public_base_url).rstrip("/")
+        public_url = f"{public_root}/media/{rel.as_posix()}"
         logger.debug("image.swap.saved scene=%s display=%s bytes=%d path=%s", scene_id, display_id, len(image_bytes), path)
         return path, public_url, len(image_bytes)
     except Exception as e:  # noqa: BLE001

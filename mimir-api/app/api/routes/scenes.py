@@ -4,10 +4,12 @@ FastAPI router for scene-related endpoints
 """
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.core.services.scene_service import SceneService
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient
@@ -17,6 +19,52 @@ from app.services.scene_refresh_service import scene_refresh_service
 
 
 router = APIRouter(prefix="/scenes", tags=["scenes"])
+
+
+def _is_reachable_host(host: str | None) -> bool:
+    return bool(host and settings._is_client_reachable_host(host))
+
+
+def _extract_hostname(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    parsed = urlparse(candidate if "://" in candidate else f"http://{candidate}")
+    return parsed.hostname or None
+
+
+def _normalize_public_host_hint(candidate: str | None) -> str | None:
+    host = _extract_hostname(candidate)
+    return host if _is_reachable_host(host) else None
+
+
+def _request_public_base_url(request: Request | None, public_host_hint: str | None = None) -> str | None:
+    hint_host = _normalize_public_host_hint(public_host_hint)
+    public_port = settings.public_port or settings.api_port
+    if hint_host:
+        suffix = "" if public_port in (None, 80, 443) else f":{public_port}"
+        return f"http://{hint_host}{suffix}"
+
+    if not request:
+        return None
+
+    forwarded_host = (request.headers.get("x-forwarded-host") or "").split(",", 1)[0].strip()
+    host_header = (request.headers.get("host") or "").split(",", 1)[0].strip()
+    authority = forwarded_host or host_header
+    request_host = _extract_hostname(authority) or (request.url.hostname if request.url else None)
+    if not _is_reachable_host(request_host):
+        return None
+
+    forwarded_proto = (request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip()
+    scheme = forwarded_proto or (request.url.scheme if request.url else "http")
+    if authority:
+        return f"{scheme}://{authority}".rstrip("/")
+
+    port = request.url.port if request.url else None
+    suffix = "" if port in (None, 80, 443) else f":{port}"
+    return f"{scheme}://{request_host}{suffix}"
 
 
 @router.get("", response_model=SceneListResponse)
@@ -238,12 +286,18 @@ class SceneRefreshRequest(BaseModel):
         description="Trigger reason label for logging and audit",
         example="manual-ui",
     )
+    public_host_hint: str | None = Field(
+        default=None,
+        description="Optional LAN-reachable host or URL for generated media URLs.",
+        example="192.168.1.28",
+    )
 
 
 @router.post("/{scene_id}/refresh")
 async def refresh_scene_targeted(
     scene_id: str,
     req: SceneRefreshRequest,
+    request: Request,
     scene_service: SceneService = Depends(get_scene_service),
 ):
     """Trigger a scene refresh, optionally targeting specific devices only.
@@ -263,6 +317,7 @@ async def refresh_scene_targeted(
             force=req.force,
             channel_subset=req.channel_subset,
             target_devices=req.target_devices,
+            public_base_url_override=_request_public_base_url(request, req.public_host_hint),
         )
         return result.to_dict()
     except Exception as e:  # pragma: no cover - safety net to return 500s consistently

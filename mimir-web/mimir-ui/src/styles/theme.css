@@ -4,7 +4,7 @@
 :root {
   --font-base: "Lato", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
-  color-scheme: light dark; /* allow UA controls to adapt */
+  color-scheme: light;
 
     /* Text */
   --color-text: #1A1A1A;
@@ -78,6 +78,7 @@ html, body {
 /* ========= OS dark-mode defaults ========= */
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
     --color-text: #FFFFFFD0;
     --color-text-secondary: #FFFFFFA0;
     --color-text-tertiary: #ffffff84;
@@ -113,6 +114,7 @@ html, body {
 /* ========= Explicit theme overrides (win over OS setting) ========= */
 /* Place AFTER the media block so explicit choice wins */
 :root[data-theme='light'] {
+  color-scheme: light;
   /* Text */
   --color-text: #1A1A1A;
   --color-text-secondary: #3D4A44;
@@ -150,6 +152,7 @@ html, body {
 }
 
 :root[data-theme='dark'] {
+  color-scheme: dark;
   /* Text */
   --color-text: #EAF4F6;             /* primary readable text, soft white-blue */
   --color-text-secondary: #B7C9C6;   /* muted secondary text */

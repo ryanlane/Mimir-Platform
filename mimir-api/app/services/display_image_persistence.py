@@ -85,6 +85,7 @@ class DisplayImagePersistenceService:
         subchannel_id: Optional[str],
         assignment_id: str,
         image_url: str,
+        local_source_path: Optional[str] = None,
         width: Optional[int] = None,
         height: Optional[int] = None,
         image_format: Optional[str] = None,
@@ -108,15 +109,64 @@ class DisplayImagePersistenceService:
         local_path: Optional[Path] = None
         thumb_path: Optional[Path] = None
         sha256_hash: Optional[str] = None
+        source_path = Path(local_source_path).resolve() if local_source_path else None
 
         try:
+            # Prefer an already-written local file to avoid blocking the API on a self-HTTP fetch.
+            if source_path and source_path.exists():
+                binary = source_path.read_bytes()
+                sha256_hash = hashlib.sha256(binary).hexdigest()
+
+                if dedupe_by_hash:
+                    existing = (
+                        self.db.query(DisplaySceneImage)
+                        .filter(
+                            DisplaySceneImage.display_id == display_id,
+                            DisplaySceneImage.scene_id == scene_id,
+                            DisplaySceneImage.subchannel_id == subchannel_id,
+                            DisplaySceneImage.hash == sha256_hash,
+                        )
+                        .order_by(DisplaySceneImage.created_at.desc())
+                        .first()
+                    )
+                    if existing and not retain_history:
+                        logger.debug("persist.image dedupe hit existing id=%s", existing.id)
+                        return existing
+
+                rel_dir = Path(scene_id) / display_id
+                abs_dir = self.media_root / rel_dir
+                abs_dir.mkdir(parents=True, exist_ok=True)
+                ext = source_path.suffix or ".jpg"
+                filename = f"{uuid.uuid4().hex}{ext}"
+                local_path = abs_dir / filename
+                with open(local_path, "wb") as f:
+                    f.write(binary)
+
+                if width is None or height is None or image_format is None:
+                    try:
+                        with Image.open(io.BytesIO(binary)) as im:
+                            width = width or im.width
+                            height = height or im.height
+                            image_format = image_format or (im.format.lower() if im.format else None)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                try:
+                    with Image.open(io.BytesIO(binary)) as im:
+                        im.thumbnail((self.thumb_max_width, self.thumb_max_height))
+                        thumb_filename = f"{local_path.stem}.thumb.jpg"
+                        thumb_path = local_path.parent / thumb_filename
+                        im.convert("RGB").save(thumb_path, "JPEG", quality=75, optimize=True)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("persist.image thumb generation failed: %s", e)
+
             # Decide whether to download: if URL already points to our public base, we might skip
             public_base = getattr(settings, "public_base_url", "")
             needs_download = True
             if public_base and image_url.startswith(public_base):
                 needs_download = False
 
-            if needs_download and not self.read_only_mode:
+            if binary is None and needs_download and not self.read_only_mode:
                 resp = requests.get(image_url, timeout=15)
                 resp.raise_for_status()
                 binary = resp.content
@@ -168,7 +218,7 @@ class DisplayImagePersistenceService:
                         im.convert("RGB").save(thumb_path, "JPEG", quality=75, optimize=True)
                 except Exception as e:  # noqa: BLE001
                     logger.debug("persist.image thumb generation failed: %s", e)
-            elif needs_download and self.read_only_mode:
+            elif binary is None and needs_download and self.read_only_mode:
                 # We are in metadata-only mode: skip downloading to disk, but optionally hash
                 try:
                     resp = requests.get(image_url, timeout=10)
@@ -177,7 +227,7 @@ class DisplayImagePersistenceService:
                     sha256_hash = hashlib.sha256(binary).hexdigest()
                 except Exception:  # noqa: BLE001
                     pass  # Non-fatal; continue storing reference
-            else:
+            elif binary is None:
                 # We trust provided image_url; not downloading
                 logger.debug("persist.image skipping download (public base match)")
 
