@@ -2,13 +2,41 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.db.models import DisplaySceneImage
+from app.db.models import DisplayClient, DisplaySceneImage
 from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.services.display_last_image import display_last_image_store
 from ._helpers import get_db, _build_thumbnail_url
 
 
 router = APIRouter()
+
+
+def _display_lookup_ids(db: Session, display_id: str) -> list[str]:
+    lookup_ids: list[str] = []
+    for candidate in (display_id,):
+        if candidate and candidate not in lookup_ids:
+            lookup_ids.append(candidate)
+
+    client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
+    if client:
+        for candidate in (client.hostname, client.name):
+            if candidate and candidate not in lookup_ids:
+                lookup_ids.append(candidate)
+
+    return lookup_ids
+
+
+def _get_persisted_image_record(
+    svc: DisplayImagePersistenceService,
+    lookup_ids: list[str],
+    scene_id: str,
+    subchannel_id: str | None,
+):
+    for candidate in lookup_ids:
+        rec = svc.get_last_for_display_scene(candidate, scene_id, subchannel_id)
+        if rec:
+            return rec
+    return None
 
 
 @router.get("/{device_id}/last-image", response_model=dict)
@@ -32,7 +60,7 @@ async def get_persisted_last_image(
     Falls back to 404 if no record.
     """
     svc = DisplayImagePersistenceService(db)
-    rec = svc.get_last_for_display_scene(display_id, scene_id, subchannel_id)
+    rec = _get_persisted_image_record(svc, _display_lookup_ids(db, display_id), scene_id, subchannel_id)
     if not rec:
         raise HTTPException(status_code=404, detail="No persisted image for display/scene")
     return {
@@ -58,9 +86,10 @@ async def get_last_images_all_scenes(
     db: Session = Depends(get_db)
 ):
     """Return latest image records per scene for a display (optionally small history per scene)."""
+    lookup_ids = _display_lookup_ids(db, display_id)
     rows = (
         db.query(DisplaySceneImage)
-        .filter(DisplaySceneImage.display_id == display_id)
+        .filter(DisplaySceneImage.display_id.in_(lookup_ids))
         .order_by(DisplaySceneImage.created_at.desc())
         .all()
     )

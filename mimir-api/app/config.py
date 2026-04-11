@@ -367,10 +367,9 @@ class Settings(BaseSettings):
         Resolution strategy (first successful wins):
         1. Explicit public_host (env override)
         2. Explicit public_mdns_host (for example: mimir.local)
-        3. mqtt_broker_host (often already a LAN-resolvable hostname)
+        3. Primary outbound IPv4 (UDP connect probe)
         4. Local system hostname (socket.gethostname())
         5. hostname + ".local" (for mDNS-capable environments)
-        6. Primary outbound IPv4 (UDP connect probe)
         7. Fallback 127.0.0.1 (last resort)
 
         Ports: omit when standard (80 http / 443 https). This avoids confusing some
@@ -383,9 +382,9 @@ class Settings(BaseSettings):
         candidates: list[str | None] = [
             self.public_host,
             self.public_mdns_host,
+            self._discover_primary_ipv4(),
             hostname,
             f"{hostname}.local",
-            self._discover_primary_ipv4(),
         ]
 
         seen = set()

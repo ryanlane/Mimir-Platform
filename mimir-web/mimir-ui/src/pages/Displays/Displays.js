@@ -383,12 +383,19 @@ const Displays = () => {
     const STATUS_TOPIC_REGEX = /^mimir\/(.+?)\/status$/;
     const EVENT_TOPIC_REGEX = /^mimir\/(.+?)\/evt$/;
 
+    const matchesDisplayIdentifier = (display, deviceId) => (
+      display.id === deviceId ||
+      display.device_id === deviceId ||
+      display.deviceId === deviceId ||
+      display.hostname === deviceId
+    );
+
     const mergeDisplayUpdate = (deviceId, partial) => {
       setDisplays(prev => {
         let found = false;
         let changed = false;
         const updated = prev.map(d => {
-          const idMatch = d.id === deviceId || d.device_id === deviceId;
+          const idMatch = matchesDisplayIdentifier(d, deviceId);
           if (!idMatch) return d;
           found = true;
           // Determine if any field in partial differs
@@ -437,7 +444,11 @@ const Displays = () => {
             return;
           case 'display_image_updated':
             console.log('🖼️ (legacy) Display image updated:', payload);
-            setDisplays(prev => prev.map(display => display.id === payload.displayId ? (display.current_image_url === payload.imageUrl ? display : { ...display, current_image_url: payload.imageUrl, last_image_update_ts: new Date().toISOString() }) : display));
+            setDisplays(prev => prev.map(display => matchesDisplayIdentifier(display, payload.displayId)
+              ? (display.current_image_url === payload.imageUrl
+                ? { ...display, last_image_update_ts: new Date().toISOString() }
+                : { ...display, current_image_url: payload.imageUrl, last_image_update_ts: new Date().toISOString() })
+              : display));
             triggerImageActivity(); // legacy event still counts
             return;
           case 'mqtt_message': {
@@ -453,7 +464,7 @@ const Displays = () => {
                 : new Date().toISOString();
 
               setDisplays(prev => prev.map(d => {
-                if (d.id !== deviceId && d.device_id !== deviceId) return d;
+                if (!matchesDisplayIdentifier(d, deviceId)) return d;
 
                 // If your backend reuses the same URL for new content,
                 // you STILL want to bump the "last updated" time:

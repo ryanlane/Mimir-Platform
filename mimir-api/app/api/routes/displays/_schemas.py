@@ -50,6 +50,7 @@ class ProvisionRegisterRequest(BaseModel):
 
 
 class SetupProvisionRequest(BaseModel):
+    setup_url: str
     display_name: str | None = None
     display_location: str | None = None
     public_host_hint: str | None = None
