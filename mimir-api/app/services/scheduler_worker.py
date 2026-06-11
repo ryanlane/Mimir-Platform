@@ -618,9 +618,9 @@ class SchedulerWorker:
             base_payload["gallery_id"] = subchannel_id
             base_payload.setdefault("settings", {})["subChannelId"] = subchannel_id
 
-        base = getattr(settings, "public_base_url", "").rstrip("/")
-        if not base:
-            raise ChannelRequestError("public_base_url not configured")
+        # Self-call: loopback/internal base URL, not public_base_url (hairpin
+        # through the LAN address times out inside bridge-networked containers).
+        base = settings.internal_api_base_url
         url = f"{base}/api/channels/{channel_id}/request-image"
         data = _json.dumps(base_payload).encode("utf-8")
         req = _urlreq.Request(url, data=data, headers={

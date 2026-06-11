@@ -130,7 +130,10 @@ services:
         echo "--- Running database migrations ---"
         alembic upgrade head
         echo "--- Migrations complete, starting API ---"
-        exec uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
+        # --reload-dir limits the watcher to source code; without it, channel
+        # render output / dev-link state written under /app/channels causes a
+        # constant reload loop that kills in-flight requests.
+        exec uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload --reload-dir /app/app
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5000/api/health"]
       interval: 10s

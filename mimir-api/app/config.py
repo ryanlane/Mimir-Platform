@@ -117,6 +117,22 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("PUBLIC_PORT", "API_PUBLIC_PORT", "EXTERNAL_PORT"),
     )
+    internal_base_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("INTERNAL_BASE_URL", "CHANNEL_REQUEST_BASE_URL"),
+        description=(
+            "Base URL the API uses to call itself (e.g. channel /request-image). "
+            "Defaults to http://127.0.0.1:<api_port>. Never use the public URL here: "
+            "hairpinning through the LAN address fails from inside containers."
+        ),
+    )
+
+    @property
+    def internal_api_base_url(self) -> str:
+        """Base URL for API self-calls (loopback by default)."""
+        if self.internal_base_url:
+            return self.internal_base_url.rstrip("/")
+        return f"http://127.0.0.1:{self.api_port}"
 
     # --- Security / CORS ---
     secret_key: str = Field("change-me", validation_alias=AliasChoices("SECRET_KEY","JWT_SECRET","APP_SECRET"))

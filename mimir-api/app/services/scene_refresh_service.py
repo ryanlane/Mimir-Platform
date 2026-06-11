@@ -731,9 +731,10 @@ class SceneRefreshService:
     # --- HTTP fetch helper ---
     def _request_channel_image_http_blocking(self, channel_id: str, payload: dict[str, Any]) -> tuple[bytes, str | None, str | None]:
         """Blocking variant: POST to the channel's /request-image endpoint and return raw bytes, content-type, and fingerprint."""
-        base = getattr(settings, "public_base_url", "").rstrip("/")
-        if not base:
-            raise RuntimeError("public_base_url is not configured; cannot call channel endpoint")
+        # Self-call: use the loopback/internal base URL, NOT public_base_url —
+        # hairpinning through the public LAN address times out from inside
+        # bridge-networked containers (15s per channel request).
+        base = settings.internal_api_base_url
         url = f"{base}/api/channels/{channel_id}/request-image"
         data = _json.dumps(payload).encode("utf-8")
         req = _urlreq.Request(url, data=data, headers={
