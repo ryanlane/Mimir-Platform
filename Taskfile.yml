@@ -112,6 +112,13 @@ tasks:
 
   up:build:
     desc: Build and start production stack
+    preconditions:
+      - sh: test -f mosquitto/passwd
+        msg: |-
+          mosquitto/passwd is missing — the production broker requires auth.
+          On a production server: bash scripts/phase0_harden.sh
+          For local/WSL development use:  task wsl:up:build
+          (If mosquitto/passwd exists as a DIRECTORY, a previous run created it: sudo rm -rf mosquitto/passwd)
     cmds:
       - docker compose -f {{.PROD_COMPOSE}} up -d --build
 
@@ -221,6 +228,15 @@ tasks:
     desc: Install npm dependencies for the web UI
     dir: "{{.UI_DIR}}"
     cmds:
+      # If the Docker dev stack ran before any host-side install, the daemon
+      # created node_modules as a root-owned volume mountpoint — npm would
+      # fail with a cryptic EACCES. Fail early with the fix instead.
+      - |
+        if [ -d node_modules ] && [ ! -w node_modules ]; then
+          echo "ERROR: node_modules is not writable (created root-owned by the Docker dev stack)."
+          echo "Fix:   sudo rm -rf {{.UI_DIR}}/node_modules && task ui:install"
+          exit 1
+        fi
       - npm ci
 
   ui:dev:

@@ -235,6 +235,28 @@ class Settings(BaseSettings):
     )
     mqtt_client_id_prefix: str = Field("mimir", validation_alias=AliasChoices("MQTT_CLIENT_ID_PREFIX",))
 
+    @field_validator(
+        "public_host",
+        "public_mdns_host",
+        "public_port",
+        "mqtt_public_host",
+        "mqtt_public_port",
+        "mqtt_username",
+        "mqtt_password",
+        mode="before",
+    )
+    @classmethod
+    def _blank_env_to_none(cls, value):
+        """Treat blank env values as unset.
+
+        Env templates ship optional vars as e.g. ``MQTT_PUBLIC_PORT=`` and
+        docker compose passes the empty string through; without this,
+        ``int | None`` fields fail validation on ``""``.
+        """
+        if isinstance(value, str) and value.strip() == "":
+            return None
+        return value
+
     @staticmethod
     def _normalize_optional_host(value: str | None) -> str | None:
         if value is None:
