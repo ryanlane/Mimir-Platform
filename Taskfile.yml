@@ -291,12 +291,13 @@ tasks:
   mqtt:sub:
     desc: Subscribe to all Mimir MQTT topics (requires mosquitto-clients)
     cmds:
-      - mosquitto_sub -h localhost -p 1883 -t 'mimir/#' -v
+      # Uses the anonymous localhost-only listener (1883 requires auth)
+      - mosquitto_sub -h localhost -p 1884 -t 'mimir/#' -v
 
   mqtt:pub:
     desc: "Publish a test MQTT message (usage: task mqtt:pub -- topic payload)"
     cmds:
-      - mosquitto_pub -h localhost -p 1883 -t {{.CLI_ARGS}}
+      - mosquitto_pub -h localhost -p 1884 -t {{.CLI_ARGS}}
 
   # ============================================================================
   # HEALTH  — quick sanity checks
