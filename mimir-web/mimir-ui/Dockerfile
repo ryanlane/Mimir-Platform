@@ -1,5 +1,9 @@
 # Build React app
-FROM node:20-alpine AS build
+# --platform=$BUILDPLATFORM: run the node build stage natively on the build
+# host even when targeting arm64 — the build output is static files, so it's
+# architecture-independent. Without this, the arm64 image build runs webpack
+# under QEMU emulation (~10x slower).
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
