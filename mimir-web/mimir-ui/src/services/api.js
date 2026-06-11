@@ -96,6 +96,27 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// Rewrite server-media URLs to the origin this browser actually uses for the
+// API. The backend builds absolute media URLs from its public LAN identity
+// (e.g. http://192.168.1.28:5000/media/...), which devices on the LAN can
+// reach but the browser sometimes cannot (e.g. Windows can't loop back to its
+// own LAN IP for a WSL/Docker-published port). Only known server-media paths
+// are rewritten; external URLs pass through untouched.
+const MEDIA_PATH_RE = /^\/(media|channels|uploads)(\/|$)/i;
+export function normalizeMediaUrl(url) {
+  if (!url) return url;
+  try {
+    const apiOrigin = new URL(getApiBaseUrl(), window.location.origin).origin;
+    const u = new URL(url, apiOrigin);
+    if (u.origin !== apiOrigin && MEDIA_PATH_RE.test(u.pathname)) {
+      return `${apiOrigin}${u.pathname}${u.search}`;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
 // API service methods
 export const api = {
   // Scenes

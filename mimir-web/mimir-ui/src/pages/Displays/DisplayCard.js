@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import './DisplayCard.css';
 import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe, Settings as SettingsIcon } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, normalizeMediaUrl } from '../../services/api';
 import Button from '../../components/Button/Button';
 import Icon from '../../components/Icon/Icon';
 import Modal from '../../components/Modal/Modal';
@@ -65,8 +65,8 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
           setPersisted({
             loading: false,
             error: null,
-            thumb: data.thumbnail_url || data.image_url || null,
-            image: data.image_url || null,
+            thumb: normalizeMediaUrl(data.thumbnail_url || data.image_url || null),
+            image: normalizeMediaUrl(data.image_url || null),
             updated_ts: data.updated_at || data.updated_ts || data.created_at || data.ts || null
           });
           return;
@@ -287,7 +287,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
     }
   };
 
-  const liveImageUrl = appendCacheBuster(display.current_image_url || null);
+  const liveImageUrl = appendCacheBuster(normalizeMediaUrl(display.current_image_url || null));
   const fallbackThumb = liveImageUrl;
   const thumbnailUrl = persisted.thumb || fallbackThumb;
 
