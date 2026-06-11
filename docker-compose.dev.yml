@@ -107,8 +107,12 @@ services:
       - ./data/uploads:/var/opt/mimir/mimir-api/uploads
       # CHANNELS_DIR is configured to /var/opt/mimir/mimir-api/channels in mimir-api.docker.env
       - ./mimir-api/channels:/var/opt/mimir/mimir-api/channels
-      # Dev channel linking: mount repo plugins into the API container
-      - ../plugins:/plugins
+      # Dev channel linking: mount sibling channel-plugin repos into the API
+      # container. Container paths keep the /plugins/<repo-name> convention so
+      # existing dev-link entries (e.g. /plugins/image-frame-channel-mimir/...)
+      # keep working after the workspace flatten.
+      - ../mimir-channel-photoframe:/plugins/image-frame-channel-mimir
+      - ../mimir-channel-spotify:/plugins/spotify-status
     depends_on:
       db:
         condition: service_healthy

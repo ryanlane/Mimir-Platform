@@ -261,7 +261,7 @@ tasks:
         TARGET={{.CLI_ARGS}}
         if [ -z "$TARGET" ]; then echo "Usage: task display:deploy -- user@host"; exit 1; fi
         rsync -az --exclude .venv --exclude __pycache__ --exclude .git \
-          ../clients/mimir-display/ ${TARGET}:/opt/mimir-display/
+          ../mimir-display/ ${TARGET}:/opt/mimir-display/
         ssh ${TARGET} "cd /opt/mimir-display && sudo bash scripts/update_display.sh"
 
   display:ssh:
