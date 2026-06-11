@@ -19,11 +19,12 @@ jest.mock('../../../services/api', () => ({
 }));
 
 function TestHarness({ scene, channels }) {
-  const { formData, pushSelectable } = useSceneFormLogic({ scene, channels, onClose: () => {} });
+  const { formData, pushSelectable, save } = useSceneFormLogic({ scene, channels, onClose: () => {} });
   return (
     <div>
       <span data-testid="strategy">{formData.update_strategy}</span>
       <span data-testid="pushSelectable">{pushSelectable ? 'yes' : 'no'}</span>
+      <button data-testid="save" onClick={() => save()}>save</button>
     </div>
   );
 }
@@ -54,6 +55,26 @@ describe('useSceneFormLogic', () => {
     await waitFor(() => {
       expect(api.getChannelManifest).toHaveBeenCalledWith('photo', { forceRefresh: true });
       expect(api.getSubChannels).toHaveBeenCalledWith('photo', { forceRefresh: true });
+    });
+  });
+
+  it('creates a scheduler job when saving a new scheduler scene without an existing schedule', async () => {
+    api.createScene.mockResolvedValueOnce({ data: { id: 'scene-123', name: 'Test Scene' } });
+    api.createSchedulerJob.mockResolvedValueOnce({ data: { id: 'job-123', freq_unit: 'hour', freq_value: 1, enabled: true } });
+
+    render(<TestHarness scene={null} channels={[{ id: 'photo', name: 'Photo' }]} />);
+
+    screen.getByTestId('save').click();
+
+    await waitFor(() => {
+      expect(api.createScene).toHaveBeenCalled();
+      expect(api.createSchedulerJob).toHaveBeenCalledWith(expect.objectContaining({
+        scene_ids: ['scene-123'],
+        action_type: 'refresh_scene',
+        refresh_method: 'content_refresh',
+        freq_unit: 'hour',
+        freq_value: 1,
+      }));
     });
   });
 });

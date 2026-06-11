@@ -197,7 +197,7 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
     if (!scene?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
     try {
       setScheduleLoading(true);
-      const jobData = {
+      const resp = await api.createSchedulerJob({
         name: `Auto-refresh ${formData.name || scene.name}`,
         description: `Automatically refresh scene every ${scheduleData.freq_value} ${scheduleData.freq_unit}(s)`,
         enabled: scheduleData.enabled,
@@ -206,9 +206,9 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
         action_type: 'refresh_scene',
         scene_ids: [scene.id],
         refresh_method: 'content_refresh'
-      };
-      const resp = await api.createSchedulerJob(jobData);
+      });
       setCurrentSchedule(resp.data);
+      setScheduleModified(false);
     } finally { setScheduleLoading(false); }
   };
 
@@ -270,7 +270,52 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
   const currentErrs = runValidation();
   if (currentErrs.length) { setValidationErrors(currentErrs); setLoading(false); return; }
   const payload = buildPayload(formData);
-  if (scene) await api.updateScene(scene.id, payload); else await api.createScene(payload);
+  const sceneResp = scene
+    ? await api.updateScene(scene.id, payload)
+    : await api.createScene(payload);
+  const savedSceneId = scene?.id || sceneResp?.data?.id;
+  const savedSceneName = formData.name || scene?.name || sceneResp?.data?.name || 'Scene';
+
+  if (savedSceneId) {
+    if (formData.update_strategy === 'scheduler') {
+      if (currentSchedule) {
+        const needsScheduleUpdate = scheduleModified
+          || currentSchedule.enabled !== scheduleData.enabled
+          || currentSchedule.freq_unit !== scheduleData.freq_unit
+          || Number(currentSchedule.freq_value) !== Number(scheduleData.freq_value);
+
+        if (needsScheduleUpdate) {
+          const scheduleResp = await api.updateSchedulerJob(currentSchedule.id, {
+            freq_unit: scheduleData.freq_unit,
+            freq_value: parseInt(scheduleData.freq_value),
+            enabled: scheduleData.enabled,
+            name: `Auto-refresh ${savedSceneName}`,
+            description: `Automatically refresh scene every ${scheduleData.freq_value} ${scheduleData.freq_unit}(s)`
+          });
+          setCurrentSchedule(scheduleResp.data);
+        }
+        setScheduleModified(false);
+      } else {
+        const scheduleResp = await api.createSchedulerJob({
+          name: `Auto-refresh ${savedSceneName}`,
+          description: `Automatically refresh scene every ${scheduleData.freq_value} ${scheduleData.freq_unit}(s)`,
+          enabled: scheduleData.enabled,
+          freq_unit: scheduleData.freq_unit,
+          freq_value: parseInt(scheduleData.freq_value),
+          action_type: 'refresh_scene',
+          scene_ids: [savedSceneId],
+          refresh_method: 'content_refresh'
+        });
+        setCurrentSchedule(scheduleResp.data);
+        setScheduleModified(false);
+      }
+    } else if (currentSchedule) {
+      await api.deleteSchedulerJob(currentSchedule.id);
+      setCurrentSchedule(null);
+      setScheduleModified(false);
+    }
+  }
+
       onClose && onClose();
     } catch (error) {
       if (error.response?.data?.detail) {

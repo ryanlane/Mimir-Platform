@@ -54,6 +54,7 @@ class MqttSceneAssignmentService:
         self.is_running = False
         self._queue: asyncio.Queue = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
+        self._connected_evt = asyncio.Event()
 
         # Deduplication cache (mirrors publisher behavior for this path)
         self._dedup_enabled: bool = bool(getattr(settings, "mqtt_dedup_enabled", True))
@@ -135,6 +136,7 @@ class MqttSceneAssignmentService:
                 ) as client:
                     self.client = client
                     logger.info("MQTT scene assignment service connected - listening for device events")
+                    self._connected_evt.set()
                     self._pub._connected_evt.set()  # Mark as connected
 
                     # Subscribe to scene assignment acknowledgments and events
@@ -150,6 +152,7 @@ class MqttSceneAssignmentService:
                 logger.error(f"Unexpected error in MQTT scene assignment loop: {e}")
             finally:
                 self.client = None
+                self._connected_evt.clear()
                 self._pub._connected_evt.clear()  # Mark as disconnected
 
             # Wait before reconnecting
@@ -201,6 +204,12 @@ class MqttSceneAssignmentService:
         """Worker task to process queued MQTT messages"""
         while self.is_running:
             try:
+                if not self.client:
+                    try:
+                        await asyncio.wait_for(self._connected_evt.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
+
                 # Wait for messages in the queue
                 topic, data, qos, retain = await asyncio.wait_for(
                     self._queue.get(), timeout=1.0
@@ -210,6 +219,9 @@ class MqttSceneAssignmentService:
                 if self.client and self.is_running:
                     await self.client.publish(topic, data, qos=qos, retain=retain)
                     logger.debug(f"Published MQTT message to {topic}")
+                else:
+                    await self._queue.put((topic, data, qos, retain))
+                    await asyncio.sleep(0.25)
                     
             except asyncio.TimeoutError:
                 # Timeout is expected - keeps the loop responsive
