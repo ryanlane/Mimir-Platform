@@ -4,6 +4,7 @@ Provides FastAPI dependencies for services and infrastructure components
 """
 from fastapi import Depends
 from sqlalchemy.orm import Session
+
 from app.infrastructure.database.connection import get_db
 
 

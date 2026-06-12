@@ -16,10 +16,10 @@ are mounted at /api/channels/{channel_id}/* by the plugin discovery service.
 """
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from app.services.deps import get_plugin_discovery_service
-from app.services.plugin_discovery import PluginDiscoveryService
 from app.core.logging import get_logger
 from app.services.channel_image_store import channel_image_store
+from app.services.deps import get_plugin_discovery_service
+from app.services.plugin_discovery import PluginDiscoveryService
 
 logger = get_logger("app.api.channels")
 router = APIRouter(prefix="/channels", tags=["channels"])
@@ -30,8 +30,9 @@ async def list_channels(
     plugin_discovery: PluginDiscoveryService = Depends(get_plugin_discovery_service)
 ):
     """List all available channel plugins"""
-    from app.services.plugin_manager import plugin_manager_service
     import json as _json
+
+    from app.services.plugin_manager import plugin_manager_service
 
     plugins = plugin_discovery.get_all_plugins()
     disabled_ids = set(plugin_manager_service.get_disabled_plugins())
@@ -42,7 +43,7 @@ async def list_channels(
         # Read version from manifest config on disk
         version = None
         try:
-            with open(plugin.config_path, "r", encoding="utf-8") as _f:
+            with open(plugin.config_path, encoding="utf-8") as _f:
                 _cfg = _json.load(_f)
             version = _cfg.get("version")
         except Exception:
@@ -77,7 +78,7 @@ async def get_channel_manifest(
     manifest = await plugin_discovery.get_plugin_manifest(channel_id)
     if not manifest:
         raise HTTPException(status_code=404, detail="Channel not found or unavailable")
-    
+
     return manifest
 
 
@@ -90,10 +91,10 @@ async def get_channel_health(
     plugin = plugin_discovery.get_plugin(channel_id)
     if not plugin:
         raise HTTPException(status_code=404, detail="Channel not found")
-    
+
     # For embedded plugins, check if instance is available and working
     healthy = plugin.instance is not None
-    
+
     return {
         "channelId": channel_id,
         "name": plugin.name,

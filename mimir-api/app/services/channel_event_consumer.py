@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Dict, Set
 
 from app.config import settings
 from app.core.logging import get_logger
@@ -21,17 +20,17 @@ _METRICS = False  # metrics disabled (optional dependency)
 class ChannelEventConsumerService:
     def __init__(self) -> None:
         self._subscribed = False
-        self._channels_bound: Set[str] = set()
-        self._channel_scene_cache: Dict[str, Set[str]] = {}
+        self._channels_bound: set[str] = set()
+        self._channel_scene_cache: dict[str, set[str]] = {}
         self._cache_last_load = 0.0
         self._cache_ttl_seconds = getattr(settings, "push_channel_scene_cache_ttl", 30)
-        self._scene_last_refresh: Dict[str, float] = {}
+        self._scene_last_refresh: dict[str, float] = {}
         self._debounce_seconds = getattr(settings, "push_debounce_seconds", 5.0)
         self._stale_task: asyncio.Task | None = None
         self._running = False
         # Track last processed event hash per (channel_id, scene_id) so we don't re-generate
         # an identical image when only the playback progress advanced but track + play state unchanged.
-        self._scene_last_hash: Dict[tuple[str, str], str] = {}
+        self._scene_last_hash: dict[tuple[str, str], str] = {}
 
     async def ensure_subscription(self) -> None:
         if self._subscribed:
@@ -79,7 +78,7 @@ class ChannelEventConsumerService:
         self._channels_bound.add(channel_id)
         logger.info("channel_event_consumer.channel_registered channel=%s", channel_id)
 
-    def _get_scenes_for_channel(self, channel_id: str) -> Set[str]:
+    def _get_scenes_for_channel(self, channel_id: str) -> set[str]:
         now = time.monotonic()
         if (now - self._cache_last_load) > self._cache_ttl_seconds:
             self._reload_cache()
@@ -87,7 +86,7 @@ class ChannelEventConsumerService:
 
     def _reload_cache(self) -> None:
         self._cache_last_load = time.monotonic()
-        mapping: Dict[str, Set[str]] = {}
+        mapping: dict[str, set[str]] = {}
         with SessionLocal() as db:
             scenes = db.query(Scene).filter(Scene.update_strategy == "push").all()
             for s in scenes:

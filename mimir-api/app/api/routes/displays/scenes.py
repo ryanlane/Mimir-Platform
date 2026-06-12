@@ -5,14 +5,19 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.models import DisplayClient
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt.publisher import mqtt_scene_assignment, mqtt_scene_service
 from app.services.scene_refresh_service import scene_refresh_service
-from app.config import settings
-from ._schemas import AssignSceneBody
-from ._helpers import get_db, _normalize_public_host_hint, build_http_url, _platform_url_for_clients
 
+from ._helpers import (
+    _normalize_public_host_hint,
+    _platform_url_for_clients,
+    build_http_url,
+    get_db,
+)
+from ._schemas import AssignSceneBody
 
 logger = logging.getLogger(__name__)
 

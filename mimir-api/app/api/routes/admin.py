@@ -2,31 +2,43 @@
 Health and Admin API Routes
 FastAPI router for health checks and administrative endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
-from typing import List, Dict, Any, Optional
+import io
 import logging
-from datetime import datetime, timezone
-
-from app.dependencies import get_channel_service, get_scene_service, get_display_service
-from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
-from pathlib import Path
 import os
+import socket
+import time
 import uuid
+from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
 import requests
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from PIL import Image
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
 from app.config import settings
-from app.core.scheduler import scheduler_service
 from app.core.metrics import get_metrics_content
+from app.core.scheduler import scheduler_service
 from app.db.base import SessionLocal
 from app.db.models import DisplaySceneImage
 from app.services.display_image_persistence import DisplayImagePersistenceService
+from app.services.image_swap import list_scene_swap, prune_swap, swap_summary
 from app.services.mqtt.presence import mqtt_presence_service
-from functools import lru_cache
-from app.services.image_swap import swap_summary, list_scene_swap, prune_swap
-from urllib.parse import urlparse
-import socket
-import time
+from app.services.plugin_manager import plugin_manager_service
 
 logger = logging.getLogger(__name__)
 
@@ -389,15 +401,13 @@ async def reset_channels():
 # ---------------------------------------------------------------------------
 # Plugin Installation & Management
 # ---------------------------------------------------------------------------
-from fastapi import File, UploadFile, Form
-from app.services.plugin_manager import plugin_manager_service
 
 
 @admin_router.post("/channels/install", summary="Install a channel plugin")
 async def install_channel(
     request: Request,
-    file: Optional[UploadFile] = File(None),
-    git_url: Optional[str] = Form(None),
+    file: UploadFile | None = File(None),
+    git_url: str | None = Form(None),
 ):
     """Install a channel plugin from a ZIP upload or Git URL.
 
@@ -421,19 +431,19 @@ async def install_channel(
             result = await plugin_manager_service.install_from_zip(file, app)
             return {"status": "installed", **result}
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             logger.error("Install from ZIP failed: %s", exc)
-            raise HTTPException(status_code=500, detail=f"Installation failed: {exc}")
+            raise HTTPException(status_code=500, detail=f"Installation failed: {exc}") from exc
     elif git_url:
         try:
             result = await plugin_manager_service.install_from_git(git_url, app)
             return {"status": "installed", **result}
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             logger.error("Install from Git failed: %s", exc)
-            raise HTTPException(status_code=500, detail=f"Installation failed: {exc}")
+            raise HTTPException(status_code=500, detail=f"Installation failed: {exc}") from exc
     else:
         raise HTTPException(
             status_code=400,
@@ -448,10 +458,10 @@ async def uninstall_channel(channel_id: str, request: Request):
         result = await plugin_manager_service.uninstall(channel_id, request.app)
         return {"status": "uninstalled", **result}
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Uninstall failed for %s: %s", channel_id, exc)
-        raise HTTPException(status_code=500, detail=f"Uninstall failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Uninstall failed: {exc}") from exc
 
 
 @admin_router.post("/channels/{channel_id}/disable", summary="Disable a channel plugin")
@@ -461,10 +471,10 @@ async def disable_channel(channel_id: str, request: Request):
         result = await plugin_manager_service.disable(channel_id, request.app)
         return {"status": "disabled", **result}
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Disable failed for %s: %s", channel_id, exc)
-        raise HTTPException(status_code=500, detail=f"Disable failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Disable failed: {exc}") from exc
 
 
 @admin_router.post("/channels/{channel_id}/enable", summary="Enable a disabled channel plugin")
@@ -474,10 +484,10 @@ async def enable_channel(channel_id: str, request: Request):
         result = await plugin_manager_service.enable(channel_id, request.app)
         return {"status": "enabled", **result}
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Enable failed for %s: %s", channel_id, exc)
-        raise HTTPException(status_code=500, detail=f"Enable failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Enable failed: {exc}") from exc
 
 
 @admin_router.get("/channels/disabled", summary="List disabled channel plugin IDs")
@@ -506,7 +516,7 @@ async def link_dev_channel(request: Request):
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from None
 
     path = body.get("path")
     if not path or not isinstance(path, str):
@@ -516,10 +526,10 @@ async def link_dev_channel(request: Request):
         result = await plugin_manager_service.link_dev_channel(path, request.app)
         return {"status": "linked", **result}
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Link dev channel failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Link failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Link failed: {exc}") from exc
 
 
 @admin_router.delete("/dev/channels/{channel_id}", summary="Unlink a dev channel")
@@ -529,10 +539,10 @@ async def unlink_dev_channel(channel_id: str, request: Request):
         result = await plugin_manager_service.unlink_dev_channel(channel_id, request.app)
         return {"status": "unlinked", **result}
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Unlink dev channel failed for %s: %s", channel_id, exc)
-        raise HTTPException(status_code=500, detail=f"Unlink failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Unlink failed: {exc}") from exc
 
 
 @admin_router.post("/dev/channels/{channel_id}/reload", summary="Reload a dev channel")
@@ -542,10 +552,10 @@ async def reload_dev_channel(channel_id: str, request: Request):
         result = await plugin_manager_service.reload_dev_channel(channel_id, request.app)
         return {"status": "reloaded", **result}
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Reload dev channel failed for %s: %s", channel_id, exc)
-        raise HTTPException(status_code=500, detail=f"Reload failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Reload failed: {exc}") from exc
 
 
 # Scheduler Management Endpoints
@@ -557,7 +567,7 @@ async def list_scheduler_jobs():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         jobs = []
         for job in scheduler_service.scheduler.get_jobs():
@@ -573,7 +583,7 @@ async def list_scheduler_jobs():
                 "pending": job.pending
             }
             jobs.append(job_info)
-        
+
         return {
             "jobs": jobs,
             "total_jobs": len(jobs),
@@ -584,7 +594,7 @@ async def list_scheduler_jobs():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving jobs: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.get("/scheduler/jobs/{job_id}")
@@ -595,7 +605,7 @@ async def get_scheduler_job_details(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -603,7 +613,7 @@ async def get_scheduler_job_details(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         return {
             "id": job.id,
             "name": job.name,
@@ -625,7 +635,7 @@ async def get_scheduler_job_details(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving job: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.post("/scheduler/jobs/{job_id}/run")
@@ -636,7 +646,7 @@ async def run_scheduler_job_now(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -644,10 +654,10 @@ async def run_scheduler_job_now(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         # Schedule the job to run immediately
         scheduler_service.scheduler.modify_job(job_id, next_run_time=datetime.now(timezone.utc))
-        
+
         return {
             "message": f"Job {job_id} scheduled to run immediately",
             "job_id": job_id,
@@ -660,7 +670,7 @@ async def run_scheduler_job_now(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error running job: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.post("/scheduler/jobs/{job_id}/pause")
@@ -671,7 +681,7 @@ async def pause_scheduler_job(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -679,9 +689,9 @@ async def pause_scheduler_job(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         scheduler_service.scheduler.pause_job(job_id)
-        
+
         return {
             "message": f"Job {job_id} paused",
             "job_id": job_id,
@@ -694,7 +704,7 @@ async def pause_scheduler_job(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error pausing job: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.post("/scheduler/jobs/{job_id}/resume")
@@ -705,7 +715,7 @@ async def resume_scheduler_job(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -713,9 +723,9 @@ async def resume_scheduler_job(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         scheduler_service.scheduler.resume_job(job_id)
-        
+
         return {
             "message": f"Job {job_id} resumed",
             "job_id": job_id,
@@ -728,7 +738,7 @@ async def resume_scheduler_job(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error resuming job: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.get("/scheduler/status")
@@ -739,15 +749,15 @@ async def get_scheduler_status():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         scheduler = scheduler_service.scheduler
         jobs = scheduler.get_jobs()
-        
+
         # Count jobs by state
         running_jobs = [j for j in jobs if j.next_run_time is not None]
         paused_jobs = [j for j in jobs if j.next_run_time is None]
-        
+
         return {
             "scheduler_state": scheduler.state,
             "running": scheduler.running,
@@ -766,7 +776,7 @@ async def get_scheduler_status():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving scheduler status: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.get("/metrics")
@@ -780,7 +790,7 @@ async def get_prometheus_metrics():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving metrics: {str(e)}"
-        )
+        ) from e
 
 
 # ---------------------------------------------------------------------------
@@ -798,11 +808,11 @@ class TestPersistRequest(BaseModel):
     display_id: str
     scene_id: str
     image_url: str
-    subchannel_id: Optional[str] = None
-    assignment_id: Optional[str] = Field(None, description="Optional explicit assignment id; auto-generated if missing")
-    width: Optional[int] = None
-    height: Optional[int] = None
-    image_format: Optional[str] = None
+    subchannel_id: str | None = None
+    assignment_id: str | None = Field(None, description="Optional explicit assignment id; auto-generated if missing")
+    width: int | None = None
+    height: int | None = None
+    image_format: str | None = None
 
 @admin_router.post("/display-images/test-persist")
 async def test_persist_display_image(body: TestPersistRequest, db: Session = Depends(get_db)):
@@ -836,14 +846,17 @@ async def test_persist_display_image(body: TestPersistRequest, db: Session = Dep
             "stored_local_path": rec.stored_local_path,
         }
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Persist failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Persist failed: {e}") from e
 
 
 @admin_router.get("/db/info")
 async def get_db_info():
     """Return active database configuration & file presence (SQLite diagnostics)."""
+    import os
+    import pathlib
+    import sqlite3
+
     from app.config import settings as cfg
-    import os, pathlib, sqlite3
     url = cfg.database_url
     resolved_path = None
     size = None
@@ -994,7 +1007,7 @@ async def backfill_display_image_thumbnails(body: BackfillThumbnailsRequest, db:
                 continue
             binary = resp.content
             try:
-                with Image.open(io.BytesIO(binary)) as im:  # type: ignore[name-defined]
+                with Image.open(io.BytesIO(binary)) as im:
                     im.thumbnail((svc.thumb_max_width, svc.thumb_max_height))
                     rel_dir = Path(r.scene_id) / r.display_id
                     abs_dir = svc.media_root / rel_dir
@@ -1016,7 +1029,7 @@ async def backfill_display_image_thumbnails(body: BackfillThumbnailsRequest, db:
         db.commit()
     except Exception as commit_err:  # noqa: BLE001
         logger.error("backfill.thumbnail commit failure err=%s", commit_err)
-        raise HTTPException(status_code=500, detail="Failed to commit thumbnail updates")
+        raise HTTPException(status_code=500, detail="Failed to commit thumbnail updates") from commit_err
 
     return {
         "dry_run": False,
@@ -1037,7 +1050,7 @@ async def get_mqtt_status():
     try:
         stats = mqtt_presence_service.get_presence_stats()
         online_devices = mqtt_presence_service.get_online_devices()
-        
+
         return {
             "mqtt_enabled": settings.mqtt_enabled,
             "broker": f"{settings.mqtt_broker_host}:{settings.mqtt_broker_port}",
@@ -1051,7 +1064,7 @@ async def get_mqtt_status():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving MQTT status: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.get("/mqtt/devices")
@@ -1060,7 +1073,7 @@ async def get_mqtt_devices():
     try:
         all_devices = mqtt_presence_service.get_all_device_metadata()
         online_devices = mqtt_presence_service.get_online_devices()
-        
+
         devices = []
         for device_id, metadata in all_devices.items():
             device_info = {
@@ -1073,7 +1086,7 @@ async def get_mqtt_devices():
                 "offline_reason": metadata.get("offline_reason")
             }
             devices.append(device_info)
-        
+
         return {
             "devices": devices,
             "summary": {
@@ -1087,11 +1100,11 @@ async def get_mqtt_devices():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving MQTT devices: {str(e)}"
-        )
+        ) from e
 
 
 @admin_router.post("/mqtt/publish/{device_id}")
-async def publish_device_status(device_id: str, status: str, metadata: Optional[Dict[str, Any]] = None):
+async def publish_device_status(device_id: str, status: str, metadata: dict[str, Any] | None = None):
     """Manually publish status for a device (for testing)"""
     try:
         if status not in ["online", "offline"]:
@@ -1099,9 +1112,9 @@ async def publish_device_status(device_id: str, status: str, metadata: Optional[
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Status must be 'online' or 'offline'"
             )
-        
+
         success = await mqtt_presence_service.publish_device_status(device_id, status, metadata or {})
-        
+
         if success:
             return {
                 "success": True,
@@ -1112,7 +1125,7 @@ async def publish_device_status(device_id: str, status: str, metadata: Optional[
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to publish device status"
             )
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1120,15 +1133,15 @@ async def publish_device_status(device_id: str, status: str, metadata: Optional[
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error publishing device status: {str(e)}"
-        )
+        ) from e
 
 @admin_router.get("/debug/discovery")
 async def debug_discovery_service():
     """Debug endpoint to see discovery service state"""
     from app.services.mdns_discovery import mdns_discovery_service
-    
+
     discovered = mdns_discovery_service.get_discovered_displays()
-    
+
     debug_data = {
         "discovered_displays": [],
         "display_id_mappings": mdns_discovery_service.display_id_to_service_name.copy(),
@@ -1136,7 +1149,7 @@ async def debug_discovery_service():
         "service_running": mdns_discovery_service.is_running,
         "offline_timeout": mdns_discovery_service.offline_timeout
     }
-    
+
     for display in discovered:
         debug_data["discovered_displays"].append({
             "service_name": display.service_name,
@@ -1148,7 +1161,7 @@ async def debug_discovery_service():
             "assigned_scene_id": display.assigned_scene_id,
             "assigned_subchannel_id": display.assigned_subchannel_id
         })
-    
+
     return debug_data
 
 
@@ -1176,7 +1189,7 @@ async def get_swap_scene(scene_id: str):
 
 
 @admin_router.post("/swap/prune", summary="Force prune swap storage")
-async def prune_swap_now(max_files_per_display: Optional[int] = None):
+async def prune_swap_now(max_files_per_display: int | None = None):
     if not getattr(settings, "display_swap_enabled", True):
         raise HTTPException(status_code=400, detail="Swap storage disabled")
     cap = max_files_per_display or getattr(settings, "display_swap_max_files_per_display", 25)

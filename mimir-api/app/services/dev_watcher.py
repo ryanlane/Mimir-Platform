@@ -4,10 +4,10 @@ Monitors dev channel directories for file changes and triggers automatic reloads
 Uses the watchdog library for cross-platform file system monitoring.
 """
 import asyncio
-import threading
 import os
+import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -62,11 +62,11 @@ class DevWatcherService:
 
     def __init__(self):
         self._observer = None  # Lazy-initialized watchdog Observer
-        self._watches: Dict[str, Any] = {}  # plugin_id -> ObservedWatch
-        self._handlers: Dict[str, _ChangeHandler] = {}
-        self._pending_timers: Dict[str, threading.Timer] = {}
+        self._watches: dict[str, Any] = {}  # plugin_id -> ObservedWatch
+        self._handlers: dict[str, _ChangeHandler] = {}
+        self._pending_timers: dict[str, threading.Timer] = {}
         self._app = None  # FastAPI app reference for reload operations
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._started = False
 
     def start(self, app: Any) -> None:
@@ -88,7 +88,7 @@ class DevWatcherService:
                 return True
             # Heuristic: cgroup info often includes 'docker' or 'containerd'
             try:
-                with open("/proc/1/cgroup", "r", encoding="utf-8") as f:
+                with open("/proc/1/cgroup", encoding="utf-8") as f:
                     s = f.read()
                 return "docker" in s or "containerd" in s
             except Exception:

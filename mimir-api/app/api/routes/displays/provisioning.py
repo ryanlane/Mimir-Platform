@@ -11,25 +11,29 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.models import DisplayClient
 from app.schemas.displays import DisplayClientResponse
 from app.services.mdns_discovery import mdns_discovery_service
-from app.config import settings
-from ._schemas import MqttBootstrapRequest, ProvisionRegisterRequest, SetupProvisionRequest
+
 from ._helpers import (
-    get_db,
-    _platform_url_for_clients,
-    _mqtt_host_for_clients,
-    _normalize_setup_url,
-    _provision_url_from_setup_url,
-    _normalize_public_host_hint,
-    _pick_webhook_address,
-    _request_host_if_reachable,
-    build_http_url,
     _build_client_config,
     _build_registered_display_response,
+    _mqtt_host_for_clients,
+    _normalize_public_host_hint,
+    _normalize_setup_url,
+    _pick_webhook_address,
+    _platform_url_for_clients,
+    _provision_url_from_setup_url,
+    _request_host_if_reachable,
+    build_http_url,
+    get_db,
 )
-
+from ._schemas import (
+    MqttBootstrapRequest,
+    ProvisionRegisterRequest,
+    SetupProvisionRequest,
+)
 
 logger = logging.getLogger(__name__)
 

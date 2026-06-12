@@ -2,19 +2,32 @@
 Mimir API Application Factory
 Creates and configures the FastAPI application with all necessary components and middleware.
 """
+import re
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+from app.api.routes.admin import admin_router, health_router
+
+# Import routers
+from app.api.routes.channels import router as channels_router
+from app.api.routes.client_releases import router as client_releases_router
+from app.api.routes.debug_mqtt import router as debug_mqtt_router
+from app.api.routes.discovery import router as discovery_router
+from app.api.routes.display_scene import router as display_scene_router
+from app.api.routes.displays import router as displays_router
+from app.api.routes.scenes import router as scenes_router
+from app.api.routes.scheduler import router as scheduler_router
+from app.api.routes.websockets import router as websockets_router
 from app.config import settings
 
 # Import infrastructure components
 from app.core.logging import get_logger, setup_logging
 from app.core.metrics import metrics_app, metrics_middleware, setup_metrics
 from app.core.scheduler import scheduler_service
-
-# Import services actually used in startup
-from app.services.plugin_discovery import plugin_discovery_service
 from app.services.distribution import distribution_service
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.mqtt.presence import setup_mqtt_integration
@@ -22,21 +35,10 @@ from app.services.mqtt.publisher import (
     MQTTSceneAssignmentPublisher,
     setup_mqtt_scene_assignment,
 )
-from app.services.scheduler_worker import SchedulerWorker
 
-# Import routers
-from app.api.routes.channels import router as channels_router
-from app.api.routes.scenes import router as scenes_router
-from app.api.routes.displays import router as displays_router
-from app.api.routes.display_scene import router as display_scene_router
-from app.api.routes.websockets import router as websockets_router
-from app.api.routes.client_releases import router as client_releases_router
-from app.api.routes.debug_mqtt import router as debug_mqtt_router
-from app.api.routes.discovery import router as discovery_router
-from app.api.routes.admin import health_router, admin_router
-from app.api.routes.scheduler import router as scheduler_router
-from fastapi.responses import JSONResponse
-import re
+# Import services actually used in startup
+from app.services.plugin_discovery import plugin_discovery_service
+from app.services.scheduler_worker import SchedulerWorker
 
 
 def _dev_lan_origin_regex() -> str | None:
@@ -50,19 +52,19 @@ def _dev_lan_origin_regex() -> str | None:
 async def lifespan(app: FastAPI):
     """Application lifespan context manager for startup and shutdown"""
     logger = get_logger("app.main")
-    
+
     # Startup with green text
     if settings.debug:
         # ANSI escape code for green text
         green_text = "\033[92m🚀 Mimir API v2.1.0 starting up...\033[0m"
         print(green_text)  # Print directly to console with color
-    
+
     logger.info("🚀 Mimir API v2.1.0 starting up...")  # Still log normally
-    
+
     # Initialize core services
     setup_metrics()
     logger.info("📊 OpenTelemetry metrics initialized")
-    
+
     # Setup and start scheduler
     if scheduler_service.setup_scheduler():
         await scheduler_service.start()
@@ -75,26 +77,26 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("⚠️ APScheduler failed to initialize - using fallback mode")
         app.state.scheduler_worker = None
-    
+
     # Initialize plugins (including dev channels)
     await initialize_plugins(app)
 
     # Start dev watcher for dev-linked channels
     from app.services.dev_watcher import dev_watcher_service
     dev_watcher_service.start(app)
-    
+
     # Report service status
     logger.info(f"📊 Database: {settings.database_url}")
     logger.info(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
     logger.info(f"📁 Channels Directory: {settings.channels_directory}")
     logger.info(f"🔧 Debug Mode: {'enabled' if settings.debug else 'disabled'}")
-    
+
     if settings.redis_enabled:
         logger.info(f"🔴 Redis: enabled at {settings.redis_url}")
-    
+
     if settings.distribution_enabled:
         logger.info(f"📡 Distribution: enabled (mode: {settings.distribution_default_mode})")
-    
+
     # Report mDNS discovery status and start service
     if settings.mdns_discovery_enabled:
         if mdns_discovery_service.is_available:
@@ -112,7 +114,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"   Offline timeout: {settings.mdns_offline_timeout}s")
     else:
         logger.info("🔍 mDNS Discovery: disabled by configuration")
-    
+
     # Setup MQTT presence detection for instant online/offline
     if settings.mqtt_enabled:
         mqtt_success = await setup_mqtt_integration()
@@ -148,7 +150,7 @@ async def lifespan(app: FastAPI):
             logger.info("🚀 Fleet rollout controller started")
         except Exception as e:  # pragma: no cover – startup resilience
             logger.warning("⚠️ Failed to start fleet rollout controller: %s", e)
-        
+
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
             logger.info("   Instant online/offline detection via Last Will & Testament")
@@ -156,13 +158,13 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️ MQTT Presence: failed to connect to {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
     else:
         logger.info("📡 MQTT Services: disabled by configuration")
-    
+
     # Log service capabilities
     capabilities = distribution_service.get_capability_flags()
     logger.info(f"🔧 Service capabilities: {capabilities}")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("🛑 Mimir API shutting down...")
 
@@ -178,16 +180,16 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, 'scheduler_worker') and app.state.scheduler_worker:
         await app.state.scheduler_worker.stop()
         logger.info("⚙️ Scheduler worker stopped")
-    
+
     # Stop MQTT services
     if settings.mqtt_enabled:
         logger.info("📝 MQTT services stopped")
-    
+
     # Stop mDNS discovery service
     if settings.mdns_discovery_enabled:
         await mdns_discovery_service.stop_discovery()
         logger.info("🔍 mDNS discovery service stopped")
-    
+
     # Stop scheduler
     await scheduler_service.stop()
     logger.info("⏰ APScheduler stopped")
@@ -196,13 +198,13 @@ async def lifespan(app: FastAPI):
 def _initialize_services(app: FastAPI, logger):
     """Initialize all services (now using modern scheduler approach)"""
     logger.info("Initializing services...")
-    
+
     # Store the app reference for plugin discovery
     app.state.plugin_discovery_initialized = False
-    
+
     # Note: Background jobs are now managed by APScheduler in the lifespan function
     # The old asyncio.create_task() calls have been replaced with scheduled jobs
-    
+
     # Log service status
     capabilities = distribution_service.get_capability_flags()
     logger.info(f"Service capabilities: {capabilities}")
@@ -235,22 +237,22 @@ async def initialize_plugins(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Application factory function"""
-    
+
     # Setup logging first
     setup_logging()
     logger = get_logger("app.main")
-    
+
     # Create FastAPI app with lifespan management
     app = FastAPI(
         title="Mimir API",
         description="Multi-display content management system",
-        version="2.1.0", 
+        version="2.1.0",
         debug=settings.debug,
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
         lifespan=lifespan
     )
-    
+
     # Add root endpoint for health check or landing page
     @app.get("/")
     async def root():
@@ -328,7 +330,7 @@ def create_app() -> FastAPI:
                     break  # signature matched even if failed deeper test
 
         return await call_next(request)
-    
+
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
@@ -338,12 +340,12 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Initialize services
-    
+
     # Database is managed by Alembic migrations
     # Run `alembic upgrade head` to ensure latest schema
-    
+
     # Include routers
     app.include_router(health_router, prefix=settings.api_prefix, tags=["health"])
     app.include_router(channels_router, prefix=settings.api_prefix, tags=["channels"])
@@ -355,18 +357,18 @@ def create_app() -> FastAPI:
     app.include_router(scheduler_router, prefix=settings.api_prefix, tags=["scheduler"])
     app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])
     app.include_router(client_releases_router, prefix=settings.api_prefix, tags=["client-releases"])
-    
+
     # Include WebSocket routes (no prefix for WebSockets)
     app.include_router(websockets_router)
     app.include_router(debug_mqtt_router, prefix=f"{settings.api_prefix}")
-    
+
     # Mount Prometheus metrics endpoint for observability
     try:
         app.mount("/metrics", metrics_app, name="metrics")
         logger.info("📊 OpenTelemetry metrics endpoint mounted at /metrics")
     except Exception as e:
         logger.warning(f"Failed to mount metrics endpoint: {e}")
-    
+
     # Mount static files for channels
     # TODO: This should be handled by the channel manager service
     try:
@@ -374,7 +376,7 @@ def create_app() -> FastAPI:
     except RuntimeError as e:
         if settings.debug:
             print(f"Warning: Could not mount channels directory: {e}")
-    
+
     # Mount media directory (display images + swap space) at /media
     try:
         from pathlib import Path
@@ -405,7 +407,7 @@ def create_app() -> FastAPI:
             logger.warning(f"Static directory not found: {static_dir}")
     except Exception as e:
         logger.warning(f"Failed to mount static files: {e}")
-    
+
     return app
 
 

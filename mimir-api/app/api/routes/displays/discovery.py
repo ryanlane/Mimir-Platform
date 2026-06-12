@@ -3,11 +3,11 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
-from app.services.mdns_discovery import mdns_discovery_service
 from app.config import settings
-from ._schemas import MdnsIngestBody, MqttConfigResponse
-from ._helpers import _platform_url_for_clients, _mqtt_host_for_clients
+from app.services.mdns_discovery import mdns_discovery_service
 
+from ._helpers import _mqtt_host_for_clients, _platform_url_for_clients
+from ._schemas import MdnsIngestBody, MqttConfigResponse
 
 router = APIRouter()
 

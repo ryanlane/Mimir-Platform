@@ -2,12 +2,14 @@
 Dependency injection for Mimir API
 Common dependencies used across route handlers
 """
-from typing import Generator, Optional
+from collections.abc import Generator
+
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app.db.session import get_session
-from app.core.security import get_current_api_key
+
 from app.core.logging import get_logger
+from app.core.security import get_current_api_key
+from app.db.session import get_session
 
 logger = get_logger("app.deps")
 
@@ -25,8 +27,8 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_optional_api_key(
-    api_key: Optional[str] = Depends(get_current_api_key)
-) -> Optional[str]:
+    api_key: str | None = Depends(get_current_api_key)
+) -> str | None:
     """
     Optional API key dependency
     Returns None if no API key provided
@@ -35,7 +37,7 @@ def get_optional_api_key(
 
 
 def require_api_key(
-    api_key: Optional[str] = Depends(get_current_api_key)
+    api_key: str | None = Depends(get_current_api_key)
 ) -> str:
     """
     Required API key dependency
@@ -48,7 +50,7 @@ def require_api_key(
             detail="API key required for this endpoint",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     return api_key
 
 
@@ -66,7 +68,7 @@ def get_current_user_id(
 
 class PaginationParams:
     """Pagination parameters for list endpoints"""
-    
+
     def __init__(
         self,
         page: int = 1,
@@ -79,19 +81,19 @@ class PaginationParams:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Page must be >= 1"
             )
-        
+
         if size < 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Size must be >= 1"
             )
-        
+
         if size > max_size:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Size must be <= {max_size}"
             )
-        
+
         self.page = page
         self.size = size
         self.offset = (page - 1) * size
@@ -118,10 +120,10 @@ def get_redis_manager():
     Returns None if Redis is not enabled/available
     """
     from app.config import settings
-    
+
     if not settings.redis_enabled:
         return None
-    
+
     try:
         from app.services.distribution import get_redis_client
         return get_redis_client()
@@ -141,15 +143,15 @@ def validate_content_type(
         allowed_types = [
             "application/json",
             "image/jpeg",
-            "image/png", 
+            "image/png",
             "image/gif",
             "image/webp"
         ]
-    
+
     if content_type not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Content type {content_type} not allowed. Allowed types: {allowed_types}"
         )
-    
+
     return content_type

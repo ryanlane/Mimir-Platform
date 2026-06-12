@@ -12,13 +12,12 @@ Sub-modules:
 """
 from fastapi import APIRouter
 
-from .discovery import router as discovery_router
-from .provisioning import router as provisioning_router
-from .pairing import router as pairing_router
 from .crud import router as crud_router
-from .scenes import router as scenes_router
+from .discovery import router as discovery_router
 from .images import router as images_router
-
+from .pairing import router as pairing_router
+from .provisioning import router as provisioning_router
+from .scenes import router as scenes_router
 
 router = APIRouter(prefix="/displays", tags=["displays"])
 

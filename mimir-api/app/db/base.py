@@ -38,4 +38,3 @@ engine = create_engine(settings.database_url, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 # Import models' Base (your project defines it there)
-from app.db.models import Base  # noqa: E402

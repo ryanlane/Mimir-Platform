@@ -1,74 +1,76 @@
 """
 Scene-related schemas
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
 from app.schemas.common import TimestampMixin
 
 
 class SceneOverlay(BaseModel):
     """Scene overlay configuration"""
-    overlays: List[str]
-    position: List[str]
+    overlays: list[str]
+    position: list[str]
     background: bool
-    background_color: Dict[str, int] = Field(alias="backgroundColor")
-    
+    background_color: dict[str, int] = Field(alias="backgroundColor")
+
     class Config:
         populate_by_name = True
 
 
 class SceneSchedule(BaseModel):
     """Scene schedule configuration"""
-    days: List[str]
+    days: list[str]
     start: str
     end: str
-    timezone: Optional[str] = None
+    timezone: str | None = None
 
 
 class ChannelAssignment(BaseModel):
     """Channel assignment within a scene"""
     channel_id: str
-    subchannel_id: Optional[str] = None
-    position: Optional[Dict[str, Any]] = None
-    config: Optional[Dict[str, Any]] = None
+    subchannel_id: str | None = None
+    position: dict[str, Any] | None = None
+    config: dict[str, Any] | None = None
 
 
 class SceneBase(BaseModel):
     """Base scene schema"""
     name: str
-    channels: List[ChannelAssignment]
-    overlays: Optional[List[str]] = None
-    timing_config: Optional[Dict[str, Any]] = Field(None, alias="timingConfig")
-    distribution_mode: Optional[str] = Field("push", alias="distributionMode")
-    is_active: Optional[bool] = Field(False, alias="isActive")
-    update_strategy: Optional[str] = Field("scheduler", alias="updateStrategy", description="scheduler or push")
-    push_fallback_poll_seconds: Optional[int] = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
-    
+    channels: list[ChannelAssignment]
+    overlays: list[str] | None = None
+    timing_config: dict[str, Any] | None = Field(None, alias="timingConfig")
+    distribution_mode: str | None = Field("push", alias="distributionMode")
+    is_active: bool | None = Field(False, alias="isActive")
+    update_strategy: str | None = Field("scheduler", alias="updateStrategy", description="scheduler or push")
+    push_fallback_poll_seconds: int | None = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
+
     class Config:
         populate_by_name = True
 
 
 class SceneCreate(SceneBase):
     """Schema for creating scenes"""
-    id: Optional[str] = None
-    overlay: Optional[SceneOverlay] = None
-    schedule: Optional[SceneSchedule] = None
+    id: str | None = None
+    overlay: SceneOverlay | None = None
+    schedule: SceneSchedule | None = None
 
 
 class SceneUpdate(BaseModel):
     """Schema for updating scenes"""
-    name: Optional[str] = None
-    channels: Optional[List[ChannelAssignment]] = None
-    overlays: Optional[List[str]] = None
-    timing_config: Optional[Dict[str, Any]] = Field(None, alias="timingConfig")
-    distribution_mode: Optional[str] = Field(None, alias="distributionMode")
-    is_active: Optional[bool] = Field(None, alias="isActive")
-    overlay: Optional[SceneOverlay] = None
-    schedule: Optional[SceneSchedule] = None
-    update_strategy: Optional[str] = Field(None, alias="updateStrategy")
-    push_fallback_poll_seconds: Optional[int] = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
-    
+    name: str | None = None
+    channels: list[ChannelAssignment] | None = None
+    overlays: list[str] | None = None
+    timing_config: dict[str, Any] | None = Field(None, alias="timingConfig")
+    distribution_mode: str | None = Field(None, alias="distributionMode")
+    is_active: bool | None = Field(None, alias="isActive")
+    overlay: SceneOverlay | None = None
+    schedule: SceneSchedule | None = None
+    update_strategy: str | None = Field(None, alias="updateStrategy")
+    push_fallback_poll_seconds: int | None = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
+
     class Config:
         populate_by_name = True
 
@@ -76,12 +78,12 @@ class SceneUpdate(BaseModel):
 class SceneResponse(SceneBase, TimestampMixin):
     """Schema for scene responses"""
     id: str
-    content_hash: Optional[str] = Field(None, alias="contentHash")
-    content_epoch: Optional[int] = Field(None, alias="contentEpoch")
-    overlay: Optional[SceneOverlay] = None
-    schedule: Optional[SceneSchedule] = None
+    content_hash: str | None = Field(None, alias="contentHash")
+    content_epoch: int | None = Field(None, alias="contentEpoch")
+    overlay: SceneOverlay | None = None
+    schedule: SceneSchedule | None = None
     # Auto-refresh scheduler summary (derived from SchedulerJob + assignment)
-    refresh_schedule: Optional[Dict[str, Any]] = Field(
+    refresh_schedule: dict[str, Any] | None = Field(
         None,
         alias="refreshSchedule",
         description=(
@@ -92,7 +94,7 @@ class SceneResponse(SceneBase, TimestampMixin):
             {"job_id": "job-123", "freq_unit": "minute", "freq_value": 5, "enabled": True}
         ],
     )
-    
+
     class Config:
         from_attributes = True
         populate_by_name = True
@@ -101,12 +103,12 @@ class SceneResponse(SceneBase, TimestampMixin):
 class SceneCreateRequest(BaseModel):
     """Legacy scene creation request for backward compatibility"""
     name: str
-    channels: List[ChannelAssignment]
-    overlay: Optional[SceneOverlay] = None
-    schedule: Optional[SceneSchedule] = None
-    image_fit: Optional[str] = Field("cover", alias="imageFit")
-    theme: Optional[Dict[str, Any]] = None
-    
+    channels: list[ChannelAssignment]
+    overlay: SceneOverlay | None = None
+    schedule: SceneSchedule | None = None
+    image_fit: str | None = Field("cover", alias="imageFit")
+    theme: dict[str, Any] | None = None
+
     class Config:
         populate_by_name = True
 
@@ -114,15 +116,15 @@ class SceneCreateRequest(BaseModel):
 class SceneActivationRequest(BaseModel):
     """Scene activation request"""
     scene_id: str
-    display_ids: Optional[List[str]] = None
-    force: Optional[bool] = False
+    display_ids: list[str] | None = None
+    force: bool | None = False
 
 
 class SceneActivationResponse(BaseModel):
     """Scene activation response"""
     scene_id: str
-    activated_displays: List[str]
-    failed_displays: List[str]
+    activated_displays: list[str]
+    failed_displays: list[str]
     message: str
 
 
@@ -131,16 +133,16 @@ class SceneStatusResponse(BaseModel):
     id: str
     name: str
     is_active: bool
-    content_hash: Optional[str] = None
-    content_epoch: Optional[int] = None
-    assigned_displays: List[str]
-    last_updated: Optional[datetime] = None
-    distribution_status: Optional[Dict[str, Any]] = None
+    content_hash: str | None = None
+    content_epoch: int | None = None
+    assigned_displays: list[str]
+    last_updated: datetime | None = None
+    distribution_status: dict[str, Any] | None = None
 
 
 class SceneListResponse(BaseModel):
     """Response for listing scenes"""
-    scenes: List[SceneResponse]
+    scenes: list[SceneResponse]
     total: int
     limit: int
     offset: int
@@ -149,13 +151,13 @@ class SceneListResponse(BaseModel):
 class SceneActivation(BaseModel):
     """Scene activation configuration"""
     scene_id: str
-    display_ids: Optional[List[str]] = None
-    force: Optional[bool] = False
+    display_ids: list[str] | None = None
+    force: bool | None = False
 
 
 class ScheduleConfig(BaseModel):
     """Legacy schedule configuration for backward compatibility"""
-    days: List[str]
+    days: list[str]
     start: str
     end: str
-    timezone: Optional[str] = None
+    timezone: str | None = None

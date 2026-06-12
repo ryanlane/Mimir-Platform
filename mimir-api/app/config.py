@@ -1,11 +1,12 @@
 # app/config.py
 from __future__ import annotations
 
-import socket
 import re
+import socket
 
-from pydantic import Field, AliasChoices, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables.
@@ -411,9 +412,13 @@ class Settings(BaseSettings):
         1. Explicit public_host (env override)
         2. Explicit public_mdns_host (for example: mimir.local)
         3. Primary outbound IPv4 (UDP connect probe)
-        4. Local system hostname (socket.gethostname())
-        5. hostname + ".local" (for mDNS-capable environments)
-        7. Fallback 127.0.0.1 (last resort)
+        4. hostname + ".local" (for mDNS-capable environments)
+        5. Local system hostname (socket.gethostname())
+        6. Fallback 127.0.0.1 (last resort)
+
+        The bare hostname ranks below its .local form because clients on other
+        machines usually cannot resolve it (only the server itself can), while
+        mDNS resolves hostname.local across the LAN.
 
         Ports: omit when standard (80 http / 443 https). This avoids confusing some
         embedded HTTP clients that mishandle explicit default ports.
@@ -426,8 +431,8 @@ class Settings(BaseSettings):
             self.public_host,
             self.public_mdns_host,
             self._discover_primary_ipv4(),
-            hostname,
             f"{hostname}.local",
+            hostname,
         ]
 
         seen = set()

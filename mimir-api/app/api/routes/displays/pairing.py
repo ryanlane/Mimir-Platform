@@ -8,9 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.models import DisplayClient
-from app.schemas.displays import DisplayClientResponse, PairClaimRequest, PairStatusResponse
-from ._helpers import get_db, _build_client_config, _build_registered_display_response
+from app.schemas.displays import (
+    DisplayClientResponse,
+    PairClaimRequest,
+    PairStatusResponse,
+)
 
+from ._helpers import _build_client_config, _build_registered_display_response, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +49,7 @@ async def claim_pair_code(body: PairClaimRequest, db: Session = Depends(get_db))
     try:
         entry = await pairing_service.claim_pair(body.code)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
     device_id: str = entry["device_id"]
     capabilities: dict = entry.get("capabilities") or {}

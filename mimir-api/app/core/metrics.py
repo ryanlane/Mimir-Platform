@@ -4,12 +4,11 @@ Modern observability with OpenTelemetry → Prometheus integration
 """
 import logging
 import time
-from typing import Optional
-from fastapi import Request
 
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.metrics import set_meter_provider, get_meter_provider
+from fastapi import Request
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.metrics import get_meter_provider, set_meter_provider
+from opentelemetry.sdk.metrics import MeterProvider
 from prometheus_client import make_asgi_app
 
 logger = logging.getLogger(__name__)
@@ -114,10 +113,10 @@ redis_operation_duration = meter.create_histogram(
 
 class MetricsCollector:
     """OpenTelemetry-based metrics collector"""
-    
+
     def __init__(self):
         logger.info("Metrics collector initialized with OpenTelemetry")
-    
+
     # Discovery metrics
     def discovery_display_found(self, display_id: str):
         """Record a display discovery"""
@@ -125,19 +124,19 @@ class MetricsCollector:
             discovery_displays_found.add(1, {"display_id": display_id})
         except Exception as e:
             logger.error(f"Error recording display found metric: {e}")
-    
+
     def discovery_display_lost(self, display_id: str):
         """Record a display loss"""
         try:
             discovery_displays_lost.add(1, {"display_id": display_id})
         except Exception as e:
             logger.error(f"Error recording display lost metric: {e}")
-    
+
     def discovery_display_updated(self, display_id: str):
         """Record a display update"""
         # For now this is a no-op, but could track update frequency
         pass
-    
+
     def discovery_displays_total(self, count: int):
         """Set total displays count"""
         try:
@@ -149,7 +148,7 @@ class MetricsCollector:
                 self._last_total_displays = count
         except Exception as e:
             logger.error(f"Error setting displays total metric: {e}")
-    
+
     def discovery_displays_online(self, count: int):
         """Set online displays count"""
         try:
@@ -160,14 +159,14 @@ class MetricsCollector:
                 self._last_online_displays = count
         except Exception as e:
             logger.error(f"Error setting displays online metric: {e}")
-    
+
     def discovery_error(self, error_type: str):
         """Record a discovery error"""
         try:
             discovery_errors.add(1, {"error_type": error_type})
         except Exception as e:
             logger.error(f"Error recording discovery error metric: {e}")
-    
+
     # Distribution metrics
     def distribution_content_assigned(self, scene_id: str, display_id: str, content_id: str = "unknown"):
         """Record content assignment"""
@@ -179,7 +178,7 @@ class MetricsCollector:
             })
         except Exception as e:
             logger.error(f"Error recording content assignment metric: {e}")
-    
+
     def distribution_lease_completed(self, scene_id: str, display_id: str, duration_seconds: float):
         """Record completed content lease"""
         try:
@@ -189,7 +188,7 @@ class MetricsCollector:
             })
         except Exception as e:
             logger.error(f"Error recording lease duration metric: {e}")
-    
+
     def distribution_queue_size_updated(self, scene_id: str, queue_type: str, size: int):
         """Update distribution queue size"""
         try:
@@ -204,7 +203,7 @@ class MetricsCollector:
                 setattr(self, f'_last_queue_size_{queue_key}', size)
         except Exception as e:
             logger.error(f"Error recording queue size metric: {e}")
-    
+
     def distribution_error(self, scene_id: str, operation: str, error_type: str):
         """Record a distribution error"""
         try:
@@ -215,7 +214,7 @@ class MetricsCollector:
             })
         except Exception as e:
             logger.error(f"Error recording distribution error metric: {e}")
-    
+
     # WebSocket metrics
     def websocket_connection_opened(self, connection_id: str):
         """Record WebSocket connection opened"""
@@ -223,21 +222,21 @@ class MetricsCollector:
             websocket_connections.add(1, {"connection_id": connection_id})
         except Exception as e:
             logger.error(f"Error recording WebSocket connection opened: {e}")
-    
+
     def websocket_connection_closed(self, connection_id: str):
         """Record WebSocket connection closed"""
         try:
             websocket_connections.add(-1, {"connection_id": connection_id})
         except Exception as e:
             logger.error(f"Error recording WebSocket connection closed: {e}")
-    
+
     def websocket_message_sent(self, event_type: str, connection_count: int = 1):
         """Record WebSocket message sent"""
         try:
             websocket_messages.add(connection_count, {"event_type": event_type})
         except Exception as e:
             logger.error(f"Error recording WebSocket message: {e}")
-    
+
     # Redis metrics
     def redis_operation(self, operation: str, duration_seconds: float, success: bool = True):
         """Record Redis operation"""
@@ -249,7 +248,7 @@ class MetricsCollector:
             redis_operation_duration.record(duration_seconds, {"operation": operation})
         except Exception as e:
             logger.error(f"Error recording Redis operation metric: {e}")
-    
+
     # HTTP metrics
     def http_request(self, method: str, endpoint: str, status: int, duration: float):
         """Record HTTP request metrics"""
@@ -287,7 +286,7 @@ def setup_metrics() -> bool:
 def get_metrics_content():
     """Get metrics content for HTTP endpoint (compatibility function)"""
     try:
-        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
         # Use the default registry which the PrometheusMetricReader populates
         metrics_data = generate_latest()
         return metrics_data, CONTENT_TYPE_LATEST
@@ -299,11 +298,11 @@ def get_metrics_content():
 async def metrics_middleware(request: Request, call_next):
     """Middleware to collect HTTP metrics with OpenTelemetry"""
     start_time = time.time()
-    
+
     try:
         response = await call_next(request)
         duration = time.time() - start_time
-        
+
         # Record metrics
         metrics.http_request(
             method=request.method,
@@ -311,12 +310,12 @@ async def metrics_middleware(request: Request, call_next):
             status=response.status_code,
             duration=duration
         )
-        
+
         return response
-        
-    except Exception as e:
+
+    except Exception:
         duration = time.time() - start_time
-        
+
         # Record error metrics
         metrics.http_request(
             method=request.method,
@@ -324,5 +323,5 @@ async def metrics_middleware(request: Request, call_next):
             status=500,
             duration=duration
         )
-        
+
         raise

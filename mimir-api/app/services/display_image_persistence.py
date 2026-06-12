@@ -13,27 +13,26 @@ Design notes:
 """
 from __future__ import annotations
 
-import io
-import uuid
-import hashlib
-import logging
 import errno
+import hashlib
+import io
+import logging
 import tempfile
+import uuid
 from pathlib import Path
-from typing import Optional
 
 import requests
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.db.models import DisplaySceneImage
 from app.config import settings
+from app.db.models import DisplaySceneImage
 
 logger = logging.getLogger(__name__)
 
 
 class DisplayImagePersistenceService:
-    def __init__(self, db: Session, media_root: Optional[Path] = None):
+    def __init__(self, db: Session, media_root: Path | None = None):
         if media_root is None:
             root = getattr(settings, "display_images_directory", "display_images")
             media_root = Path(root)
@@ -82,13 +81,13 @@ class DisplayImagePersistenceService:
         *,
         display_id: str,
         scene_id: str,
-        subchannel_id: Optional[str],
+        subchannel_id: str | None,
         assignment_id: str,
         image_url: str,
-        local_source_path: Optional[str] = None,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        image_format: Optional[str] = None,
+        local_source_path: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        image_format: str | None = None,
         source: str = "distribution",
         retain_history: bool = True,
         dedupe_by_hash: bool = True,
@@ -105,10 +104,10 @@ class DisplayImagePersistenceService:
             image_url,
         )
 
-        binary: Optional[bytes] = None
-        local_path: Optional[Path] = None
-        thumb_path: Optional[Path] = None
-        sha256_hash: Optional[str] = None
+        binary: bytes | None = None
+        local_path: Path | None = None
+        thumb_path: Path | None = None
+        sha256_hash: str | None = None
         source_path = Path(local_source_path).resolve() if local_source_path else None
 
         try:
@@ -265,8 +264,8 @@ class DisplayImagePersistenceService:
             raise
 
     def get_last_for_display_scene(
-        self, display_id: str, scene_id: str, subchannel_id: Optional[str] = None
-    ) -> Optional[DisplaySceneImage]:
+        self, display_id: str, scene_id: str, subchannel_id: str | None = None
+    ) -> DisplaySceneImage | None:
         q = self.db.query(DisplaySceneImage).filter(
             DisplaySceneImage.display_id == display_id,
             DisplaySceneImage.scene_id == scene_id,

@@ -1,18 +1,20 @@
 """
 Channel-related schemas
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
 from app.schemas.common import TimestampMixin
 
 
 class ChannelStatusModel(BaseModel):
     """Channel status information"""
-    last_update: Optional[str] = Field(None, alias="lastUpdate")
-    last_error: Optional[str] = Field(None, alias="lastError")
-    using_fallback: Optional[bool] = Field(False, alias="usingFallback")
-    
+    last_update: str | None = Field(None, alias="lastUpdate")
+    last_error: str | None = Field(None, alias="lastError")
+    using_fallback: bool | None = Field(False, alias="usingFallback")
+
     class Config:
         populate_by_name = True
 
@@ -20,34 +22,34 @@ class ChannelStatusModel(BaseModel):
 class ChannelBase(BaseModel):
     """Base channel schema"""
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     version: str = "1.0.0"
-    author: Optional[str] = None
-    license: Optional[str] = None
-    repo_url: Optional[str] = Field(None, alias="repoUrl")
-    
+    author: str | None = None
+    license: str | None = None
+    repo_url: str | None = Field(None, alias="repoUrl")
+
     class Config:
         populate_by_name = True
 
 
 class ChannelCreate(ChannelBase):
     """Schema for creating channels"""
-    id: Optional[str] = None
-    config: Optional[Dict[str, Any]] = None
-    manifest: Optional[Dict[str, Any]] = None
+    id: str | None = None
+    config: dict[str, Any] | None = None
+    manifest: dict[str, Any] | None = None
 
 
 class ChannelUpdate(BaseModel):
     """Schema for updating channels"""
-    name: Optional[str] = None
-    description: Optional[str] = None
-    version: Optional[str] = None
-    author: Optional[str] = None
-    license: Optional[str] = None
-    repo_url: Optional[str] = Field(None, alias="repoUrl")
-    config: Optional[Dict[str, Any]] = None
-    manifest: Optional[Dict[str, Any]] = None
-    
+    name: str | None = None
+    description: str | None = None
+    version: str | None = None
+    author: str | None = None
+    license: str | None = None
+    repo_url: str | None = Field(None, alias="repoUrl")
+    config: dict[str, Any] | None = None
+    manifest: dict[str, Any] | None = None
+
     class Config:
         populate_by_name = True
 
@@ -55,17 +57,17 @@ class ChannelUpdate(BaseModel):
 class ChannelResponse(ChannelBase, TimestampMixin):
     """Schema for channel responses"""
     id: str
-    schema_version: Optional[str] = Field("2.1", alias="schemaVersion")
-    rel_logo_image_path: Optional[str] = Field(None, alias="relLogoImagePath")
+    schema_version: str | None = Field("2.1", alias="schemaVersion")
+    rel_logo_image_path: str | None = Field(None, alias="relLogoImagePath")
     settings_type: str = Field("simple", alias="settingsType")
-    status: Optional[ChannelStatusModel] = None
-    permissions: Optional[List[str]] = []
-    has_ui: Optional[bool] = Field(False, alias="hasUI")
-    has_assets: Optional[bool] = Field(False, alias="hasAssets")
-    channel_dir: Optional[str] = Field(None, alias="channelDir")
-    config: Optional[Dict[str, Any]] = None
-    manifest: Optional[Dict[str, Any]] = None
-    
+    status: ChannelStatusModel | None = None
+    permissions: list[str] | None = []
+    has_ui: bool | None = Field(False, alias="hasUI")
+    has_assets: bool | None = Field(False, alias="hasAssets")
+    channel_dir: str | None = Field(None, alias="channelDir")
+    config: dict[str, Any] | None = None
+    manifest: dict[str, Any] | None = None
+
     class Config:
         from_attributes = True
         populate_by_name = True
@@ -76,8 +78,8 @@ class ChannelConfigResponse(BaseModel):
     name: str
     description: str
     settings_type: str = Field(alias="settingsType")
-    settings: Optional[Dict[str, Any]] = None
-    
+    settings: dict[str, Any] | None = None
+
     class Config:
         populate_by_name = True
 
@@ -86,34 +88,34 @@ class ChannelHealthResponse(BaseModel):
     """Channel health check response"""
     status: str  # "healthy", "warning", "error"
     last_check: datetime
-    last_update: Optional[datetime] = None
-    last_error: Optional[str] = None
+    last_update: datetime | None = None
+    last_error: str | None = None
     using_fallback: bool = False
-    response_time_ms: Optional[float] = None
+    response_time_ms: float | None = None
 
 
 class ChannelTokenResponse(BaseModel):
     """Channel authentication token response"""
     token: str
-    expires_at: Optional[datetime] = None
-    permissions: List[str] = []
+    expires_at: datetime | None = None
+    permissions: list[str] = []
 
 
 class ImageRequestBody(BaseModel):
     """Image request parameters"""
-    resolution: Optional[List[int]] = None
-    format: Optional[str] = "jpeg"
-    quality: Optional[int] = 85
-    force_refresh: Optional[bool] = Field(False, alias="forceRefresh")
-    
+    resolution: list[int] | None = None
+    format: str | None = "jpeg"
+    quality: int | None = 85
+    force_refresh: bool | None = Field(False, alias="forceRefresh")
+
     class Config:
         populate_by_name = True
 
 
 class ChannelTestRequest(BaseModel):
     """Channel test request parameters"""
-    test_type: Optional[str] = "basic"
-    parameters: Optional[Dict[str, Any]] = None
+    test_type: str | None = "basic"
+    parameters: dict[str, Any] | None = None
 
 
 class ChannelTestResponse(BaseModel):
@@ -121,29 +123,29 @@ class ChannelTestResponse(BaseModel):
     success: bool
     test_type: str
     duration_ms: float
-    message: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None
+    message: str | None = None
+    details: dict[str, Any] | None = None
 
 
 class SubchannelInfo(BaseModel):
     """Subchannel information"""
     id: str
     name: str
-    description: Optional[str] = None
-    type: Optional[str] = None
-    config: Optional[Dict[str, Any]] = None
+    description: str | None = None
+    type: str | None = None
+    config: dict[str, Any] | None = None
 
 
 class SubchannelConfig(BaseModel):
     """Subchannel configuration"""
-    subchannels: List[SubchannelInfo]
-    default_subchannel: Optional[str] = None
+    subchannels: list[SubchannelInfo]
+    default_subchannel: str | None = None
     selection_mode: str = "manual"  # "manual", "auto", "rotation"
 
 
 class ChannelManifest(BaseModel):
     """Channel manifest information"""
-    channels: List[ChannelResponse]
+    channels: list[ChannelResponse]
     total: int
     last_updated: datetime
     schema_version: str = "2.1"

@@ -17,7 +17,6 @@ from app.dependencies import get_scene_service
 from app.schemas.scenes import SceneListResponse, SceneResponse
 from app.services.scene_refresh_service import scene_refresh_service
 
-
 router = APIRouter(prefix="/scenes", tags=["scenes"])
 
 
@@ -119,7 +118,7 @@ async def update_scene(
     scene = scene_service.update_scene(scene_id, scene_data)
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
-    
+
     return {
         "id": scene.id,
         "name": scene.name,
@@ -142,7 +141,7 @@ async def delete_scene(
     success = scene_service.delete_scene(scene_id)
     if not success:
         raise HTTPException(status_code=404, detail="Scene not found")
-    
+
     return {"message": "Scene deleted successfully"}
 
 
@@ -155,7 +154,7 @@ async def activate_scene(
     success = scene_service.activate_scene(scene_id)
     if not success:
         raise HTTPException(status_code=404, detail="Scene not found")
-    
+
     return {"message": "Scene activated successfully"}
 
 
@@ -169,20 +168,20 @@ async def get_scene_displays(
     scene = scene_service.get_scene_by_id(scene_id)
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
-    
+
     # Get displays assigned to this scene
     db = SessionLocal()
     try:
         assigned_displays = db.query(DisplayClient).filter(
             DisplayClient.assigned_scene_id == scene_id
         ).all()
-        
+
         display_list = []
         online_count = 0
         for display in assigned_displays:
             if display.is_online:
                 online_count += 1
-            
+
             display_list.append({
                 "id": display.id,
                 "name": display.name,
@@ -193,7 +192,7 @@ async def get_scene_displays(
                 "resolution": f"{display.width}x{display.height}" if display.width and display.height else "Unknown",
                 "orientation": display.orientation
             })
-        
+
         return {
             "scene_id": scene_id,
             "scene_name": scene.name,
@@ -221,20 +220,20 @@ async def refresh_scene_content(
     scene = scene_service.get_scene_by_id(scene_id)
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
-    
+
     try:
         # Import here to avoid circular imports
         from app.services.scheduler_service import SchedulerService
         from app.services.scheduler_worker import SchedulerWorker
-        
+
         # Create a temporary worker instance for manual execution
         worker = SchedulerWorker()
-        
+
         # Create a database session for the scheduler service
         db = SessionLocal()
         try:
             scheduler_service = SchedulerService(db)  # noqa: F841 retained for potential future use
-            
+
             # Create a mock assignment for the scene refresh
             from app.db.models import SchedulerJobSceneAssignment
             mock_assignment = SchedulerJobSceneAssignment(
@@ -244,21 +243,21 @@ async def refresh_scene_content(
                 refresh_method="content_refresh",
                 priority=1
             )
-            
+
             # Execute the scene refresh
             # Protected member used intentionally; consider refactor to public method in future
             result = await worker._refresh_single_scene(mock_assignment)  # noqa: SLF001
-            
+
             return {
                 "message": f"Content refresh triggered for scene {scene_id}",
                 "scene_name": scene.name,
                 "refresh_result": result,
                 "timestamp": datetime.now().isoformat()
             }
-            
+
         finally:
             db.close()
-            
+
     except Exception as e:
         raise HTTPException(
             status_code=500,

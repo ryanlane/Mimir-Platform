@@ -3,14 +3,14 @@ Plugin Discovery Service for Embedded Channel Architecture
 Handles discovery and loading of channel plugins into the main API process
 """
 import asyncio
+import importlib.util
 import json
 import sys
-import importlib.util
-from pathlib import Path
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
 import time
 import traceback
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.routing import APIRoute
@@ -18,8 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.core.logging import get_logger
-from app.services.channel_events import channel_event_dispatcher, ChannelUpdateEvent
 from app.services.channel_event_consumer import channel_event_consumer
+from app.services.channel_events import ChannelUpdateEvent, channel_event_dispatcher
 
 logger = get_logger(__name__)
 
@@ -32,7 +32,7 @@ _OPTIONAL_METHODS = ("get_status", "on_startup", "on_shutdown", "register_listen
                      "unregister_listener", "stop")
 
 
-def _validate_channel_protocol(instance: Any, plugin_id: str) -> List[str]:
+def _validate_channel_protocol(instance: Any, plugin_id: str) -> list[str]:
     """Check that *instance* satisfies the required channel protocol.
 
     Returns a list of missing method names (empty == valid).
@@ -91,28 +91,28 @@ class ChannelPlugin:
     id: str
     name: str
     description: str
-    icon: Optional[str]
+    icon: str | None
     config_path: Path
     plugin_path: Path
-    instance: Optional[Any] = None
-    last_health_check: Optional[float] = None
+    instance: Any | None = None
+    last_health_check: float | None = None
     healthy: bool = True  # Embedded plugins are healthy if loaded
 
 
 class PluginDiscoveryService:
     """Service for discovering and managing embedded channel plugins"""
-    
-    def __init__(self, channels_dir: Optional[str] = None):
+
+    def __init__(self, channels_dir: str | None = None):
         self.channels_dir = Path(channels_dir or settings.channels_directory)
-        self.plugins: Dict[str, ChannelPlugin] = {}
-        
+        self.plugins: dict[str, ChannelPlugin] = {}
+
     def _get_disabled_plugin_ids(self) -> set:
         """Read the disabled_plugins.json file and return a set of disabled IDs."""
         disabled_file = self.channels_dir / "disabled_plugins.json"
         if not disabled_file.exists():
             return set()
         try:
-            with open(disabled_file, "r", encoding="utf-8") as f:
+            with open(disabled_file, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
                 return {str(x) for x in data}
@@ -120,7 +120,7 @@ class PluginDiscoveryService:
             logger.warning("Failed to read disabled_plugins.json: %s", exc)
         return set()
 
-    async def discover_plugins(self, app: FastAPI) -> List[ChannelPlugin]:
+    async def discover_plugins(self, app: FastAPI) -> list[ChannelPlugin]:
         """Discover and load channel plugins into the main API"""
         if not self.channels_dir.exists():
             self.channels_dir.mkdir(parents=True, exist_ok=True)
@@ -167,14 +167,14 @@ class PluginDiscoveryService:
                 logger.error("Error loading plugin from %s: %s", plugin_path, e)
                 if logger.isEnabledFor(10):
                     logger.debug("Traceback loading %s:\n%s", plugin_path, traceback.format_exc(limit=10))
-        
+
         logger.info(f"Plugin discovery complete. Found {len(discovered_plugins)} plugins")
         return discovered_plugins
-    
-    async def _load_plugin_config(self, config_file: Path, plugin_path: Path) -> Optional[ChannelPlugin]:
+
+    async def _load_plugin_config(self, config_file: Path, plugin_path: Path) -> ChannelPlugin | None:
         """Load plugin configuration from plugin.json or config.json"""
         try:
-            with open(config_file, 'r', encoding='utf-8') as f:
+            with open(config_file, encoding='utf-8') as f:
                 config = json.load(f)
             if config_file.name == "plugin.json":
                 required = ['id', 'name', 'description']
@@ -208,7 +208,7 @@ class PluginDiscoveryService:
         except json.JSONDecodeError as e:
             logger.error("Error parsing %s for %s: %s", config_file.name, plugin_path.name, e)
             return None
-    
+
     async def _load_plugin_instance(self, plugin: ChannelPlugin, app: FastAPI):
         """Load and initialize plugin instance"""
         try:
@@ -227,16 +227,16 @@ class PluginDiscoveryService:
                 plugin.healthy = False
                 return
             logger.debug(f"[plugins] ({plugin.id}) Module loaded; searching for channel class")
-            
+
             # Find and instantiate the channel class
             channel_class = self._find_channel_class(module, plugin.id)
             if not channel_class:
                 logger.error(f"No suitable channel class found for {plugin.id}")
                 plugin.healthy = False
                 return
-            
+
             logger.info(f"Found channel class for {plugin.id}: {channel_class.__name__} from {channel_class.__module__}")
-            
+
             # Instantiate the channel
             try:
                 logger.debug(f"[plugins] ({plugin.id}) Instantiating channel class {channel_class.__name__}")
@@ -353,12 +353,12 @@ class PluginDiscoveryService:
                         pass
             except Exception as push_err:  # noqa: BLE001
                 logger.warning(f"Failed to register push listener for {plugin.id}: {push_err}")
-            
+
         except Exception as e:
             logger.error(f"Error loading plugin instance for {plugin.id}: {e}")
             plugin.healthy = False
-    
-    def _import_plugin_module(self, plugin: ChannelPlugin) -> Optional[Any]:
+
+    def _import_plugin_module(self, plugin: ChannelPlugin) -> Any | None:
         """Import the plugin's channel module.
 
         Strategy:
@@ -441,27 +441,27 @@ class PluginDiscoveryService:
                 return None
             return module
 
-    def _find_channel_class(self, module: Any, plugin_id: str) -> Optional[type]:
+    def _find_channel_class(self, module: Any, plugin_id: str) -> type | None:
         """Find the appropriate channel class in the module"""
         # 1. Look for ChannelClass export (preferred)
         if hasattr(module, 'ChannelClass'):
-            return getattr(module, 'ChannelClass')
-            
+            return module.ChannelClass
+
         # 2. Look for class with "Channel" in the name
         class_name = f'{plugin_id.split(".")[-1].title()}Channel'
         if hasattr(module, class_name):
             return getattr(module, class_name)
-            
+
         # 3. Look for any class ending with "Channel"
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
-            if (isinstance(attr, type) and 
-                attr_name.endswith('Channel') and 
+            if (isinstance(attr, type) and
+                attr_name.endswith('Channel') and
                 attr.__module__ == module.__name__):
                 return attr
-                
+
         return None
-    
+
     def _mount_static_assets(self, app: FastAPI, plugin: ChannelPlugin):
         """Mount static assets for the plugin"""
         try:
@@ -481,24 +481,24 @@ class PluginDiscoveryService:
 
         except Exception as e:
             logger.error(f"Error mounting static assets for {plugin.id}: {e}")
-    
+
     async def check_plugin_health(self, plugin: ChannelPlugin) -> bool:
         """Check if a plugin is healthy"""
         plugin.last_health_check = time.time()
         # For embedded plugins, health is determined by successful loading
         return plugin.healthy
-    
-    async def get_plugin_manifest(self, plugin_id: str) -> Optional[Dict[str, Any]]:
+
+    async def get_plugin_manifest(self, plugin_id: str) -> dict[str, Any] | None:
         """Get manifest from plugin instance"""
         plugin = self.plugins.get(plugin_id)
         if not plugin or not plugin.instance:
             return None
-        
+
         try:
             # Try to get manifest from plugin instance
             if hasattr(plugin.instance, 'get_manifest'):
                 return plugin.instance.get_manifest()
-            
+
             # Fallback to basic manifest generation
             return {
                 "id": plugin.id,
@@ -509,42 +509,42 @@ class PluginDiscoveryService:
                 "uiComponent": f"/api/channels/{plugin.id}/ui/manage.esm.js",
                 "staticAssets": f"/api/channels/{plugin.id}/assets"
             }
-                        
+
         except Exception as e:
             logger.error(f"Error getting manifest for {plugin_id}: {e}")
             return None
-    
-    async def request_plugin_image(self, plugin_id: str, request_data: Dict[str, Any]) -> Optional[bytes]:
+
+    async def request_plugin_image(self, plugin_id: str, request_data: dict[str, Any]) -> bytes | None:
         """Request image generation from plugin instance"""
         plugin = self.plugins.get(plugin_id)
         if not plugin or not plugin.instance:
             return None
-        
+
         try:
             # Try to call image request method on plugin instance
             if hasattr(plugin.instance, 'request_image'):
                 return plugin.instance.request_image(request_data)
-            
+
             logger.error(f"Plugin {plugin_id} does not support image requests")
             return None
-                        
+
         except Exception as e:
             logger.error(f"Error requesting image from {plugin_id}: {e}")
             return None
-    
-    def get_plugin(self, plugin_id: str) -> Optional[ChannelPlugin]:
+
+    def get_plugin(self, plugin_id: str) -> ChannelPlugin | None:
         """Get plugin by ID"""
         return self.plugins.get(plugin_id)
-    
-    def get_all_plugins(self) -> List[ChannelPlugin]:
+
+    def get_all_plugins(self) -> list[ChannelPlugin]:
         """Get all discovered plugins"""
         return list(self.plugins.values())
-    
-    def get_healthy_plugins(self) -> List[ChannelPlugin]:
+
+    def get_healthy_plugins(self) -> list[ChannelPlugin]:
         """Get only healthy plugins"""
         return [plugin for plugin in self.plugins.values() if plugin.healthy]
 
-    async def load_single_plugin(self, plugin_path: Path, app: FastAPI) -> Optional[ChannelPlugin]:
+    async def load_single_plugin(self, plugin_path: Path, app: FastAPI) -> ChannelPlugin | None:
         """Load a single plugin at runtime (hot-reload).
 
         This follows the same logic as ``discover_plugins`` but targets a single

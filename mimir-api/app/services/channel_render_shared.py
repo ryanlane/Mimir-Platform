@@ -21,8 +21,8 @@ import base64
 import hashlib
 from typing import Any
 
-from app.services.plugin_discovery import plugin_discovery_service
 from app.core.logging import get_logger
+from app.services.plugin_discovery import plugin_discovery_service
 
 logger = get_logger("app.services.channel_render_shared")
 

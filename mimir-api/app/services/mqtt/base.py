@@ -1,7 +1,8 @@
 # app/services/mqtt/base.py
 import asyncio
-from typing import Optional
+
 from aiomqtt import Client, MqttError
+
 from app.core.logging import get_logger
 from app.services.mqtt import config
 
@@ -10,7 +11,7 @@ logger = get_logger(__name__)
 class MqttServiceBase:
     def __init__(self, identifier: str):
         self.identifier = identifier
-        self.client: Optional[Client] = None
+        self.client: Client | None = None
         self.is_running = False
 
     async def start(self) -> bool:

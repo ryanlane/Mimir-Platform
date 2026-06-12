@@ -2,20 +2,18 @@
 Overlay API Routes
 FastAPI router for overlay-related endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.db.base import SessionLocal
 from app.db.models import Overlay
 from app.schemas.overlays import (
-    OverlayResponse,
     OverlayCreate,
+    OverlayListResponse,
+    OverlayResponse,
     OverlayUpdate,
-    OverlayListResponse
 )
-from app.schemas.common import PaginationParams
-
 
 router = APIRouter(prefix="/overlays", tags=["overlays"])
 
@@ -38,11 +36,11 @@ async def list_overlays(
     """Get paginated list of overlays"""
     total = db.query(Overlay).count()
     overlays = db.query(Overlay).offset(offset).limit(limit).all()
-    
+
     overlay_responses = [
         OverlayResponse.model_validate(overlay) for overlay in overlays
     ]
-    
+
     return OverlayListResponse(
         overlays=overlay_responses,
         total=total,
@@ -60,7 +58,7 @@ async def get_overlay(
     overlay = db.query(Overlay).filter(Overlay.id == overlay_id).first()
     if not overlay:
         raise HTTPException(status_code=404, detail="Overlay not found")
-    
+
     return OverlayResponse.model_validate(overlay)
 
 
@@ -76,11 +74,11 @@ async def create_overlay(
         overlay_type=overlay_data.overlay_type,
         config=overlay_data.config
     )
-    
+
     db.add(overlay)
     db.commit()
     db.refresh(overlay)
-    
+
     return OverlayResponse.model_validate(overlay)
 
 
@@ -94,15 +92,15 @@ async def update_overlay(
     overlay = db.query(Overlay).filter(Overlay.id == overlay_id).first()
     if not overlay:
         raise HTTPException(status_code=404, detail="Overlay not found")
-    
+
     # Update only provided fields
     update_data = overlay_data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(overlay, key, value)
-    
+
     db.commit()
     db.refresh(overlay)
-    
+
     return OverlayResponse.model_validate(overlay)
 
 
@@ -115,8 +113,8 @@ async def delete_overlay(
     overlay = db.query(Overlay).filter(Overlay.id == overlay_id).first()
     if not overlay:
         raise HTTPException(status_code=404, detail="Overlay not found")
-    
+
     db.delete(overlay)
     db.commit()
-    
+
     return {"message": "Overlay deleted successfully"}

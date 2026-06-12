@@ -19,12 +19,12 @@ Log markers:
 """
 
 import asyncio
-import json
-import uuid
-import time
 import hashlib
-from typing import Dict, Optional, Tuple, Any
+import json
+import time
+import uuid
 from datetime import datetime, timezone
+from typing import Any, Optional
 
 try:
     from aiomqtt import Client, MqttError
@@ -41,19 +41,19 @@ logger = get_logger(__name__)
 
 class MqttSceneAssignmentService:
     """MQTT-based scene assignment service"""
-    
+
     def __init__(self):
         self.broker_host = getattr(settings, 'mqtt_broker_host', 'localhost')
         self.broker_port = getattr(settings, 'mqtt_broker_port', 1883)
         self.client_id = f"mimir-scenes-{uuid.uuid4().hex[:8]}"
 
         self._pub = MQTTSceneAssignmentPublisher(client_id=self.client_id)
-        
+
         # Client state
-        self.client: Optional[Client] = None
+        self.client: Client | None = None
         self.is_running = False
         self._queue: asyncio.Queue = asyncio.Queue()
-        self._worker_task: Optional[asyncio.Task] = None
+        self._worker_task: asyncio.Task | None = None
         self._connected_evt = asyncio.Event()
 
         # Deduplication cache (mirrors publisher behavior for this path)
@@ -61,47 +61,47 @@ class MqttSceneAssignmentService:
         self._dedup_ttl: int = int(getattr(settings, "mqtt_dedup_ttl_seconds", 60))
         self._dedup_max: int = int(getattr(settings, "mqtt_dedup_max_entries", 1000))
         # key -> (hash, ts)
-        self._last_sent: Dict[str, Tuple[str, float]] = {}
+        self._last_sent: dict[str, tuple[str, float]] = {}
         if self._dedup_enabled:
             logger.info(
                 "mqtt.publisher.dedup enabled ttl=%ss max=%s (service path)",
                 self._dedup_ttl,
                 self._dedup_max,
             )
-        
+
         logger.info(f"MQTT Scene Assignment Service initialized - Broker: {self.broker_host}:{self.broker_port}")
-    
+
     async def start(self):
         """Start the MQTT scene assignment service"""
         if not AIOMQTT_AVAILABLE:
             logger.error("aiomqtt not available - MQTT scene assignment disabled")
             return False
-        
+
         if self.is_running:
             logger.debug("MQTT scene assignment service already running")
             return True
-        
+
         try:
             # Start the MQTT client task
             self.is_running = True
-            
+
             # Start the queue worker task
             if self._worker_task is None:
                 self._worker_task = asyncio.create_task(self._queue_worker())
-            
+
             asyncio.create_task(self._mqtt_scene_loop())
             logger.info("MQTT scene assignment service started")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to start MQTT scene assignment service: {e}")
             self.is_running = False
             return False
-    
+
     async def stop(self):
         """Stop the MQTT scene assignment service"""
         self.is_running = False
-        
+
         # Cancel worker task
         if self._worker_task:
             self._worker_task.cancel()
@@ -110,14 +110,14 @@ class MqttSceneAssignmentService:
             except asyncio.CancelledError:
                 pass
             self._worker_task = None
-        
+
         # The client will be automatically disconnected when the context manager exits
         self.client = None
         logger.info("MQTT scene assignment service stopped")
-        
+
     def is_connected(self) -> bool:
         return self._pub.is_connected()
-    
+
     async def _mqtt_scene_loop(self) -> None:
         """Main MQTT scene assignment client loop with automatic reconnection.
 
@@ -159,21 +159,21 @@ class MqttSceneAssignmentService:
             if self.is_running:
                 logger.info("Reconnecting MQTT scene assignment service in 5 seconds...")
                 await asyncio.sleep(5)
-    
+
     async def _handle_device_event(self, message):
         """Handle incoming MQTT device events"""
         try:
             topic_parts = message.topic.value.split('/')
             if len(topic_parts) < 3:
                 return
-            
+
             device_id = topic_parts[1]
-            
+
             payload = json.loads(message.payload.decode())
             event_type = payload.get('event', 'unknown')
-            
+
             logger.debug(f"Device {device_id} event: {event_type}")
-            
+
             evt_type = payload.get("type")
             if evt_type == "ack":
                 await self._handle_assignment_ack(device_id, payload)
@@ -181,21 +181,21 @@ class MqttSceneAssignmentService:
                 await self._handle_content_rendered(device_id, payload)
             elif evt_type == "error":
                 await self._handle_device_error(device_id, payload)
-                
+
         except Exception as e:
             logger.error(f"Error handling MQTT device event: {e}")
-    
-    async def _handle_assignment_ack(self, device_id: str, payload: Dict):
+
+    async def _handle_assignment_ack(self, device_id: str, payload: dict):
         """Handle scene assignment acknowledgment"""
         logger.info(f"Device {device_id} acknowledged scene assignment: {payload.get('scene_id')}")
         # Could update assignment status in database here
-    
-    async def _handle_content_rendered(self, device_id: str, payload: Dict):
+
+    async def _handle_content_rendered(self, device_id: str, payload: dict):
         """Handle content rendered notification"""
         logger.info(f"Device {device_id} rendered content: {payload.get('content_id')}")
         # Could update render status in database here
-    
-    async def _handle_device_error(self, device_id: str, payload: Dict):
+
+    async def _handle_device_error(self, device_id: str, payload: dict):
         """Handle device error reports"""
         error_msg = payload.get('message', 'Unknown error')
         logger.warning(f"Device {device_id} reported error: {error_msg}")
@@ -214,7 +214,7 @@ class MqttSceneAssignmentService:
                 topic, data, qos, retain = await asyncio.wait_for(
                     self._queue.get(), timeout=1.0
                 )
-                
+
                 # Publish the message if connected
                 if self.client and self.is_running:
                     await self.client.publish(topic, data, qos=qos, retain=retain)
@@ -222,7 +222,7 @@ class MqttSceneAssignmentService:
                 else:
                     await self._queue.put((topic, data, qos, retain))
                     await asyncio.sleep(0.25)
-                    
+
             except asyncio.TimeoutError:
                 # Timeout is expected - keeps the loop responsive
                 continue
@@ -252,7 +252,7 @@ class MqttSceneAssignmentService:
             return False
 
     @staticmethod
-    def _normalize_payload_for_hash(payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_payload_for_hash(payload: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of payload with volatile fields removed for stable hashing.
 
         Removes: timestamp, assignment_id, sequence. Applies recursively to lists/dicts.
@@ -268,12 +268,12 @@ class MqttSceneAssignmentService:
 
         return _strip(payload)
 
-    def _payload_hash(self, payload: Dict[str, Any]) -> str:
+    def _payload_hash(self, payload: dict[str, Any]) -> str:
         norm = self._normalize_payload_for_hash(payload)
         data = json.dumps(norm, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(data).hexdigest()
 
-    def _should_publish(self, topic: str, payload: Dict[str, Any]) -> bool:
+    def _should_publish(self, topic: str, payload: dict[str, Any]) -> bool:
         """Check dedup cache; record and return whether to publish now.
 
         Keyed by (topic, type) to scope by device and command type.
@@ -300,29 +300,29 @@ class MqttSceneAssignmentService:
         return True
 
     async def assign_scene_to_device(
-        self, 
-        device_id: str, 
-        scene_id: str, 
-        subchannel_id: Optional[str] = None,
-        assignment_id: Optional[str] = None
+        self,
+        device_id: str,
+        scene_id: str,
+        subchannel_id: str | None = None,
+        assignment_id: str | None = None
     ) -> bool:
         """
         Assign a scene to a device via MQTT. This sets the scene assignment but does not
         send content. To display actual content, use send_display_image() with the image URL.
-        
+
         Args:
             device_id: Target device identifier
             scene_id: Scene to assign
             subchannel_id: Optional subchannel identifier
             assignment_id: Optional assignment tracking ID, auto-generated if not provided
-            
+
         Returns:
             bool: True if message was published successfully
         """
         # Generate assignment_id if not provided
         if assignment_id is None:
             assignment_id = f"set-{uuid.uuid4().hex[:8]}"
-        
+
         payload = {
             "type": "set_scene",
             "scene_id": scene_id,
@@ -332,71 +332,71 @@ class MqttSceneAssignmentService:
 
         # Enrich with scheduling semantics using unified helper
         self._enrich_with_schedule_fields(scene_id, payload)
-        
+
         # Only include subchannel_id if provided
         if subchannel_id is not None:
             payload["subchannel_id"] = subchannel_id
-        
+
         return await self.publish_command(device_id, payload, qos=1, retain=False)
-    
+
     async def refresh_device_content(
-        self, 
+        self,
         device_id: str,
-        assignment_id: Optional[str] = None
+        assignment_id: str | None = None
     ) -> bool:
         """
         Send a refresh command to a device to trigger content update without scene reassignment.
-        
+
         DEPRECATED: This method sends a generic refresh command but doesn't include actual content.
         The correct architecture is to use send_display_image() with the actual image URL instead.
         The display client will acknowledge refresh commands but waits for display_image commands.
-        
+
         Args:
             device_id: Target device identifier
             assignment_id: Optional assignment tracking ID, auto-generated if not provided
-            
+
         Returns:
             bool: True if message was published successfully
         """
         # Generate assignment_id if not provided
         if assignment_id is None:
             assignment_id = f"refresh-{uuid.uuid4().hex[:8]}"
-        
+
         payload = {
             "type": "refresh",
             "assignment_id": assignment_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
     async def send_display_image(
         self,
         device_id: str,
         image_url: str,
-        assignment_id: Optional[str] = None,
-        image_width: Optional[int] = None,
-        image_height: Optional[int] = None,
-        image_format: Optional[str] = None,
+        assignment_id: str | None = None,
+        image_width: int | None = None,
+        image_height: int | None = None,
+        image_format: str | None = None,
     ) -> bool:
         """
         Send a display_image command to a device with the actual image URL.
         This is the correct way to tell displays to show specific content.
-        
+
         Args:
             device_id: Target device identifier
             image_url: Direct URL to the image to display
             assignment_id: Optional assignment tracking ID, auto-generated if not provided
             image_width: Optional image width hint
             image_height: Optional image height hint
-            
+
         Returns:
             bool: True if message was published successfully
         """
         # Generate assignment_id if not provided
         if assignment_id is None:
             assignment_id = f"display-{uuid.uuid4().hex[:8]}"
-        
+
         # Infer format if not explicitly provided
         fmt = (image_format or "").lower()
         if not fmt:
@@ -424,7 +424,7 @@ class MqttSceneAssignmentService:
             "assignment_id": assignment_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         # Add optional image dimensions if provided
         if image_width is not None:
             payload["image_width"] = image_width
@@ -432,51 +432,51 @@ class MqttSceneAssignmentService:
             payload["image_height"] = image_height
         if fmt:
             payload["image_format"] = fmt
-        
+
         logger.debug(f"Sending display_image command to {device_id}")
         return await self.publish_command(device_id, payload, qos=1, retain=False)
-      
+
     async def unassign_scene_from_device(self, device_id: str) -> bool:
         """Unassign scene from a device via MQTT"""
         try:
             if not self.client:
                 logger.error("Cannot unassign scene - MQTT client not connected")
                 return False
-            
+
             # Update database
             db = SessionLocal()
             try:
                 display = db.query(DisplayClient).filter(
                     DisplayClient.hostname == device_id
                 ).first()
-                
+
                 if not display:
                     logger.error(f"Device {device_id} not found")
                     return False
-                
+
                 display.assigned_scene_id = None
                 display.scene_assigned_at = None
                 db.commit()
-                
+
                 # Send MQTT command to device
                 command_topic = f"mimir/{device_id}/cmd"
                 command_payload = {
                     "command": "unassign_scene",
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
-                
+
                 await self.client.publish(
-                    command_topic, 
-                    json.dumps(command_payload), 
+                    command_topic,
+                    json.dumps(command_payload),
                     qos=1
                 )
-                
+
                 logger.info(f"Unassigned scene from device {device_id} via MQTT")
                 return True
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error unassigning scene via MQTT: {e}")
             return False
@@ -492,29 +492,29 @@ class MQTTSceneAssignmentPublisher:
 
     _instance: Optional["MQTTSceneAssignmentPublisher"] = None
 
-    def __init__(self, client_id: Optional[str] = None):
+    def __init__(self, client_id: str | None = None):
         if not AIOMQTT_AVAILABLE:
             raise RuntimeError("aiomqtt not available - install with `pip install aiomqtt`")
 
         self.broker_host = getattr(settings, 'mqtt_broker_host', 'localhost')
         self.broker_port = getattr(settings, 'mqtt_broker_port', 1883)
         self.client_id = client_id or f"mimir-pub-{uuid.uuid4().hex[:8]}"
-        self._queue: "asyncio.Queue[Tuple[str, bytes, int, bool]]" = asyncio.Queue()
-        self._task: Optional[asyncio.Task] = None
+        self._queue: asyncio.Queue[tuple[str, bytes, int, bool]] = asyncio.Queue()
+        self._task: asyncio.Task | None = None
         self._connected_evt = asyncio.Event()
         self._stopping = False
-        self._client: Optional[Client] = None
+        self._client: Client | None = None
 
         # Deduplication controls
         self._dedup_enabled: bool = bool(getattr(settings, "mqtt_dedup_enabled", True))
         self._dedup_ttl: int = int(getattr(settings, "mqtt_dedup_ttl_seconds", 60))
         self._dedup_max: int = int(getattr(settings, "mqtt_dedup_max_entries", 1000))
         # key -> (hash, ts)
-        self._last_sent: Dict[str, Tuple[str, float]] = {}
+        self._last_sent: dict[str, tuple[str, float]] = {}
 
     # ---------- Singleton helpers ----------
     @classmethod
-    def initialize(cls, client_id: Optional[str] = None) -> "MQTTSceneAssignmentPublisher":
+    def initialize(cls, client_id: str | None = None) -> "MQTTSceneAssignmentPublisher":
         """Create the singleton instance (idempotent)."""
         if cls._instance is None:
             cls._instance = cls(client_id)
@@ -636,40 +636,40 @@ class MQTTSceneAssignmentPublisher:
         self,
         device_id: str,
         image_url: str,
-        assignment_id: Optional[str] = None,
-        image_width: Optional[int] = None,
-        image_height: Optional[int] = None
+        assignment_id: str | None = None,
+        image_width: int | None = None,
+        image_height: int | None = None
     ) -> bool:
         """
         Send a display_image command to a device with the actual image URL.
         This follows the simple display architecture where displays just render URLs.
-        
+
         Args:
             device_id: Target device identifier
             image_url: Direct URL to the image to display
             assignment_id: Optional assignment tracking ID, auto-generated if not provided
             image_width: Optional image width hint
             image_height: Optional image height hint
-            
+
         Returns:
             bool: True if message was published successfully
         """
         if assignment_id is None:
             assignment_id = f"display-{uuid.uuid4().hex[:8]}"
-            
+
         payload = {
             "type": "display_image",
             "image_url": image_url,
             "assignment_id": assignment_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         # Add optional image dimensions if provided
         if image_width is not None:
             payload["image_width"] = image_width
         if image_height is not None:
             payload["image_height"] = image_height
-        
+
         logger.debug("Sending display_image command to %s", device_id)
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
@@ -748,7 +748,7 @@ class MQTTSceneAssignmentPublisher:
 
     # ---------- Dedup helpers ----------
     @staticmethod
-    def _normalize_payload_for_hash(payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_payload_for_hash(payload: dict[str, Any]) -> dict[str, Any]:
         """Return a copy of payload with volatile fields removed for stable hashing.
 
         Removes: timestamp, assignment_id, sequence. Applies recursively to lists/dicts.
@@ -764,12 +764,12 @@ class MQTTSceneAssignmentPublisher:
 
         return _strip(payload)
 
-    def _payload_hash(self, payload: Dict[str, Any]) -> str:
+    def _payload_hash(self, payload: dict[str, Any]) -> str:
         norm = self._normalize_payload_for_hash(payload)
         data = json.dumps(norm, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(data).hexdigest()
 
-    def _should_publish(self, topic: str, payload: Dict[str, Any]) -> bool:
+    def _should_publish(self, topic: str, payload: dict[str, Any]) -> bool:
         """Check dedup cache; record and return whether to publish now.
 
         Keyed by (topic, type) to scope by device and command type.
@@ -802,20 +802,20 @@ async def setup_mqtt_scene_assignment():
     """Setup MQTT scene assignment service"""
     try:
         success = await mqtt_scene_service.start()
-        
+
         if success:
             logger.info("MQTT scene assignment service setup completed")
         else:
             logger.warning("MQTT scene assignment service failed to start")
-            
+
         return success
-        
+
     except Exception as e:
         logger.error(f"Failed to setup MQTT scene assignment: {e}")
         return False
 
 # ---------------------- Scheduling Enrichment Helper ----------------------
-def _extract_refresh_interval(scene: Scene, session) -> Optional[int]:
+def _extract_refresh_interval(scene: Scene, session) -> int | None:
     """Derive a best-effort refresh interval (seconds) for scheduled scenes.
 
     Priority:
@@ -864,7 +864,7 @@ def _derive_update_type(scene: Scene) -> str:
     strat = getattr(scene, "update_strategy", None) or "scheduler"
     return "push" if strat == "push" else "scheduled"
 
-def _enrich_with_schedule_fields(scene_id: str, payload: Dict[str, Any]) -> None:
+def _enrich_with_schedule_fields(scene_id: str, payload: dict[str, Any]) -> None:
     """Populate update_type and refresh_interval_s in-place if resolvable."""
     try:
         session = SessionLocal()

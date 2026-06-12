@@ -5,10 +5,10 @@ Can be replaced later with persistent storage if needed.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
 from threading import RLock
+from typing import Any
 
 
 @dataclass
@@ -17,14 +17,14 @@ class DisplayImageRecord:
     assignment_id: str
     image_url: str
     sent_at: datetime
-    image_width: Optional[int] = None
-    image_height: Optional[int] = None
-    image_format: Optional[str] = None
-    scene_id: Optional[str] = None
-    subchannel_id: Optional[str] = None
-    image_path: Optional[str] = None  # local filesystem path if swap stored
+    image_width: int | None = None
+    image_height: int | None = None
+    image_format: str | None = None
+    scene_id: str | None = None
+    subchannel_id: str | None = None
+    image_path: str | None = None  # local filesystem path if swap stored
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["sent_at"] = self.sent_at.isoformat()
         return d
@@ -33,11 +33,11 @@ class DisplayImageRecord:
 class DisplayLastImageStore:
     def __init__(self) -> None:
         self._lock = RLock()
-        self._records: Dict[str, DisplayImageRecord] = {}
+        self._records: dict[str, DisplayImageRecord] = {}
 
     def update(self, *, device_id: str, assignment_id: str, image_url: str,
-               image_width: Optional[int], image_height: Optional[int], image_format: Optional[str],
-               scene_id: Optional[str], subchannel_id: Optional[str], image_path: Optional[str] = None) -> None:
+               image_width: int | None, image_height: int | None, image_format: str | None,
+               scene_id: str | None, subchannel_id: str | None, image_path: str | None = None) -> None:
         with self._lock:
             self._records[device_id] = DisplayImageRecord(
                 device_id=device_id,
@@ -52,7 +52,7 @@ class DisplayLastImageStore:
                 image_path=image_path,
             )
 
-    def get(self, device_id: str) -> Optional[DisplayImageRecord]:
+    def get(self, device_id: str) -> DisplayImageRecord | None:
         with self._lock:
             return self._records.get(device_id)
 
@@ -60,7 +60,7 @@ class DisplayLastImageStore:
         with self._lock:
             return self._records.pop(device_id, None) is not None
 
-    def all(self) -> Dict[str, DisplayImageRecord]:
+    def all(self) -> dict[str, DisplayImageRecord]:
         with self._lock:
             return dict(self._records)
 

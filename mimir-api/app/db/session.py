@@ -2,10 +2,12 @@
 Database session management for Mimir API
 Provides session creation and dependency injection utilities
 """
-from typing import Generator
+from collections.abc import Generator
+
 from sqlalchemy.orm import Session
-from app.db.base import SessionLocal
+
 from app.core.logging import get_logger
+from app.db.base import SessionLocal
 
 logger = get_logger("app.db.session")
 
@@ -37,7 +39,7 @@ def get_db_session() -> Session:
 
 class DatabaseManager:
     """Database management utilities"""
-    
+
     @staticmethod
     def health_check() -> bool:
         """Check database connectivity"""
@@ -50,13 +52,13 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
             return False
-    
+
     @staticmethod
     def get_connection_info() -> dict:
         """Get database connection information"""
         from app.config import settings
         from app.db.base import engine
-        
+
         return {
             "database_url": settings.database_url,
             "pool_size": settings.database_pool_size,

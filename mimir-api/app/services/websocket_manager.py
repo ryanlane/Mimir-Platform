@@ -26,7 +26,7 @@ from fastapi import WebSocket
 
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
-from app.db.models import Channel, Scene, DisplayClient
+from app.db.models import Channel, DisplayClient, Scene
 
 try:  # optional metrics
     from app.core.metrics import metrics

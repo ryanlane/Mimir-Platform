@@ -30,10 +30,9 @@ Thread/Async Safety:
 from __future__ import annotations
 
 import errno
-import uuid
 import logging
+import uuid
 from pathlib import Path
-from typing import Optional, Tuple, List
 
 from app.config import settings
 
@@ -72,9 +71,9 @@ def save_swap_image(
     scene_id: str,
     display_id: str,
     image_bytes: bytes,
-    content_type: Optional[str],
-    public_base_url: Optional[str] = None,
-) -> Tuple[Optional[Path], Optional[str], int]:
+    content_type: str | None,
+    public_base_url: str | None = None,
+) -> tuple[Path | None, str | None, int]:
     """Write bytes to per-display swap directory.
 
     Args:
@@ -115,7 +114,7 @@ def save_swap_image(
         return None, None, 0
 
 
-def prune_swap(*, max_files_per_display: int = 20, max_total_per_scene: Optional[int] = None) -> int:
+def prune_swap(*, max_files_per_display: int = 20, max_total_per_scene: int | None = None) -> int:
     """Prune oldest files keeping only the newest N per (scene, display) pair.
 
     Args:
@@ -135,7 +134,7 @@ def prune_swap(*, max_files_per_display: int = 20, max_total_per_scene: Optional
             if not scene_dir.is_dir():
                 continue
             scene_file_count: int = 0
-            scene_all_files: List[Path] = []
+            scene_all_files: list[Path] = []
             for display_dir in scene_dir.iterdir():
                 if not display_dir.is_dir():
                     continue

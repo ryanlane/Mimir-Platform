@@ -1,12 +1,10 @@
 """Alembic migration environment for Mimir API"""
 import sys
-from pathlib import Path
 from logging.config import fileConfig
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from pathlib import Path
 
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # Add the app directory to Python path so we can import our models
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))

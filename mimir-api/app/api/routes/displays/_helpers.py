@@ -8,13 +8,11 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException, Request
-from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient, DisplaySceneImage
 from app.services.mdns_discovery import mdns_discovery_service
-from app.config import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +55,12 @@ def _host_resolves_to_private_network(hostname: str) -> bool:
         return parsed_ip.is_private or parsed_ip.is_link_local
     except ValueError:
         pass
+
+    # mDNS names (.local, RFC 6762) are link-local by definition. Accept them
+    # without resolving: the server often cannot resolve .local names even
+    # though the client that supplied the hint demonstrably can.
+    if hostname.rstrip(".").lower().endswith(".local"):
+        return True
 
     try:
         resolved = {

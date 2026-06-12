@@ -1,5 +1,4 @@
 # app/services/mqtt/topics.py
-from dataclasses import dataclass
 
 PREFIX = "mimir"
 

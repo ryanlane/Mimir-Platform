@@ -1,24 +1,30 @@
 """
 API endpoints for scheduler management
 """
-from datetime import datetime
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
-from app.db.models import SchedulerJob, SchedulerExecution
+from app.db.models import SchedulerJob
 from app.schemas.scheduler import (
-    SchedulerJobCreate, SchedulerJobUpdate, SchedulerJobResponse,
-    SchedulerJobListResponse, SchedulerJobStatusResponse,
-    ManualTriggerRequest, ManualTriggerResponse,
-    SceneAssignmentCreate, SceneAssignmentUpdate, SceneAssignmentResponse,
-    SchedulerStatsResponse, BulkJobOperationRequest, BulkJobOperationResponse,
-    ExecutionStatus, TriggerReason
+    BulkJobOperationRequest,
+    BulkJobOperationResponse,
+    ExecutionStatus,
+    ManualTriggerRequest,
+    ManualTriggerResponse,
+    SceneAssignmentCreate,
+    SceneAssignmentResponse,
+    SchedulerJobCreate,
+    SchedulerJobListResponse,
+    SchedulerJobResponse,
+    SchedulerJobStatusResponse,
+    SchedulerJobUpdate,
+    SchedulerStatsResponse,
+    TriggerReason,
 )
+from app.services.scheduler_math import is_job_due, is_job_locked, now_utc
 from app.services.scheduler_service import SchedulerService
-from app.services.scheduler_math import now_utc, is_job_due, is_job_locked
 from app.services.scheduler_worker import scheduler_worker
 
 router = APIRouter(prefix="/scheduler", tags=["scheduler"])
@@ -40,12 +46,12 @@ async def create_scheduler_job(
 ):
     """Create a new scheduler job with scene assignments"""
     service = SchedulerService(db)
-    
+
     try:
         job = await service.create_job(job_data)
         return job
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/jobs", response_model=SchedulerJobListResponse)
@@ -57,19 +63,19 @@ async def list_scheduler_jobs(
 ):
     """List scheduler jobs with pagination"""
     query = db.query(SchedulerJob)
-    
+
     if enabled_only:
-        query = query.filter(SchedulerJob.enabled == True)
-    
+        query = query.filter(SchedulerJob.enabled.is_(True))
+
     total = query.count()
     jobs = query.offset(offset).limit(limit).all()
-    
+
     # Populate scene assignments for each job
     service = SchedulerService(db)
     for job in jobs:
         assignments = await service.get_job_assignments(job.id)
         job.scene_assignments = assignments
-    
+
     return SchedulerJobListResponse(
         jobs=jobs,
         total=total,
@@ -87,12 +93,12 @@ async def get_scheduler_job(
     job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scheduler job not found")
-    
+
     # Populate scene assignments
     service = SchedulerService(db)
     assignments = await service.get_job_assignments(job.id)
     job.scene_assignments = assignments
-    
+
     return job
 
 
@@ -104,12 +110,12 @@ async def update_scheduler_job(
 ):
     """Update an existing scheduler job"""
     service = SchedulerService(db)
-    
+
     try:
         job = await service.update_job(job_id, updates)
         return job
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.delete("/jobs/{job_id}")
@@ -119,11 +125,11 @@ async def delete_scheduler_job(
 ):
     """Delete a scheduler job"""
     service = SchedulerService(db)
-    
+
     success = await service.delete_job(job_id)
     if not success:
         raise HTTPException(status_code=404, detail="Scheduler job not found")
-    
+
     return {"message": f"Scheduler job {job_id} deleted successfully"}
 
 
@@ -136,15 +142,15 @@ async def get_job_status(
     job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scheduler job not found")
-    
+
     service = SchedulerService(db)
-    
+
     # Populate scene assignments
     assignments = await service.get_job_assignments(job.id)
     job.scene_assignments = assignments
-    
+
     recent_executions = await service.get_execution_history(job_id, limit=10)
-    
+
     return SchedulerJobStatusResponse(
         job=job,
         recent_executions=recent_executions,
@@ -162,7 +168,7 @@ async def add_scene_to_job(
 ):
     """Add a scene assignment to an existing job"""
     service = SchedulerService(db)
-    
+
     try:
         assignment = await service.add_scene_assignment(
             job_id,
@@ -172,7 +178,7 @@ async def add_scene_to_job(
         )
         return assignment
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/jobs/{job_id}/scenes/{scene_id}")
@@ -183,18 +189,18 @@ async def remove_scene_from_job(
 ):
     """Remove a scene assignment from a job"""
     service = SchedulerService(db)
-    
+
     success = await service.remove_scene_assignment(job_id, scene_id)
     if not success:
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail=f"Scene assignment not found for job {job_id} and scene {scene_id}"
         )
-    
+
     return {"message": f"Scene {scene_id} removed from job {job_id}"}
 
 
-@router.get("/jobs/{job_id}/scenes", response_model=List[SceneAssignmentResponse])
+@router.get("/jobs/{job_id}/scenes", response_model=list[SceneAssignmentResponse])
 async def get_job_scene_assignments(
     job_id: str,
     db: Session = Depends(get_db)
@@ -204,7 +210,7 @@ async def get_job_scene_assignments(
     job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scheduler job not found")
-    
+
     service = SchedulerService(db)
     assignments = await service.get_job_assignments(job_id)
     return assignments
@@ -220,21 +226,19 @@ async def trigger_job_manually(
     job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scheduler job not found")
-    
+
     if not job.enabled and not trigger_data.force:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Job is disabled. Use force=true to override."
         )
-    
+
     if is_job_locked(job) and not trigger_data.force:
         raise HTTPException(
             status_code=400,
             detail="Job is currently locked. Use force=true to override."
         )
-    
-    # Start execution record
-    service = SchedulerService(db)
+
     # Execute immediately via worker helper (bypasses polling delay)
     execution_id = await scheduler_worker.run_job_immediately(
         job_id,
@@ -256,7 +260,7 @@ async def trigger_job_manually(
 async def get_job_executions(
     job_id: str,
     limit: int = Query(50, ge=1, le=200, description="Number of executions to return"),
-    status_filter: Optional[ExecutionStatus] = Query(None, description="Filter by execution status"),
+    status_filter: ExecutionStatus | None = Query(None, description="Filter by execution status"),
     db: Session = Depends(get_db)
 ):
     """Get execution history for a job"""
@@ -264,7 +268,7 @@ async def get_job_executions(
     job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scheduler job not found")
-    
+
     service = SchedulerService(db)
     executions = await service.get_execution_history(job_id, limit, status_filter)
     return executions
@@ -300,14 +304,14 @@ async def bulk_job_operation(
     service = SchedulerService(db)
     successful_jobs = []
     failed_jobs = []
-    
+
     for job_id in operation_data.job_ids:
         try:
             job = db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
             if not job:
                 failed_jobs.append({"job_id": job_id, "error": "Job not found"})
                 continue
-            
+
             if operation_data.operation == "enable":
                 job.enabled = True
             elif operation_data.operation == "disable":
@@ -336,14 +340,14 @@ async def bulk_job_operation(
             else:
                 failed_jobs.append({"job_id": job_id, "error": f"Unknown operation: {operation_data.operation}"})
                 continue
-            
+
             successful_jobs.append(job_id)
-            
+
         except Exception as e:
             failed_jobs.append({"job_id": job_id, "error": str(e)})
-    
+
     db.commit()
-    
+
     return BulkJobOperationResponse(
         successful_jobs=successful_jobs,
         failed_jobs=failed_jobs,
@@ -352,7 +356,7 @@ async def bulk_job_operation(
     )
 
 
-@router.get("/scenes/{scene_id}/jobs", response_model=List[SceneAssignmentResponse])
+@router.get("/scenes/{scene_id}/jobs", response_model=list[SceneAssignmentResponse])
 async def get_scene_scheduler_jobs(
     scene_id: str,
     db: Session = Depends(get_db)
@@ -363,7 +367,7 @@ async def get_scene_scheduler_jobs(
     scene = db.query(Scene).filter(Scene.id == scene_id).first()
     if not scene:
         raise HTTPException(status_code=404, detail="Scene not found")
-    
+
     service = SchedulerService(db)
     assignments = await service.get_scene_assignments(scene_id)
     return assignments

@@ -10,18 +10,18 @@ Feature guarded by settings.mqtt_discovery_enabled.
 """
 from __future__ import annotations
 
-from datetime import datetime
 import secrets
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.services.mqtt.discovery_registry import mqtt_discovery_registry
+from app.core.logging import get_logger
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient  # type: ignore
-from app.core.logging import get_logger
+from app.services.mqtt.discovery_registry import mqtt_discovery_registry
 
 logger = get_logger(__name__)
 

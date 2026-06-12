@@ -2,289 +2,269 @@
 Unit Tests for ChannelDiscoveryService
 Tests channel discovery, configuration loading, and SRI hash computation
 """
-import pytest
-import json
+import base64
 import hashlib
-from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
+import json
+
+import pytest
+from fastapi import FastAPI
 
 from app.services.channel_discovery import ChannelDiscoveryService
-from app.core.config import Settings
+
+
+def make_channel(channels_dir, dir_name="test-channel", config=None, with_ui=True, with_class=True):
+    """Create a channel directory structure on disk."""
+    channel_dir = channels_dir / dir_name
+    channel_dir.mkdir(parents=True)
+
+    if config is None:
+        config = {
+            "id": dir_name,
+            "name": "Test Channel",
+            "description": "A test channel",
+            "version": "1.0.0",
+            "schemaVersion": "2.1",
+            "ui": [
+                {
+                    "type": "settings",
+                    "moduleUrl": "./settings.js",
+                    "styleUrl": "./settings.css",
+                }
+            ],
+        }
+    (channel_dir / "config.json").write_text(json.dumps(config))
+
+    if with_ui:
+        ui_dir = channel_dir / "ui"
+        ui_dir.mkdir()
+        (ui_dir / "settings.js").write_text("// settings module")
+        (ui_dir / "settings.css").write_text("/* settings styles */")
+
+    if with_class:
+        (channel_dir / "channel.py").write_text(
+            "class TestChannel:\n"
+            "    def __init__(self, channel_path):\n"
+            "        self.channel_path = channel_path\n"
+            "\n"
+            "ChannelClass = TestChannel\n"
+        )
+
+    return channel_dir
+
+
+@pytest.fixture()
+def channels_dir(tmp_path):
+    path = tmp_path / "channels"
+    path.mkdir()
+    return path
+
+
+@pytest.fixture()
+def service(channels_dir):
+    return ChannelDiscoveryService(channels_dir=str(channels_dir))
 
 
 @pytest.mark.unit
 @pytest.mark.channels
-class TestChannelDiscoveryService:
-    """Test ChannelDiscoveryService functionality"""
-    
-    @pytest.fixture
-    def mock_settings(self):
-        """Mock settings for testing"""
-        settings = Mock(spec=Settings)
-        settings.channels_dir = "test_channels"
-        settings.debug = True
-        return settings
-    
-    @pytest.fixture
-    def channel_service(self, mock_settings):
-        """Create ChannelDiscoveryService instance"""
-        return ChannelDiscoveryService(settings=mock_settings)
-    
-    def test_compute_sri_hash(self, channel_service):
-        """Test SRI hash computation"""
-        content = "test content"
-        expected_hash = f"sha384-{hashlib.sha384(content.encode()).digest().hex()}"
-        
-        result = channel_service.compute_sri_hash(content)
-        
-        assert result == expected_hash
-    
-    def test_compute_sri_hash_empty_content(self, channel_service):
-        """Test SRI hash computation with empty content"""
-        content = ""
-        expected_hash = f"sha384-{hashlib.sha384(content.encode()).digest().hex()}"
-        
-        result = channel_service.compute_sri_hash(content)
-        
-        assert result == expected_hash
-    
-    def test_load_channel_config_valid(self, channel_service, mock_channel_directory):
-        """Test loading valid channel configuration"""
-        config_path = mock_channel_directory / "config.json"
-        
-        result = channel_service.load_channel_config(config_path)
-        
-        assert result is not None
-        assert result["id"] == "test-channel"
-        assert result["name"] == "Test Channel"
-        assert "ui" in result
-    
-    def test_load_channel_config_missing_file(self, channel_service, tmp_path):
-        """Test loading non-existent configuration file"""
-        config_path = tmp_path / "missing.json"
-        
-        result = channel_service.load_channel_config(config_path)
-        
-        assert result is None
-    
-    def test_load_channel_config_invalid_json(self, channel_service, tmp_path):
-        """Test loading invalid JSON configuration"""
-        config_path = tmp_path / "invalid.json"
-        config_path.write_text("invalid json content")
-        
-        result = channel_service.load_channel_config(config_path)
-        
-        assert result is None
-    
-    def test_validate_channel_config_valid(self, channel_service, sample_channel_data):
-        """Test validation of valid channel configuration"""
-        result = channel_service.validate_channel_config(sample_channel_data)
-        
-        assert result is True
-    
-    def test_validate_channel_config_missing_required_fields(self, channel_service):
-        """Test validation with missing required fields"""
-        invalid_config = {"name": "Test Channel"}
-        
-        result = channel_service.validate_channel_config(invalid_config)
-        
-        assert result is False
-    
-    def test_validate_channel_config_invalid_schema_version(self, channel_service, sample_channel_data):
-        """Test validation with invalid schema version"""
-        sample_channel_data["schemaVersion"] = "1.0"  # Unsupported version
-        
-        result = channel_service.validate_channel_config(sample_channel_data)
-        
-        assert result is False
-    
-    def test_validate_channel_config_invalid_ui_structure(self, channel_service, sample_channel_data):
-        """Test validation with invalid UI structure"""
-        sample_channel_data["ui"] = [{"type": "invalid"}]  # Missing required fields
-        
-        result = channel_service.validate_channel_config(sample_channel_data)
-        
-        assert result is False
-    
-    @patch('pathlib.Path.exists')
-    def test_discover_channels_no_directory(self, mock_exists, channel_service):
-        """Test channel discovery when channels directory doesn't exist"""
-        mock_exists.return_value = False
-        
-        result = channel_service.discover_channels()
-        
-        assert result == []
-    
-    @patch('pathlib.Path.iterdir')
-    @patch('pathlib.Path.exists')
-    def test_discover_channels_empty_directory(self, mock_exists, mock_iterdir, channel_service):
-        """Test channel discovery in empty directory"""
-        mock_exists.return_value = True
-        mock_iterdir.return_value = []
-        
-        result = channel_service.discover_channels()
-        
-        assert result == []
-    
-    def test_discover_channels_with_valid_channel(self, channel_service, mock_channel_directory, 
-                                                 sample_channel_data, monkeypatch):
-        """Test discovering channels with valid configuration"""
-        # Mock the channels directory path
-        channels_path = mock_channel_directory.parent
-        monkeypatch.setattr(channel_service.settings, 'channels_dir', str(channels_path))
-        
-        with patch.object(channel_service, 'load_channel_config') as mock_load:
-            mock_load.return_value = sample_channel_data
-            with patch.object(channel_service, 'validate_channel_config') as mock_validate:
-                mock_validate.return_value = True
-                with patch.object(channel_service, 'process_channel_ui') as mock_process:
-                    mock_process.return_value = sample_channel_data["ui"]
-                    
-                    result = channel_service.discover_channels()
-                    
-                    assert len(result) == 1
-                    assert result[0]["id"] == "test-channel"
-    
-    def test_discover_channels_with_invalid_channel(self, channel_service, mock_channel_directory, 
-                                                   sample_channel_data, monkeypatch):
-        """Test discovering channels with invalid configuration"""
-        # Mock the channels directory path
-        channels_path = mock_channel_directory.parent
-        monkeypatch.setattr(channel_service.settings, 'channels_dir', str(channels_path))
-        
-        with patch.object(channel_service, 'load_channel_config') as mock_load:
-            mock_load.return_value = sample_channel_data
-            with patch.object(channel_service, 'validate_channel_config') as mock_validate:
-                mock_validate.return_value = False
-                
-                result = channel_service.discover_channels()
-                
-                assert result == []
-    
-    def test_process_channel_ui_with_files(self, channel_service, mock_channel_directory):
-        """Test processing UI configuration with existing files"""
-        ui_config = [
-            {
-                "type": "settings",
-                "moduleUrl": "./settings.js",
-                "styleUrl": "./settings.css"
-            }
-        ]
-        
-        result = channel_service.process_channel_ui(ui_config, mock_channel_directory)
-        
-        assert len(result) == 1
-        assert "integrity" in result[0]
-        assert "module" in result[0]["integrity"]
-        assert "style" in result[0]["integrity"]
-    
-    def test_process_channel_ui_missing_files(self, channel_service, tmp_path):
-        """Test processing UI configuration with missing files"""
-        ui_config = [
-            {
-                "type": "settings",
-                "moduleUrl": "./missing.js",
-                "styleUrl": "./missing.css"
-            }
-        ]
-        
-        result = channel_service.process_channel_ui(ui_config, tmp_path)
-        
-        assert len(result) == 1
-        assert "integrity" not in result[0] or result[0]["integrity"] == {}
-    
-    def test_process_channel_ui_no_urls(self, channel_service, tmp_path):
-        """Test processing UI configuration without URLs"""
-        ui_config = [
-            {
-                "type": "settings"
-            }
-        ]
-        
-        result = channel_service.process_channel_ui(ui_config, tmp_path)
-        
-        assert len(result) == 1
-        assert "integrity" not in result[0] or result[0]["integrity"] == {}
-    
-    def test_get_channel_by_id_exists(self, channel_service, sample_channel_data):
-        """Test getting channel by ID when it exists"""
-        with patch.object(channel_service, 'discover_channels') as mock_discover:
-            mock_discover.return_value = [sample_channel_data]
-            
-            result = channel_service.get_channel_by_id("test-channel")
-            
-            assert result is not None
-            assert result["id"] == "test-channel"
-    
-    def test_get_channel_by_id_not_exists(self, channel_service):
-        """Test getting channel by ID when it doesn't exist"""
-        with patch.object(channel_service, 'discover_channels') as mock_discover:
-            mock_discover.return_value = []
-            
-            result = channel_service.get_channel_by_id("missing-channel")
-            
-            assert result is None
-    
-    def test_get_all_channels(self, channel_service, sample_channel_data):
-        """Test getting all channels"""
-        with patch.object(channel_service, 'discover_channels') as mock_discover:
-            mock_discover.return_value = [sample_channel_data]
-            
-            result = channel_service.get_all_channels()
-            
-            assert len(result) == 1
-            assert result[0]["id"] == "test-channel"
-    
-    def test_refresh_channels(self, channel_service):
-        """Test refreshing channel cache"""
-        with patch.object(channel_service, 'discover_channels') as mock_discover:
-            mock_discover.return_value = []
-            
-            # Should call discover_channels fresh
-            result = channel_service.refresh_channels()
-            
-            mock_discover.assert_called_once()
-            assert result == []
-    
-    def test_mount_channel_static_files(self, channel_service, mock_channel_directory):
-        """Test mounting static files for a channel"""
-        app_mock = Mock()
-        
-        channel_service.mount_channel_static_files(app_mock, "test-channel", mock_channel_directory)
-        
-        # Should mount static files
-        app_mock.mount.assert_called()
-    
-    @pytest.mark.parametrize("file_content,expected_length", [
-        ("short content", 59),  # 'sha384-' + 56 hex chars
-        ("a" * 1000, 59),       # Long content, same hash length
-        ("", 59),               # Empty content
-    ])
-    def test_sri_hash_format(self, channel_service, file_content, expected_length):
-        """Test SRI hash format consistency"""
-        result = channel_service.compute_sri_hash(file_content)
-        
+class TestSriHash:
+    def test_compute_sri_hash(self, service, tmp_path):
+        content = b"test content"
+        file_path = tmp_path / "file.js"
+        file_path.write_bytes(content)
+
+        expected = "sha384-" + base64.b64encode(hashlib.sha384(content).digest()).decode("ascii")
+        assert service.compute_sri_hash(file_path) == expected
+
+    def test_compute_sri_hash_missing_file(self, service, tmp_path):
+        assert service.compute_sri_hash(tmp_path / "missing.js") == ""
+
+    @pytest.mark.parametrize("content", [b"", b"short", b"a" * 10000])
+    def test_sri_hash_format(self, service, tmp_path, content):
+        file_path = tmp_path / "file.bin"
+        file_path.write_bytes(content)
+
+        result = service.compute_sri_hash(file_path)
         assert result.startswith("sha384-")
-        assert len(result) == expected_length
-        assert all(c in "0123456789abcdef" for c in result[7:])  # Valid hex
-    
-    def test_channel_config_schema_versions(self, channel_service):
-        """Test supported schema versions"""
-        supported_versions = ["2.0", "2.1"]
-        
-        for version in supported_versions:
-            config = {
-                "id": "test",
-                "name": "Test",
-                "schemaVersion": version,
-                "settingsType": "simple",
-                "ui": []
-            }
-            
-            result = channel_service.validate_channel_config(config)
-            assert result is True
-        
-        # Test unsupported version
-        config["schemaVersion"] = "1.0"
-        result = channel_service.validate_channel_config(config)
-        assert result is False
+        # sha384 digest is 48 bytes -> 64 base64 chars
+        assert len(result) == len("sha384-") + 64
+
+
+@pytest.mark.unit
+@pytest.mark.channels
+class TestLoadChannelConfig:
+    def test_valid_config(self, service, channels_dir):
+        channel_dir = make_channel(channels_dir)
+
+        config = service.load_channel_config(channel_dir)
+
+        assert config is not None
+        assert config["name"] == "Test Channel"
+        assert config["schemaVersion"] == "2.1"
+
+    def test_missing_config_file(self, service, channels_dir):
+        empty_dir = channels_dir / "empty"
+        empty_dir.mkdir()
+
+        assert service.load_channel_config(empty_dir) is None
+
+    def test_invalid_json(self, service, channels_dir):
+        channel_dir = channels_dir / "broken"
+        channel_dir.mkdir()
+        (channel_dir / "config.json").write_text("not valid json {")
+
+        assert service.load_channel_config(channel_dir) is None
+
+    def test_missing_required_fields(self, service, channels_dir):
+        channel_dir = make_channel(
+            channels_dir,
+            dir_name="incomplete",
+            config={"name": "Only A Name"},
+            with_ui=False,
+            with_class=False,
+        )
+
+        assert service.load_channel_config(channel_dir) is None
+
+    def test_schema_version_defaulted(self, service, channels_dir):
+        channel_dir = make_channel(
+            channels_dir,
+            dir_name="no-schema",
+            config={"name": "N", "description": "D", "version": "1.0.0"},
+            with_ui=False,
+            with_class=False,
+        )
+
+        config = service.load_channel_config(channel_dir)
+        assert config["schemaVersion"] == "2.1"
+
+    def test_integrity_hashes_added_for_ui_files(self, service, channels_dir):
+        channel_dir = make_channel(channels_dir)
+
+        config = service.load_channel_config(channel_dir)
+
+        integrity = config["ui"][0]["integrity"]
+        assert integrity["module"].startswith("sha384-")
+        assert integrity["style"].startswith("sha384-")
+
+    def test_integrity_not_added_for_missing_ui_files(self, service, channels_dir):
+        channel_dir = make_channel(channels_dir, dir_name="no-ui-files", with_ui=False)
+
+        config = service.load_channel_config(channel_dir)
+
+        assert "integrity" not in config["ui"][0]
+
+
+@pytest.mark.unit
+@pytest.mark.channels
+class TestLoadChannelClass:
+    def test_loads_channel_class_export(self, service, channels_dir):
+        channel_dir = make_channel(channels_dir)
+
+        instance = service.load_channel_class(channel_dir)
+
+        assert instance is not None
+        assert instance.channel_path == str(channel_dir)
+
+    def test_missing_channel_py(self, service, channels_dir):
+        channel_dir = make_channel(channels_dir, dir_name="no-code", with_class=False)
+
+        assert service.load_channel_class(channel_dir) is None
+
+
+@pytest.mark.unit
+@pytest.mark.channels
+class TestDiscoverChannels:
+    def test_nonexistent_directory_is_created(self, tmp_path):
+        missing = tmp_path / "does-not-exist"
+        service = ChannelDiscoveryService(channels_dir=str(missing))
+
+        result = service.discover_channels(FastAPI())
+
+        assert result == []
+        assert missing.exists()
+
+    def test_empty_directory(self, service):
+        assert service.discover_channels(FastAPI()) == []
+
+    def test_discovers_valid_channel(self, service, channels_dir):
+        make_channel(channels_dir)
+
+        result = service.discover_channels(FastAPI())
+
+        assert len(result) == 1
+        assert result[0]["id"] == "test-channel"
+        assert result[0]["instance"] is not None
+        assert "test-channel" in service.loaded_channels
+
+    def test_config_id_overrides_directory_name(self, service, channels_dir):
+        make_channel(
+            channels_dir,
+            dir_name="dir-name",
+            config={
+                "id": "com.example.custom",
+                "name": "N",
+                "description": "D",
+                "version": "1.0.0",
+            },
+            with_class=False,
+        )
+
+        result = service.discover_channels(FastAPI())
+
+        assert result[0]["id"] == "com.example.custom"
+        assert result[0]["directory_name"] == "dir-name"
+
+    def test_skips_invalid_and_non_channel_entries(self, service, channels_dir):
+        make_channel(channels_dir)  # the only valid one
+        make_channel(channels_dir, dir_name="invalid", config={"name": "x"}, with_ui=False, with_class=False)
+        (channels_dir / ".hidden").mkdir()
+        (channels_dir / "assets").mkdir()  # in the well-known skip list
+        (channels_dir / "stray-file.txt").write_text("not a channel")
+
+        result = service.discover_channels(FastAPI())
+
+        assert [c["id"] for c in result] == ["test-channel"]
+
+    def test_static_ui_mount_registered(self, service, channels_dir):
+        make_channel(channels_dir)
+
+        service.discover_channels(FastAPI())
+
+        assert service.static_mounts["test-channel-ui"] == "/api/channels/test-channel/ui"
+
+
+@pytest.mark.unit
+@pytest.mark.channels
+class TestChannelAccessors:
+    @pytest.fixture()
+    def discovered(self, service, channels_dir):
+        make_channel(channels_dir)
+        service.discover_channels(FastAPI())
+        return service
+
+    def test_get_channel_instance(self, discovered):
+        assert discovered.get_channel_instance("test-channel") is not None
+        assert discovered.get_channel_instance("missing") is None
+
+    def test_get_channel_config(self, discovered):
+        config = discovered.get_channel_config("test-channel")
+        assert config["name"] == "Test Channel"
+        assert discovered.get_channel_config("missing") is None
+
+    def test_get_all_channels(self, discovered):
+        channels = discovered.get_all_channels()
+        assert len(channels) == 1
+        assert channels[0]["id"] == "test-channel"
+
+    def test_update_channel_settings(self, discovered):
+        assert discovered.update_channel_settings("test-channel", {"a": 1}) is True
+        assert discovered.update_channel_settings("missing", {"a": 1}) is False
+
+    def test_get_channels_manifest(self, discovered):
+        manifest = discovered.get_channels_manifest()
+
+        assert manifest["totalChannels"] == 1
+        entry = manifest["channels"][0]
+        assert entry["id"] == "test-channel"
+        assert entry["name"] == "Test Channel"
+        assert entry["schemaVersion"] == "2.1"

@@ -4,18 +4,18 @@ Revision ID: 20250920_add_display_scene_img
 Revises: 9f3f58276f60
 Create Date: 2025-09-20
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers, used by Alembic.
 # NOTE: Keep revision IDs <= 32 chars (Alembic's default version table column is VARCHAR(32)).
 revision: str = '20250920_add_display_scene_img'
 # Depends on initial full schema migration
-down_revision: Union[str, Sequence[str], None] = '9f3f58276f60'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '9f3f58276f60'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Add new persistent tracking table for distributed images per display & scene."""

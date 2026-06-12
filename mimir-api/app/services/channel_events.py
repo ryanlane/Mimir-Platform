@@ -7,9 +7,9 @@ or MQTT broadcast.
 from __future__ import annotations
 
 import asyncio
-import time
-from dataclasses import dataclass, asdict
-from typing import Any, Callable, Dict, List, Optional, Awaitable
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -26,12 +26,12 @@ logger = get_logger(__name__)
 class ChannelUpdateEvent:
     channel_id: str
     event_type: str
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
     ts: float
     version: int = 1
-    hash: Optional[str] = None
+    hash: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:  # convenience for serialization
+    def to_dict(self) -> dict[str, Any]:  # convenience for serialization
         return asdict(self)
 
 
@@ -46,8 +46,8 @@ class ChannelEventDispatcher:
     """
 
     def __init__(self):
-        self._listeners: Dict[str, List[Callback]] = {}
-        self._last_event: Dict[str, ChannelUpdateEvent] = {}
+        self._listeners: dict[str, list[Callback]] = {}
+        self._last_event: dict[str, ChannelUpdateEvent] = {}
         self._lock = asyncio.Lock()
 
     async def subscribe(self, channel_id: str, callback: Callback) -> None:
@@ -95,7 +95,7 @@ class ChannelEventDispatcher:
         logger.debug(f"Dispatching event for {event.channel_id} to {len(listeners)} listener(s)")
         await asyncio.gather(*(self._safe_invoke(cb, event) for cb in listeners), return_exceptions=True)
 
-    async def get_last_event(self, channel_id: str) -> Optional[ChannelUpdateEvent]:
+    async def get_last_event(self, channel_id: str) -> ChannelUpdateEvent | None:
         return self._last_event.get(channel_id)
 
     async def _safe_invoke(self, callback: Callback, event: ChannelUpdateEvent) -> None:

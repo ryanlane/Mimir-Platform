@@ -3,25 +3,27 @@ Scene Service
 Business logic for scene management operations
 """
 import uuid
-from typing import Dict, Any, Optional
+from typing import Any
+
 from sqlalchemy.orm import Session
+
 from app.db.models import Scene, SchedulerJob, SchedulerJobSceneAssignment
 
 
 class SceneService:
     """Service class for scene operations"""
-    
+
     def __init__(self, db: Session):
         self.db = db
-    
-    def get_scenes(self, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+
+    def get_scenes(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """Get all scenes with pagination support"""
         # Get total count
         total = self.db.query(Scene).count()
-        
+
         # Get scenes with pagination
         scenes = self.db.query(Scene).offset(offset).limit(limit).all()
-        
+
         scene_list = []
         for scene in scenes:
             refresh_schedule = self._derive_refresh_schedule(scene.id)
@@ -39,19 +41,19 @@ class SceneService:
                 "created_at": scene.created_at,
                 "updated_at": scene.updated_at
             })
-        
+
         return {
             "scenes": scene_list,
             "total": total,
             "limit": limit,
             "offset": offset
         }
-    
-    def get_scene_by_id(self, scene_id: str) -> Optional[Scene]:
+
+    def get_scene_by_id(self, scene_id: str) -> Scene | None:
         """Get scene by ID"""
         return self.db.query(Scene).filter(Scene.id == scene_id).first()
 
-    def get_scene_with_schedule(self, scene_id: str) -> Optional[Dict[str, Any]]:
+    def get_scene_with_schedule(self, scene_id: str) -> dict[str, Any] | None:
         """Get a single scene serialized with refresh_schedule enrichment."""
         scene = self.get_scene_by_id(scene_id)
         if not scene:
@@ -70,12 +72,12 @@ class SceneService:
             "created_at": scene.created_at,
             "updated_at": scene.updated_at,
         }
-    
-    def create_scene(self, scene_data: Dict[str, Any]) -> Scene:
+
+    def create_scene(self, scene_data: dict[str, Any]) -> Scene:
         """Create a new scene"""
         # Generate a UUID for the new scene if not provided
         scene_id = scene_data.get("id") or str(uuid.uuid4())
-        
+
         scene = Scene(
             id=scene_id,
             name=scene_data["name"],
@@ -87,14 +89,14 @@ class SceneService:
             update_strategy=scene_data.get("update_strategy", "scheduler"),
             push_fallback_poll_seconds=scene_data.get("push_fallback_poll_seconds")
         )
-        
+
         self.db.add(scene)
         self.db.commit()
         self.db.refresh(scene)
         return scene
 
     # ------------------- Internal helpers -------------------
-    def _derive_refresh_schedule(self, scene_id: str) -> Optional[Dict[str, Any]]:
+    def _derive_refresh_schedule(self, scene_id: str) -> dict[str, Any] | None:
         """Find the enabled scheduler job with the smallest approx interval assigning this scene.
 
         Returns: {job_id, freq_unit, freq_value, enabled} or None
@@ -122,7 +124,7 @@ class SceneService:
             "enabled": best_job.enabled,
         }
 
-    def update_scene(self, scene_id: str, scene_data: Dict[str, Any]) -> Optional[Scene]:
+    def update_scene(self, scene_id: str, scene_data: dict[str, Any]) -> Scene | None:
         """Update scene by ID"""
         scene = self.get_scene_by_id(scene_id)
         if not scene:
@@ -166,7 +168,7 @@ class SceneService:
         self.db.commit()
         return True
 
-    def get_active_scene(self) -> Optional[Scene]:
+    def get_active_scene(self) -> Scene | None:
         """Get the currently active scene"""
         return self.db.query(Scene).filter(Scene.is_active == True).first()  # noqa: E712
 

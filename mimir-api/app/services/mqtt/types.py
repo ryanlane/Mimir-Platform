@@ -1,13 +1,15 @@
 # app/services/mqtt/types.py
-from pydantic import BaseModel, Field, HttpUrl
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, HttpUrl
+
 
 class StatusPayload(BaseModel):
     status: str
     timestamp: datetime
-    reason: Optional[str] = None
-    version: Optional[str] = None
+    reason: str | None = None
+    version: str | None = None
 
 class AssignDelivery(BaseModel):
     type: str = "url"
@@ -18,7 +20,7 @@ class AssignDelivery(BaseModel):
 
 class AssignContent(BaseModel):
     delivery: AssignDelivery
-    metadata: Dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
 
 class AssignCommand(BaseModel):
     type: str = "assign"
@@ -32,8 +34,8 @@ class AssignCommand(BaseModel):
     # update_type: "push" for real-time push updates, "scheduled" for polling/scheduler-driven.
     # refresh_interval_s: Polling interval in seconds when update_type == "scheduled".
     #   Must be omitted or null when update_type == "push".
-    update_type: Optional[str] = None
-    refresh_interval_s: Optional[int] = None
+    update_type: str | None = None
+    refresh_interval_s: int | None = None
 
     class Config:
         json_schema_extra = {

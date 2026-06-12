@@ -9,10 +9,9 @@ import logging
 import logging.config
 import sys
 import time
-from typing import Any, Dict
+from typing import Any
 
 from app.config import settings
-
 
 # --- Helpers ---------------------------------------------------------------
 
@@ -35,7 +34,7 @@ class JSONFormatter(logging.Formatter):
     """Minimal JSON formatter that includes extra fields automatically."""
 
     def format(self, record: logging.LogRecord) -> str:
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(record.created)),
             "level": record.levelname,
             "logger": record.name,
@@ -97,7 +96,7 @@ def setup_logging() -> None:
         },
     }
 
-    config: Dict[str, Any] = {
+    config: dict[str, Any] = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": formatters,
@@ -181,7 +180,7 @@ def log_api_request(method: str, path: str, status_code: int, duration_ms: float
     )
 
 
-def log_websocket_event(event_type: str, client_id: str, data: Dict[str, Any] | None = None) -> None:
+def log_websocket_event(event_type: str, client_id: str, data: dict[str, Any] | None = None) -> None:
     """Log WebSocket events with structured data."""
     logger.info(
         f"WebSocket {event_type}",
@@ -194,7 +193,7 @@ def log_websocket_event(event_type: str, client_id: str, data: Dict[str, Any] | 
     )
 
 
-def log_channel_event(action: str, channel_id: str, details: Dict[str, Any] | None = None) -> None:
+def log_channel_event(action: str, channel_id: str, details: dict[str, Any] | None = None) -> None:
     """Log channel-related events."""
     logger.info(
         f"Channel {action}",

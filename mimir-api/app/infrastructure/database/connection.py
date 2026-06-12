@@ -3,10 +3,10 @@ Database connection management for Mimir API
 Handles SQLAlchemy engine and session management
 """
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
+
 from app.config import settings
 from app.infrastructure.database.models import Base
-
 
 # Create database engine with connection pooling
 engine = create_engine(

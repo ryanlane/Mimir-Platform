@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.websocket_manager import websocket_manager as manager
@@ -71,7 +72,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.emit_event("unknown_event", {"original": msg}, targets=[websocket])
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-    except Exception as e:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defensive
         manager.disconnect(websocket)
 
 
@@ -117,9 +118,9 @@ async def display_websocket_endpoint(websocket: WebSocket, display_id: str):
             else:
                 await manager.emit_event("message_acknowledged", {"display_id": display_id, "original_event": event}, targets=[websocket])
     except WebSocketDisconnect:
-        manager.disconnect_display(websocket, display_id)
+        manager.disconnect(websocket)
     except Exception:  # pragma: no cover - defensive
-        manager.disconnect_display(websocket, display_id)
+        manager.disconnect(websocket)
 
 
 # Removed legacy per-message handler; logic handled inline for simplicity.

@@ -1,9 +1,11 @@
 """
 Display client related schemas
 """
-from pydantic import BaseModel, Field
 from datetime import datetime
-from app.schemas.common import TimestampMixin, PaginatedResponse
+
+from pydantic import BaseModel, Field
+
+from app.schemas.common import PaginatedResponse, TimestampMixin
 
 
 class DisplayCapabilities(BaseModel):
@@ -14,7 +16,7 @@ class DisplayCapabilities(BaseModel):
     refresh_rate_hz: float | None = Field(None, alias="refreshRateHz")
     redis_distribution: bool = Field(False, alias="redisDistribution")
     content_claiming: bool = Field(False, alias="contentClaiming")
-    
+
     class Config:
         populate_by_name = True
 
@@ -23,7 +25,7 @@ class AssignedScene(BaseModel):
     """Assigned scene information with optional subchannel"""
     id: str = Field(description="Scene ID")
     subchannel_id: str | None = Field(None, alias="subchannelId", description="Optional subchannel ID")
-    
+
     class Config:
         populate_by_name = True
 
@@ -37,7 +39,7 @@ class DisplayClientBase(BaseModel):
     webhook_port: int | None = Field(None, alias="webhookPort")
     client_version: str | None = Field(None, alias="clientVersion")
     tags: list[str] | None = None
-    
+
     class Config:
         populate_by_name = True
 
@@ -57,7 +59,7 @@ class DisplayClientUpdate(BaseModel):
     webhook_port: int | None = Field(None, alias="webhookPort")
     client_version: str | None = Field(None, alias="clientVersion")
     tags: list[str] | None = None
-    
+
     class Config:
         populate_by_name = True
 
@@ -83,7 +85,7 @@ class DisplayClientResponse(DisplayClientBase, TimestampMixin):
     assigned_scene_id: AssignedScene | None = Field(None, alias="assignedSceneId")
     current_content_hash: str | None = Field(None, alias="currentContentHash")
     websocket_connection_id: str | None = Field(None, alias="websocketConnectionId")
-    
+
     class Config:
         from_attributes = True
         populate_by_name = True
@@ -104,7 +106,7 @@ class DisplayStatusResponse(BaseModel):
     battery_level: float | None = Field(None, alias="batteryLevel")
     signal_strength: int | None = Field(None, alias="signalStrength")
     temperature: float | None = None
-    
+
     class Config:
         populate_by_name = True
 
@@ -112,7 +114,7 @@ class DisplayStatusResponse(BaseModel):
 class SceneAssignment(BaseModel):
     """Scene assignment request"""
     scene_id: str = Field(alias="sceneId")
-    
+
     class Config:
         populate_by_name = True
 
@@ -122,7 +124,7 @@ class ContentClaimRequest(BaseModel):
     scene_id: str = Field(alias="sceneId")
     content_id: str = Field(alias="contentId")
     assignment_id: str | None = Field(None, alias="assignmentId")
-    
+
     class Config:
         populate_by_name = True
 
@@ -133,7 +135,7 @@ class ContentClaimResponse(BaseModel):
     content_id: str = Field(alias="contentId")
     expires_at: datetime = Field(alias="expiresAt")
     assignment_id: str | None = Field(None, alias="assignmentId")
-    
+
     class Config:
         populate_by_name = True
 
@@ -143,7 +145,7 @@ class AcknowledgmentRequest(BaseModel):
     lease_id: str = Field(alias="leaseId")
     content_id: str | None = Field(None, alias="contentId")
     status: str | None = "acknowledged"
-    
+
     class Config:
         populate_by_name = True
 
@@ -154,8 +156,8 @@ class DisplayHardware(BaseModel):
     resolution: list[int]
     available: bool
     orientation: str | None = None
-    
-    
+
+
 class DisplayImage(BaseModel):
     """Display image information"""
     url: str
@@ -163,7 +165,7 @@ class DisplayImage(BaseModel):
     height: int
     format: str
     size_bytes: int | None = Field(None, alias="sizeBytes")
-    
+
     class Config:
         populate_by_name = True
 
@@ -192,6 +194,6 @@ class LegacyDisplayStatusResponse(BaseModel):
     current_scene: str | None = Field(None, alias="currentScene")
     current_image: DisplayImage | None = Field(None, alias="currentImage")
     resolution: list[int]
-    
+
     class Config:
         populate_by_name = True

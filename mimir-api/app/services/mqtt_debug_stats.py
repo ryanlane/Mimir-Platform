@@ -7,9 +7,9 @@ cap.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict
 import time
+from dataclasses import dataclass
+from typing import Any
 
 _MAX_TOPICS = 1000
 
@@ -22,7 +22,7 @@ class TopicStat:
     last_forwarded_ts: float | None = None
     last_payload_preview: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "topic": self.topic,
             "received_count": self.received_count,
@@ -34,7 +34,7 @@ class TopicStat:
 
 class MqttDebugStats:
     def __init__(self):
-        self._topics: Dict[str, TopicStat] = {}
+        self._topics: dict[str, TopicStat] = {}
 
     def record_received(self, topic: str, payload_bytes: bytes):
         stat = self._topics.get(topic)
@@ -58,7 +58,7 @@ class MqttDebugStats:
         stat.forwarded_count += 1
         stat.last_forwarded_ts = time.time()
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return {
             "total_topics": len(self._topics),
             "topics": [s.to_dict() for s in sorted(self._topics.values(), key=lambda s: s.last_received_ts or 0, reverse=True)],

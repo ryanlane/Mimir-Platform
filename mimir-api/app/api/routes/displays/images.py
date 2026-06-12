@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 from app.db.models import DisplayClient, DisplaySceneImage
 from app.services.display_image_persistence import DisplayImagePersistenceService
 from app.services.display_last_image import display_last_image_store
-from ._helpers import get_db, _build_thumbnail_url
 
+from ._helpers import _build_thumbnail_url, get_db
 
 router = APIRouter()
 

@@ -20,9 +20,8 @@ Future enhancements (not implemented now):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from threading import RLock
-from typing import Dict, Optional
 
 DEFAULT_TTL_SECONDS = 300  # 5 minutes – sufficient for user to load image
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5MB safety cap
@@ -46,7 +45,7 @@ class ChannelImageStore:
 
     def __init__(self) -> None:
         self._lock = RLock()
-        self._images: Dict[str, StoredChannelImage] = {}
+        self._images: dict[str, StoredChannelImage] = {}
 
     def _purge_expired_locked(self) -> None:
         now = datetime.now(timezone.utc)
@@ -69,7 +68,7 @@ class ChannelImageStore:
             self._images[f"{channel_id}:{image_id}"] = rec
             self._purge_expired_locked()
 
-    def get(self, channel_id: str, image_id: str) -> Optional[StoredChannelImage]:
+    def get(self, channel_id: str, image_id: str) -> StoredChannelImage | None:
         key = f"{channel_id}:{image_id}"
         with self._lock:
             rec = self._images.get(key)

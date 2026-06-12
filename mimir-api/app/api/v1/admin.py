@@ -1,10 +1,10 @@
 """
 Admin endpoints for monitoring system status and background jobs
 """
-from fastapi import APIRouter, HTTPException, status
-from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime, timezone
+
+from fastapi import APIRouter, HTTPException, status
 
 from app.core.scheduler import scheduler_service
 
@@ -31,7 +31,7 @@ async def list_jobs():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         jobs = []
         for job in scheduler_service.scheduler.get_jobs():
@@ -47,7 +47,7 @@ async def list_jobs():
                 "pending": job.pending
             }
             jobs.append(job_info)
-        
+
         return {
             "jobs": jobs,
             "total_jobs": len(jobs),
@@ -58,7 +58,7 @@ async def list_jobs():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving jobs: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/jobs/{job_id}")
@@ -69,7 +69,7 @@ async def get_job_details(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -77,7 +77,7 @@ async def get_job_details(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         return {
             "id": job.id,
             "name": job.name,
@@ -99,7 +99,7 @@ async def get_job_details(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving job: {str(e)}"
-        )
+        ) from e
 
 
 @router.post("/jobs/{job_id}/run")
@@ -110,7 +110,7 @@ async def run_job_now(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -118,10 +118,10 @@ async def run_job_now(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         # Schedule the job to run immediately
         scheduler_service.scheduler.modify_job(job_id, next_run_time=datetime.now(timezone.utc))
-        
+
         return {
             "message": f"Job {job_id} scheduled to run immediately",
             "job_id": job_id,
@@ -134,7 +134,7 @@ async def run_job_now(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error running job: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete("/jobs/{job_id}")
@@ -145,7 +145,7 @@ async def pause_job(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -153,9 +153,9 @@ async def pause_job(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         scheduler_service.scheduler.pause_job(job_id)
-        
+
         return {
             "message": f"Job {job_id} paused",
             "job_id": job_id,
@@ -168,7 +168,7 @@ async def pause_job(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error pausing job: {str(e)}"
-        )
+        ) from e
 
 
 @router.post("/jobs/{job_id}/resume")
@@ -179,7 +179,7 @@ async def resume_job(job_id: str):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         job = scheduler_service.scheduler.get_job(job_id)
         if not job:
@@ -187,9 +187,9 @@ async def resume_job(job_id: str):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job {job_id} not found"
             )
-        
+
         scheduler_service.scheduler.resume_job(job_id)
-        
+
         return {
             "message": f"Job {job_id} resumed",
             "job_id": job_id,
@@ -202,7 +202,7 @@ async def resume_job(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error resuming job: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/scheduler/status")
@@ -213,15 +213,15 @@ async def scheduler_status():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scheduler service not available"
         )
-    
+
     try:
         scheduler = scheduler_service.scheduler
         jobs = scheduler.get_jobs()
-        
+
         # Count jobs by state
         running_jobs = [j for j in jobs if j.next_run_time is not None]
         paused_jobs = [j for j in jobs if j.next_run_time is None]
-        
+
         return {
             "scheduler_state": scheduler.state,
             "running": scheduler.running,
@@ -240,4 +240,4 @@ async def scheduler_status():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving scheduler status: {str(e)}"
-        )
+        ) from e

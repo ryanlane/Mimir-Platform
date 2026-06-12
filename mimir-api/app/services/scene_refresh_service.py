@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json as _json
 import logging
 import time
 from dataclasses import asdict, dataclass
 from io import BytesIO
-import json as _json
-from typing import Any  # NOTE: legacy typing kept for untouched sections; new edits prefer PEP 585
+from typing import (
+    Any,  # NOTE: legacy typing kept for untouched sections; new edits prefer PEP 585
+)
 from urllib import error as _urlerr
 from urllib import request as _urlreq
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -226,7 +228,9 @@ class SceneRefreshService:
                     subchannel_id: str | None = None
 
                     # Local lazy import to avoid circular import on startup
-                    from app.services.plugin_discovery import plugin_discovery_service  # noqa: WPS433
+                    from app.services.plugin_discovery import (
+                        plugin_discovery_service,  # noqa: WPS433
+                    )
 
                     for entry in channel_entries:
                         ch_id = entry.get("channel_id")

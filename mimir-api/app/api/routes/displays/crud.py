@@ -4,30 +4,30 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.models import ContentLease, DisplayClient, DisplaySceneImage
+from app.schemas.common import PaginationMeta
 from app.schemas.displays import (
     DisplayClientListResponse,
     DisplayClientResponse,
     DisplayClientUpdate,
 )
-from app.schemas.common import PaginationMeta
 from app.services.display_last_image import display_last_image_store
 from app.services.mdns_discovery import mdns_discovery_service
 from app.services.scene_refresh_service import scene_refresh_service
-from app.config import settings
+
 from ._helpers import (
-    get_db,
-    _find_discovered_display,
-    _push_runtime_display_config,
-    _normalize_display_orientation,
-    _native_dimensions_from_logical,
-    _logical_dimensions_for_orientation,
-    _parse_resolution,
-    _extract_orientation,
     _build_discovered_display_response,
     _build_registered_display_response,
+    _extract_orientation,
+    _find_discovered_display,
+    _logical_dimensions_for_orientation,
+    _native_dimensions_from_logical,
+    _normalize_display_orientation,
+    _parse_resolution,
+    _push_runtime_display_config,
+    get_db,
 )
-
 
 logger = logging.getLogger(__name__)
 

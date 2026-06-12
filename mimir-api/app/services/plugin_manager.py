@@ -11,7 +11,7 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import FastAPI, UploadFile
 
@@ -29,7 +29,7 @@ _DEV_CHANNELS_FILE = "dev_channels.json"
 class PluginManagerService:
     """Manage plugin installation, removal, and enable/disable state."""
 
-    def __init__(self, channels_dir: Optional[str] = None):
+    def __init__(self, channels_dir: str | None = None):
         self.channels_dir = Path(channels_dir or settings.channels_directory)
 
     # ------------------------------------------------------------------
@@ -39,13 +39,13 @@ class PluginManagerService:
     def _disabled_file_path(self) -> Path:
         return self.channels_dir / _DISABLED_FILE
 
-    def get_disabled_plugins(self) -> List[str]:
+    def get_disabled_plugins(self) -> list[str]:
         """Return the list of currently disabled plugin IDs."""
         path = self._disabled_file_path()
         if not path.exists():
             return []
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
                 return [str(x) for x in data]
@@ -53,7 +53,7 @@ class PluginManagerService:
             logger.warning("Failed to read disabled plugins file: %s", exc)
         return []
 
-    def _save_disabled_plugins(self, ids: List[str]) -> None:
+    def _save_disabled_plugins(self, ids: list[str]) -> None:
         path = self._disabled_file_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -63,7 +63,7 @@ class PluginManagerService:
     # Validation
     # ------------------------------------------------------------------
 
-    def _validate_plugin_dir(self, path: Path) -> Dict[str, Any]:
+    def _validate_plugin_dir(self, path: Path) -> dict[str, Any]:
         """Validate a plugin directory. Returns parsed manifest dict or raises ValueError."""
         channel_file = path / "channel.py"
         if not channel_file.exists():
@@ -76,7 +76,7 @@ class PluginManagerService:
             raise ValueError(f"Plugin directory missing plugin.json (or config.json): {path.name}")
 
         try:
-            with open(config_file, "r", encoding="utf-8") as f:
+            with open(config_file, encoding="utf-8") as f:
                 manifest = json.load(f)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Invalid JSON in {config_file.name}: {exc}") from exc
@@ -92,7 +92,7 @@ class PluginManagerService:
     # Install
     # ------------------------------------------------------------------
 
-    async def install_from_zip(self, file: UploadFile, app: FastAPI) -> Dict[str, Any]:
+    async def install_from_zip(self, file: UploadFile, app: FastAPI) -> dict[str, Any]:
         """Install a plugin from an uploaded ZIP file.
 
         Returns a dict with install results including the plugin ID on success.
@@ -133,7 +133,7 @@ class PluginManagerService:
 
             return await self._finalize_install(plugin_root, app, plugin_discovery_service)
 
-    async def install_from_git(self, git_url: str, app: FastAPI) -> Dict[str, Any]:
+    async def install_from_git(self, git_url: str, app: FastAPI) -> dict[str, Any]:
         """Install a plugin by cloning a Git repository.
 
         Returns a dict with install results including the plugin ID on success.
@@ -154,7 +154,7 @@ class PluginManagerService:
                         f"git clone failed (exit {proc.returncode}): {stderr.decode(errors='replace')[:500]}"
                     )
             except asyncio.TimeoutError:
-                raise ValueError("git clone timed out after 120 seconds")
+                raise ValueError("git clone timed out after 120 seconds") from None
 
             plugin_root = self._find_plugin_root(clone_dir)
             if plugin_root is None:
@@ -165,7 +165,7 @@ class PluginManagerService:
 
             return await self._finalize_install(plugin_root, app, plugin_discovery_service)
 
-    def _find_plugin_root(self, search_dir: Path) -> Optional[Path]:
+    def _find_plugin_root(self, search_dir: Path) -> Path | None:
         """Locate the plugin root directory inside an extracted archive or cloned repo.
 
         The plugin root is the directory containing both ``channel.py`` and
@@ -194,7 +194,7 @@ class PluginManagerService:
             if child.is_dir():
                 yield from PluginManagerService._walk_max_depth(child, max_depth - 1)
 
-    async def _finalize_install(self, plugin_root: Path, app: FastAPI, discovery) -> Dict[str, Any]:
+    async def _finalize_install(self, plugin_root: Path, app: FastAPI, discovery) -> dict[str, Any]:
         """Validate, move to channels dir, install deps, and hot-load the plugin."""
         manifest = self._validate_plugin_dir(plugin_root)
         plugin_id = manifest["id"]
@@ -259,7 +259,7 @@ class PluginManagerService:
     # Uninstall
     # ------------------------------------------------------------------
 
-    async def uninstall(self, plugin_id: str, app: FastAPI) -> Dict[str, Any]:
+    async def uninstall(self, plugin_id: str, app: FastAPI) -> dict[str, Any]:
         """Uninstall a plugin: unload, remove from disk, clean up state."""
         from app.services.plugin_discovery import plugin_discovery_service
 
@@ -289,7 +289,7 @@ class PluginManagerService:
     # Enable / Disable
     # ------------------------------------------------------------------
 
-    async def disable(self, plugin_id: str, app: FastAPI) -> Dict[str, Any]:
+    async def disable(self, plugin_id: str, app: FastAPI) -> dict[str, Any]:
         """Disable a plugin: unload from server, mark as disabled, keep on disk."""
         from app.services.plugin_discovery import plugin_discovery_service
 
@@ -308,7 +308,7 @@ class PluginManagerService:
 
         return {"plugin_id": plugin_id, "enabled": False}
 
-    async def enable(self, plugin_id: str, app: FastAPI) -> Dict[str, Any]:
+    async def enable(self, plugin_id: str, app: FastAPI) -> dict[str, Any]:
         """Enable a previously disabled plugin: reload it and remove from disabled list."""
         from app.services.plugin_discovery import plugin_discovery_service
 
@@ -332,7 +332,7 @@ class PluginManagerService:
 
         return {"plugin_id": plugin_id, "enabled": True, "healthy": healthy}
 
-    def _find_plugin_dir_by_id(self, plugin_id: str) -> Optional[Path]:
+    def _find_plugin_dir_by_id(self, plugin_id: str) -> Path | None:
         """Scan the channels directory for a plugin matching the given ID."""
         for candidate in self.channels_dir.iterdir():
             if not candidate.is_dir():
@@ -341,7 +341,7 @@ class PluginManagerService:
                 config_file = candidate / config_name
                 if config_file.exists():
                     try:
-                        with open(config_file, "r", encoding="utf-8") as f:
+                        with open(config_file, encoding="utf-8") as f:
                             data = json.load(f)
                         if data.get("id") == plugin_id:
                             return candidate
@@ -356,13 +356,13 @@ class PluginManagerService:
     def _dev_channels_file_path(self) -> Path:
         return self.channels_dir / _DEV_CHANNELS_FILE
 
-    def get_dev_channels(self) -> List[Dict[str, Any]]:
+    def get_dev_channels(self) -> list[dict[str, Any]]:
         """Return the list of dev-linked channel entries."""
         path = self._dev_channels_file_path()
         if not path.exists():
             return []
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
                 return data
@@ -370,7 +370,7 @@ class PluginManagerService:
             logger.warning("Failed to read dev channels file: %s", exc)
         return []
 
-    def _save_dev_channels(self, entries: List[Dict[str, Any]]) -> None:
+    def _save_dev_channels(self, entries: list[dict[str, Any]]) -> None:
         path = self._dev_channels_file_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -380,13 +380,13 @@ class PluginManagerService:
         """Return a set of plugin IDs that are dev-linked."""
         return {e["plugin_id"] for e in self.get_dev_channels() if "plugin_id" in e}
 
-    async def link_dev_channel(self, path_str: str, app: FastAPI) -> Dict[str, Any]:
+    async def link_dev_channel(self, path_str: str, app: FastAPI) -> dict[str, Any]:
         """Link a local directory as a dev channel.
 
         The directory is loaded in-place (no copy) and a file watcher is started.
         """
-        from app.services.plugin_discovery import plugin_discovery_service
         from app.services.dev_watcher import dev_watcher_service
+        from app.services.plugin_discovery import plugin_discovery_service
 
         dev_path = Path(path_str).resolve()
 
@@ -432,13 +432,13 @@ class PluginManagerService:
             "healthy": healthy,
         }
 
-    async def unlink_dev_channel(self, plugin_id: str, app: FastAPI) -> Dict[str, Any]:
+    async def unlink_dev_channel(self, plugin_id: str, app: FastAPI) -> dict[str, Any]:
         """Unlink a dev channel: unload from server, stop watcher, remove from registry.
 
         Does NOT delete any files on disk.
         """
-        from app.services.plugin_discovery import plugin_discovery_service
         from app.services.dev_watcher import dev_watcher_service
+        from app.services.plugin_discovery import plugin_discovery_service
 
         entries = self.get_dev_channels()
         entry = next((e for e in entries if e.get("plugin_id") == plugin_id), None)
@@ -458,7 +458,7 @@ class PluginManagerService:
         logger.info("Unlinked dev channel: %s", plugin_id)
         return {"plugin_id": plugin_id, "unlinked": True}
 
-    async def reload_dev_channel(self, plugin_id: str, app: FastAPI) -> Dict[str, Any]:
+    async def reload_dev_channel(self, plugin_id: str, app: FastAPI) -> dict[str, Any]:
         """Manually reload a dev channel (unload + re-load from same path)."""
         from app.services.plugin_discovery import plugin_discovery_service
 
@@ -486,8 +486,8 @@ class PluginManagerService:
 
         Called after normal plugin discovery. Also starts file watchers.
         """
-        from app.services.plugin_discovery import plugin_discovery_service
         from app.services.dev_watcher import dev_watcher_service
+        from app.services.plugin_discovery import plugin_discovery_service
 
         entries = self.get_dev_channels()
         if not entries:

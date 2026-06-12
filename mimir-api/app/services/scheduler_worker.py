@@ -20,19 +20,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Removed unused sqlalchemy imports (Session, and_) to reduce dependencies
+from ..config import settings
 
+# Removed unused sqlalchemy imports (Session, and_) to reduce dependencies
 from ..db.base import SessionLocal
-from ..db.models import SchedulerJob, SchedulerJobSceneAssignment, Scene, DisplayClient
+from ..db.models import DisplayClient, Scene, SchedulerJob, SchedulerJobSceneAssignment
 from ..schemas.scheduler import ExecutionStatus, TriggerReason
-from ..services.scheduler_service import SchedulerService
+from ..services.display_image_persistence import DisplayImagePersistenceService
+from ..services.display_last_image import display_last_image_store
+from ..services.image_swap import prune_swap, save_swap_image
 from ..services.mdns_discovery import mdns_discovery_service
 from ..services.mqtt.publisher import mqtt_scene_service
-from ..config import settings
-from ..services.display_last_image import display_last_image_store
-from ..services.display_image_persistence import DisplayImagePersistenceService
-from ..services.scene_refresh_service import scene_refresh_service, SceneRefreshResult
-from ..services.image_swap import save_swap_image, prune_swap
+from ..services.scene_refresh_service import SceneRefreshResult, scene_refresh_service
+from ..services.scheduler_service import SchedulerService
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +60,10 @@ class DistributionError(Exception):
 def _convert_image_to_url(image_info: dict[str, Any]) -> str | None:
     """
     Convert image information from a channel to a publicly accessible URL.
-    
+
     Args:
         image_info: Image information from channel response
-        
+
     Returns:
         URL string if conversion is successful, None otherwise
     """
@@ -107,26 +107,26 @@ def _convert_image_to_url(image_info: dict[str, Any]) -> str | None:
 def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str | None:
     """
     Save base64 image data to a file and return the URL to access it.
-    
+
     Args:
         image_info: Image information containing base64 data
         api_hostname: API hostname for URL construction
         api_port: API port for URL construction
-        
+
     Returns:
         URL string if successful, None otherwise
     """
     try:
-        
+
         # Get base64 data
         image_data = image_info.get("image", "")
         if not image_data:
             return None
-            
+
         # Get additional info for filename
         image_id = image_info.get("image_id", "unknown")
         filename = image_info.get("filename", f"image_{image_id}.jpg")
-        
+
         # Ensure we have a proper extension
         if not filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
             # Try to detect format from base64 header
@@ -138,7 +138,7 @@ def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str |
                 filename += '.gif'
             else:
                 filename += '.jpg'  # Default to jpg
-        
+
         # Resolve temp directory preference:
         # 1. settings.scheduler_temp_directory (absolute or relative)
         # 2. Fallback: <channels_directory>/scheduler_temp
@@ -151,18 +151,18 @@ def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str |
             logger.debug("Resolved relative scheduler_temp_directory: %s -> %s", before, temp_dir)
         temp_dir.mkdir(parents=True, exist_ok=True)
         logger.debug("Scheduler temp directory in use: raw=%s resolved=%s", raw_temp, temp_dir)
-        
+
         # Create unique filename to avoid conflicts
         timestamp = str(int(uuid.uuid4().int >> 64))  # Use part of UUID as timestamp
         temp_filename = f"{timestamp}_{filename}"
         temp_file_path = temp_dir / temp_filename
-        
+
         # Decode and save base64 data
         try:
             decoded_data = _b64.b64decode(image_data)
             with open(temp_file_path, 'wb') as f:
                 f.write(decoded_data)
-                
+
             logger.info("Saved base64 image to temporary file: %s (size=%d bytes)", temp_file_path, len(decoded_data))
 
             # Determine how to expose the file. If temp_dir is *inside* the channels_directory
@@ -202,11 +202,11 @@ def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str |
                         temp_file_path,
                     )
                     return None
-            
+
         except (_binascii.Error, ValueError, TypeError) as decode_error:
             logger.error("Failed to decode base64 image data: %s", decode_error)
             return None
-            
+
     except (OSError, ValueError, _binascii.Error) as e:
         logger.error("Error saving base64 image: %s", e)
         return None
@@ -214,7 +214,7 @@ def _save_base64_and_get_url(image_info: dict[str, Any], base_url: str) -> str |
 
 class SchedulerWorker:
     """Background worker for executing scheduled jobs"""
-    
+
     def __init__(self):
         self.running = False
         self._task = None
@@ -224,22 +224,22 @@ class SchedulerWorker:
         self._cleanup_interval_seconds: int = 300  # run cleanup at most every 5 minutes
         # Persisted image retention bookkeeping
         self._last_image_retention_monotonic: float = 0.0
-        
+
     async def start(self):
         """Start the scheduler worker"""
         if self.running:
             logger.warning("Scheduler worker is already running")
             return
-            
+
         self.running = True
         self._task = asyncio.create_task(self._worker_loop())
         logger.info("Scheduler worker started")
-        
+
     async def stop(self):
         """Stop the scheduler worker"""
         if not self.running:
             return
-            
+
         self.running = False
         if self._task:
             self._task.cancel()
@@ -248,11 +248,11 @@ class SchedulerWorker:
             except asyncio.CancelledError:
                 pass
         logger.info("Scheduler worker stopped")
-        
+
     async def _worker_loop(self):
         """Main worker loop that processes due jobs"""
         logger.info("Scheduler worker loop started (polling every %ss)", self.poll_interval)
-        
+
         while self.running:
             # Guardrail: we intentionally keep a loop-level exception barrier so a single
             # unhandled error does not terminate the scheduler background task.
@@ -264,10 +264,10 @@ class SchedulerWorker:
                 logger.error("Scheduler worker loop transient error: %s", e, exc_info=True)
             except Exception as e:  # noqa: BLE001 - final safety net (see comment above)
                 logger.exception("Scheduler worker loop unexpected error: %s", e)
-            
+
             # Wait for the next polling interval
             await asyncio.sleep(self.poll_interval)
-    
+
     async def _process_due_jobs(self):
         """Process all jobs that are due for execution."""
         with SessionLocal() as db:
@@ -322,7 +322,7 @@ class SchedulerWorker:
                     logger.error("scheduler.job.distribution_error job_id=%s error=%s", job.id, e)
                 except Exception as e:  # noqa: BLE001
                     logger.exception("scheduler.job.unexpected job_id=%s error=%s", job.id, e)
-    
+
     async def _execute_job(
         self,
         job: SchedulerJob,
@@ -476,7 +476,7 @@ class SchedulerWorker:
             prune_swap(max_files_per_display=25)
         except Exception:  # noqa: BLE001
             pass
-    
+
     def _maybe_prune_persisted_images(self) -> None:
         """Prune persisted display scene images according to retention settings.
 
@@ -509,22 +509,22 @@ class SchedulerWorker:
                     )
         except Exception as e:  # noqa: BLE001
             logger.debug("persist.images.retention.error err=%s", e)
-    
+
     async def _execute_refresh_scene(self, job: SchedulerJob, scheduler_service: SchedulerService) -> dict[str, Any]:
         """Execute a refresh_scene action"""
         try:
             # Get scene assignments for this job
             assignments = await scheduler_service.get_job_assignments(job.id)
-            
+
             if not assignments:
                 return {
                     "success": False,
                     "error": "No scene assignments found for job"
                 }
-            
+
             affected_scenes = []
             results = []
-            
+
             for assignment in assignments:
                 try:
                     scene_result = await self._refresh_single_scene(assignment)
@@ -540,18 +540,18 @@ class SchedulerWorker:
                         "success": False,
                         "error": str(e)
                     })
-            
+
             # Determine overall success
             successful_scenes = sum(1 for r in results if r.get("success"))
             total_scenes = len(results)
-            
+
             return {
                 "success": successful_scenes > 0,
                 "affected_scenes": affected_scenes,
                 "scene_results": results,
                 "summary": f"Refreshed {successful_scenes}/{total_scenes} scenes"
             }
-            
+
         except (ChannelRequestError, ImageConversionError, DistributionError) as e:
             logger.error("refresh_scene.domain_error job_id=%s error=%s", job.id, e)
             return {
@@ -564,7 +564,7 @@ class SchedulerWorker:
                 "success": False,
                 "error": str(e)
             }
-    
+
     async def _refresh_single_scene(self, assignment: SchedulerJobSceneAssignment) -> dict[str, Any]:
         """Refresh a single scene delegating to SceneRefreshService.
 
@@ -588,7 +588,7 @@ class SchedulerWorker:
             "image_url": result.image_url,
             "status": result.status,
         }
-    
+
     async def _request_channel_image(
         self,
         channel_id: str,
@@ -603,7 +603,8 @@ class SchedulerWorker:
         Returns dict with success flag and normalized image structure under 'image'.
         """
         import json as _json
-        from urllib import request as _urlreq, error as _urlerr
+        from urllib import error as _urlerr
+        from urllib import request as _urlreq
 
         # Build base payload; scheduler requests should mark distribution=new to force fresh renders
         res = resolution if (resolution and len(resolution) == 2) else [800, 600]
@@ -748,16 +749,16 @@ class SchedulerWorker:
             return w, h
         except ValueError:
             return 800, 600
-    
+
     async def _distribute_to_displays(self, scene: Scene, image_response: dict[str, Any]) -> dict[str, Any]:
         """Distribute the generated image to displays assigned to this scene"""
         try:
             displays_updated = 0
             errors = []
-            
+
             # Find displays assigned to this scene
             assigned_displays = []
-            
+
             # Check discovered displays via mDNS
             if mdns_discovery_service.is_running:
                 discovered_displays = mdns_discovery_service.get_discovered_displays()
@@ -770,13 +771,13 @@ class SchedulerWorker:
                             "type": "discovered",
                             "current_scene_id": display.assigned_scene_id
                         })
-            
+
             # Also check database displays (fallback)
             with SessionLocal() as db:
                 db_displays = db.query(DisplayClient).filter(
                     DisplayClient.assigned_scene_id == scene.id
                 ).all()
-                
+
                 for display in db_displays:
                     # Avoid duplicates
                     if not any(d["id"] == display.id for d in assigned_displays):
@@ -786,18 +787,18 @@ class SchedulerWorker:
                             "type": "database",
                             "current_scene_id": display.assigned_scene_id
                         })
-            
+
             if not assigned_displays:
                 logger.info("No displays assigned to scene %s", scene.id)
                 return {
                     "displays_updated": 0,
                     "errors": ["No displays assigned to scene"]
                 }
-            
+
             logger.info(
                 "Distributing to %d displays for scene %s", len(assigned_displays), scene.id
             )
-            
+
             # Extract image information; new pipeline may provide raw bytes directly under image_response["image"]["bytes"]
             image_info = image_response.get("image", {})
             distribution_mode = image_info.get("distribution_mode")
@@ -835,7 +836,7 @@ class SchedulerWorker:
                         "errors": ["Unable to convert image to accessible URL"]
                     }
                 base_seed_url = converted
-            
+
             # For new content, always distribute. For existing content, only if scene assignments need updates
             should_distribute = False
 
@@ -870,7 +871,7 @@ class SchedulerWorker:
                         should_distribute = True
                         logger.info("Display %s needs scene assignment update", display["id"])
                         break
-                
+
                 if not should_distribute:
                     logger.info(
                         "No new content and all displays have correct scene assignment; skipping distribution"
@@ -886,7 +887,7 @@ class SchedulerWorker:
                 logger.warning(
                     "Unknown distribution mode '%s', distributing to be safe", distribution_mode
                 )
-            
+
             # Send display_image commands to each display via MQTT
             for display in assigned_displays:
                 try:
@@ -920,7 +921,7 @@ class SchedulerWorker:
                             image_url=use_url,
                             assignment_id=assignment_id,
                         )
-                        
+
                         if success:
                             displays_updated += 1
                             logger.debug(
@@ -975,11 +976,11 @@ class SchedulerWorker:
                             errors.append(f"MQTT send failed for display {display['id']}")
                     else:
                         errors.append("MQTT service not connected")
-                        
+
                 except Exception as e:  # noqa: BLE001
                     errors.append(f"Error sending to display {display['id']}: {e}")
                     logger.error("distribution.send_error display=%s err=%s", display["id"], e)
-            
+
             # After distribution, optionally prune swap directory (best-effort)
             if getattr(settings, "display_swap_enabled", True):
                 try:
@@ -1008,7 +1009,7 @@ class SchedulerWorker:
                 "image_url": base_seed_url if not raw_bytes else None,
                 "swap_distributed": bool(raw_bytes),
             }
-            
+
         except (ImageConversionError, ChannelRequestError) as e:
             logger.error("distribution.domain_error scene_id=%s error=%s", scene.id, e)
             return {

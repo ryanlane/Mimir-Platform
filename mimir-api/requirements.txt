@@ -15,7 +15,7 @@ psycopg2-binary>=2.9.9
 requests==2.31.0
 python-dotenv
 python-dateutil>=2.8.0
-httpx>=0.25.0
+httpx>=0.25.0,<0.28  # 0.28 removed the app= shortcut still used by starlette 0.27 TestClient
 zeroconf>=0.56.0
 Pillow>=10.0.0
 
