@@ -560,7 +560,11 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
             <div
               className="detail-item"
               title={
-                isVersionBehind(display.client_version, desiredClientVersion)
+                display.update_status === 'failed'
+                  ? `Update to v${display.update_target || '?'} failed${display.update_error ? `: ${display.update_error}` : ''}`
+                  : display.update_status === 'in_progress'
+                  ? `Updating to v${display.update_target || '?'}…`
+                  : isVersionBehind(display.client_version, desiredClientVersion)
                   ? `Update available: v${String(desiredClientVersion).replace(/^v/, '')}`
                   : 'Client version'
               }
@@ -568,11 +572,22 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
               <Package size={14} />
               <span>
                 v{String(display.client_version).replace(/^v/, '')}
-                {isVersionBehind(display.client_version, desiredClientVersion) && (
-                  <span style={{ color: 'var(--color-warning)', marginLeft: '0.35rem' }}>
-                    → v{String(desiredClientVersion).replace(/^v/, '')} available
-                  </span>
+                {display.canary && (
+                  <span style={{ color: 'var(--color-accent)', marginLeft: '0.35rem' }}>canary</span>
                 )}
+                {display.update_status === 'failed' ? (
+                  <span style={{ color: 'var(--color-error)', marginLeft: '0.35rem' }}>
+                    update failed
+                  </span>
+                ) : display.update_status === 'in_progress' ? (
+                  <span style={{ color: 'var(--color-accent)', marginLeft: '0.35rem' }}>
+                    updating…
+                  </span>
+                ) : isVersionBehind(display.client_version, desiredClientVersion) ? (
+                  <span style={{ color: 'var(--color-warning)', marginLeft: '0.35rem' }}>
+                    → v{String(desiredClientVersion).replace(/^v/, '')} queued
+                  </span>
+                ) : null}
               </span>
             </div>
           )}

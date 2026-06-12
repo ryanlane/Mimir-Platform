@@ -556,6 +556,18 @@ class MQTTSceneAssignmentPublisher:
         logger.info("MQTT publisher stopped")
 
     # ---------- Public API ----------
+    async def publish_topic(self, topic: str, payload: dict, qos: int = 1, retain: bool = False) -> bool:
+        """Queue a publish to an arbitrary topic (e.g. retained fleet topics)."""
+        await self.start()
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            await self._queue.put((topic, data, qos, retain))
+            logger.debug("Enqueued MQTT publish -> %s (retain=%s)", topic, retain)
+            return True
+        except Exception as exc:
+            logger.error("Failed to enqueue MQTT publish for %s: %s", topic, exc)
+            return False
+
     async def publish_command(self, target_id: str, payload: dict, qos: int = 1, retain: bool = False) -> bool:
         """
         Queue a command to publish to mimir/<target_id>/cmd.

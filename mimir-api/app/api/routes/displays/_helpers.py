@@ -486,6 +486,11 @@ def _build_discovered_display_response(discovered) -> dict:
             ((getattr(discovered, 'properties', {}) or {}).get('content_claiming') == 'true')
             or ((getattr(discovered, 'properties', {}) or {}).get('contentClaiming') == 'true')
         ),
+        # OTA state (Phase 3)
+        'canary': ((getattr(discovered, 'properties', {}) or {}).get('canary') == 'true'),
+        'update_status': (getattr(discovered, 'properties', {}) or {}).get('update_status'),
+        'update_target': (getattr(discovered, 'properties', {}) or {}).get('update_target'),
+        'update_error': (getattr(discovered, 'properties', {}) or {}).get('update_error'),
         'is_online': discovered.is_online,
         'last_seen': discovered.last_seen,
         'assigned_scene_id': assigned_scene,

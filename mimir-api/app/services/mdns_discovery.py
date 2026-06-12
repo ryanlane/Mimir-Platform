@@ -557,6 +557,18 @@ class MdnsDiscoveryService:
         if protocol_version is not None:
             props["protocol_version"] = str(protocol_version)
 
+        # OTA state (Phase 3): canary marker + last update outcome.
+        if isinstance(hb.get("canary"), bool):
+            props["canary"] = "true" if hb["canary"] else "false"
+        update_status = hb.get("update_status")
+        if update_status:
+            props["update_status"] = str(update_status)
+            for key in ("update_target", "update_error"):
+                if hb.get(key) is not None:
+                    props[key] = str(hb[key])
+                else:
+                    props.pop(key, None)  # clear stale detail from a previous attempt
+
     async def _monitoring_loop(self):
         """Background monitoring loop for display health"""
         while self.is_running:

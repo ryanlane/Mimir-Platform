@@ -141,6 +141,13 @@ async def lifespan(app: FastAPI):
             logger.info("📡 MQTT Scene assignment publisher started (eager)")
         except Exception as e:  # pragma: no cover – startup resilience
             logger.warning("⚠️ Failed to eagerly start MQTT scene assignment publisher: %s", e)
+        # Fleet OTA rollout controller (Phase 3): retained desired_version topic
+        try:
+            from app.services.fleet_rollout import fleet_rollout_service
+            await fleet_rollout_service.start()
+            logger.info("🚀 Fleet rollout controller started")
+        except Exception as e:  # pragma: no cover – startup resilience
+            logger.warning("⚠️ Failed to start fleet rollout controller: %s", e)
         
         if mqtt_success:
             logger.info(f"📡 MQTT Presence: enabled at {settings.mqtt_broker_host}:{settings.mqtt_broker_port}")
