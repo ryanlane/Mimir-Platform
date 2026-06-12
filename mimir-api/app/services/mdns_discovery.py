@@ -547,6 +547,16 @@ class MdnsDiscoveryService:
             if isinstance(val, bool):
                 props[key] = "true" if val else "false"
 
+        # Version reporting (Phase 2): clients >= 1.0.4 include these in
+        # heartbeat/status payloads. Drives the fleet panel and OTA rollouts.
+        client_version = hb.get("client_version")
+        if client_version:
+            display_obj.client_version = str(client_version)
+            props["client_version"] = str(client_version)
+        protocol_version = hb.get("protocol_version")
+        if protocol_version is not None:
+            props["protocol_version"] = str(protocol_version)
+
     async def _monitoring_loop(self):
         """Background monitoring loop for display health"""
         while self.is_running:

@@ -38,6 +38,11 @@ class Settings(BaseSettings):
         default="/var/opt/mimir/mimir-api/uploads",
         validation_alias="UPLOAD_DIR",
     )
+    client_releases_dir: str = Field(
+        default="/var/opt/mimir/mimir-api/client-releases",
+        validation_alias="CLIENT_RELEASES_DIR",
+        description="Directory of cached mimir-display release artifacts (populated by mimir-update.sh).",
+    )
     # Directory where scheduler-generated (transient) images are first written before being
     # optionally copied/mirrored into the public channels directory for serving.
     scheduler_temp_directory: str = Field(

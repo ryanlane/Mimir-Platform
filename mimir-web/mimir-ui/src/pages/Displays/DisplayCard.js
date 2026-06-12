@@ -1,12 +1,38 @@
 // Display Card component for individual display clients
 import React, { useState, useEffect } from 'react';
 import './DisplayCard.css';
-import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe, Settings as SettingsIcon } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe, Package, Settings as SettingsIcon } from 'lucide-react';
 import { api, normalizeMediaUrl } from '../../services/api';
 import Button from '../../components/Button/Button';
 import Icon from '../../components/Icon/Icon';
 import Modal from '../../components/Modal/Modal';
 import { formatOrientationLabel } from './orientationOptions';
+
+// Desired client version from the server's release cache — fetched once and
+// shared across all cards (module-level cache; 404 = no release cached yet).
+let _latestReleasePromise = null;
+function fetchDesiredClientVersion() {
+  if (!_latestReleasePromise) {
+    _latestReleasePromise = api
+      .getLatestClientRelease()
+      .then((resp) => resp?.data?.version || null)
+      .catch(() => null);
+  }
+  return _latestReleasePromise;
+}
+
+// Loose semver-ish comparison: true when `desired` is newer than `current`.
+function isVersionBehind(current, desired) {
+  if (!current || !desired) return false;
+  const parse = (v) => String(v).replace(/^v/, '').split(/[.+-]/).map((p) => parseInt(p, 10) || 0);
+  const a = parse(current);
+  const b = parse(desired);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((b[i] || 0) > (a[i] || 0)) return true;
+    if ((b[i] || 0) < (a[i] || 0)) return false;
+  }
+  return false;
+}
 
 const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onConfigure, configureStatus, apiClient = api }) => {
   // const [imageLoading, setImageLoading] = useState(false); // (unused after image section commented out)
@@ -14,6 +40,15 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
   const [imageError, setImageError] = useState(false);
   const [thumbLoading, setThumbLoading] = useState(false);
   const [thumbError, setThumbError] = useState(false);
+  const [desiredClientVersion, setDesiredClientVersion] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDesiredClientVersion().then((v) => {
+      if (!cancelled) setDesiredClientVersion(v);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const [persisted, setPersisted] = useState({ loading: false, error: null, thumb: null, image: null, updated_ts: null });
   // Scheduler-related state for manual update button
   const [sceneInfo, setSceneInfo] = useState(null); // scene details
@@ -518,6 +553,27 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
             <div className="detail-item">
               <RotateCcw size={14} />
               <span>{display.refresh_rate_hz}Hz</span>
+            </div>
+          )}
+
+          {display.client_version && display.client_version !== 'unknown' && (
+            <div
+              className="detail-item"
+              title={
+                isVersionBehind(display.client_version, desiredClientVersion)
+                  ? `Update available: v${String(desiredClientVersion).replace(/^v/, '')}`
+                  : 'Client version'
+              }
+            >
+              <Package size={14} />
+              <span>
+                v{String(display.client_version).replace(/^v/, '')}
+                {isVersionBehind(display.client_version, desiredClientVersion) && (
+                  <span style={{ color: 'var(--color-warning)', marginLeft: '0.35rem' }}>
+                    → v{String(desiredClientVersion).replace(/^v/, '')} available
+                  </span>
+                )}
+              </span>
             </div>
           )}
 

@@ -119,6 +119,9 @@ export function normalizeMediaUrl(url) {
 
 // API service methods
 export const api = {
+  // Client releases (fleet/OTA)
+  getLatestClientRelease: () => apiClient.get('/client-releases/latest'),
+
   // Scenes
   getScenes: (params = {}) => apiClient.get('/scenes', { params }),
   getScene: (sceneId) => apiClient.get(`/scenes/${sceneId}`),
