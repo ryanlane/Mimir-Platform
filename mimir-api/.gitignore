@@ -186,10 +186,11 @@ channels/photo_frame/
 channels/example_channel/assets/current.jpg
 deployment-manager
 
-__init__.py
+# NOTE: never ignore __init__.py or live route modules — a blanket
+# "__init__.py" rule here once kept new packages out of git and shipped a
+# broken v1.0.0 image (displays router missing in the build).
 /mimir.db
 /deploy.sh
 /api-deploy.sh
 scheduler_migration.py
-/app/api/routes/websockets.py
 ir-display/scripts/install_display_test.sh
