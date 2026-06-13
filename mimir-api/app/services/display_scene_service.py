@@ -10,8 +10,8 @@ from sqlalchemy import Integer, cast, func
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.core.services.discovered_display_manager import discovered_assignment_manager
 from app.db.models import DisplayClient, Scene
+from app.services.discovered_display_manager import discovered_assignment_manager
 from app.services.mdns_discovery import mdns_discovery_service
 
 

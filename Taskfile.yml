@@ -196,22 +196,22 @@ tasks:
       - .venv/bin/isort app/
 
   api:test:
-    desc: Run the full API test suite
+    desc: Run the full API test suite (same invocation as CI)
     dir: "{{.API_DIR}}"
     cmds:
-      - .venv/bin/python run_tests.py --all
+      - .venv/bin/pytest tests/ -x -q
 
   api:test:unit:
     desc: Run API unit tests only
     dir: "{{.API_DIR}}"
     cmds:
-      - .venv/bin/python run_tests.py --unit
+      - .venv/bin/pytest tests/unit/ -q
 
   api:test:coverage:
     desc: Run API tests with a coverage report
     dir: "{{.API_DIR}}"
     cmds:
-      - .venv/bin/python run_tests.py --all --coverage
+      - .venv/bin/pytest tests/ --cov=app --cov-report=term-missing
 
   api:install:
     desc: Install / sync API Python dependencies into .venv

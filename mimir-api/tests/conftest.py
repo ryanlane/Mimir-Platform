@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.models import Base, Scene
-from app.infrastructure.database.connection import get_db
+from app.db.session import get_session
 from app.main import create_app
 
 
@@ -46,10 +46,10 @@ def app(test_db_session):
     """FastAPI app wired to the test database via dependency override."""
     application = create_app()
 
-    def override_get_db():
+    def override_get_session():
         yield test_db_session
 
-    application.dependency_overrides[get_db] = override_get_db
+    application.dependency_overrides[get_session] = override_get_session
     return application
 
 

@@ -10,12 +10,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.core.services.scene_service import SceneService
 from app.db.base import SessionLocal
 from app.db.models import DisplayClient
 from app.dependencies import get_scene_service
 from app.schemas.scenes import SceneListResponse, SceneResponse
 from app.services.scene_refresh_service import scene_refresh_service
+from app.services.scene_service import SceneService
 
 router = APIRouter(prefix="/scenes", tags=["scenes"])
 

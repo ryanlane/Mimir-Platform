@@ -7,8 +7,8 @@ import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.services.display_scene_service import DisplaySceneService
 from app.db.base import SessionLocal
+from app.services.display_scene_service import DisplaySceneService
 
 router = APIRouter(prefix="/display-scene", tags=["display-scene"])
 

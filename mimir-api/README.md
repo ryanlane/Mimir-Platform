@@ -55,7 +55,6 @@ mimir-api/
 ├── requirements.txt           # Production dependencies
 ├── requirements-test.txt      # Testing dependencies
 ├── pytest.ini               # Test configuration
-├── run_tests.py             # Test runner script
 └── TESTING.md               # Testing documentation
 ```
 
@@ -164,16 +163,16 @@ alembic upgrade head
 ### Running Tests
 
 ```bash
-# Using the test runner (recommended)
-python run_tests.py --all
-
 # Install test dependencies first
-python run_tests.py --install-deps
+pip install -e ".[dev]"
+
+# Run the suite (same invocation as CI)
+pytest tests/ -x -q
 
 # Run specific test types
-python run_tests.py --unit          # Unit tests only
-python run_tests.py --integration   # Integration tests only
-python run_tests.py --coverage      # With coverage report
+pytest tests/unit/ -q                              # Unit tests only
+pytest tests/integration/ -q                       # Integration tests only
+pytest tests/ --cov=app --cov-report=term-missing  # With coverage report
 
 # Using pytest directly
 pytest                              # All tests
@@ -303,7 +302,7 @@ The application provides health check endpoints:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make changes and add tests
-4. Run the test suite (`python run_tests.py --all`)
+4. Run the test suite (`pytest tests/ -x -q`)
 5. Commit changes (`git commit -m 'Add amazing feature'`)
 6. Push to branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request

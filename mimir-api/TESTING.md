@@ -80,37 +80,32 @@ Tests are categorized using pytest markers:
 
 ## Running Tests
 
-### Using the Test Runner Script
-
-The `run_tests.py` script provides convenient test execution:
+### Using pytest
 
 ```bash
 # Install test dependencies
-python run_tests.py --install-deps
+pip install -e ".[dev]"
 
-# Run all tests
-python run_tests.py --all
+# Run all tests (same invocation as CI)
+pytest tests/ -x -q
 
 # Run unit tests only
-python run_tests.py --unit
+pytest tests/unit/ -q
 
 # Run integration tests only
-python run_tests.py --integration
+pytest tests/integration/ -q
 
 # Run with coverage
-python run_tests.py --unit --coverage
+pytest tests/ --cov=app --cov-report=term-missing
 
 # Run specific test file
-python run_tests.py --test tests/unit/test_channel_discovery_service.py
+pytest tests/unit/test_channel_discovery_service.py
 
 # Run tests by marker
-python run_tests.py --marker unit
+pytest -m unit
 
 # Verbose output
-python run_tests.py --unit --verbose
-
-# Check test environment
-python run_tests.py --check
+pytest tests/ -v
 ```
 
 ### Using pytest Directly

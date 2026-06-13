@@ -36,19 +36,19 @@ case "$1" in
         ;;
     "test")
         log "🧪 Running tests..."
-        python run_tests.py --all
+        pytest tests/ -q
         ;;
     "test-unit")
         log "🧪 Running unit tests..."
-        python run_tests.py --unit
+        pytest tests/unit/ -q
         ;;
     "test-integration")
         log "🧪 Running integration tests..."
-        python run_tests.py --integration
+        pytest tests/integration/ -q
         ;;
     "coverage")
         log "📊 Running tests with coverage..."
-        python run_tests.py --all --coverage
+        pytest tests/ --cov=app --cov-report=term-missing
         ;;
     "lint")
         log "🔍 Running linters..."

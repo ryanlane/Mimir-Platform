@@ -7,8 +7,6 @@ from collections.abc import Generator
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.core.services.channel_service import ChannelService
-from app.core.services.scene_service import SceneService
 from app.db.session import get_session
 from app.services.caching import CacheService, cache_service
 from app.services.channel_discovery import (
@@ -21,6 +19,7 @@ from app.services.plugin_discovery import (
     PluginDiscoveryService,
     plugin_discovery_service,
 )
+from app.services.scene_service import SceneService
 from app.services.websocket import WebSocketService, websocket_service
 
 # Global service instances (for services that don't need per-request state)
@@ -54,11 +53,6 @@ def get_cache_service() -> CacheService:
 def get_content_service() -> ContentService:
     """Get content service instance"""
     return content_service
-
-
-def get_channel_service(db: Session = Depends(get_session)) -> ChannelService:
-    """Get channel service instance with database dependency"""
-    return ChannelService(db)
 
 
 def get_scene_service(db: Session = Depends(get_session)) -> SceneService:
