@@ -1,48 +1,52 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Settings, Tv, Layers, Home, MonitorSpeaker, Database } from 'lucide-react';
+import { Settings, Layers, Monitor, Database } from 'lucide-react';
 import './Navigation.css';
 import Logo from '../../components/Brand/Logo';
 
-const Navigation = () => {
-  const navItems = [
-    { path: '/', label: 'Dashboard', icon: Home },
-    { path: '/scenes', label: 'Scenes', icon: Layers },
-    { path: '/channels', label: 'Channels', icon: Tv },
-    { path: '/displays', label: 'Displays', icon: MonitorSpeaker },
-    // { path: '/distribution', label: 'Distribution', icon: Database },
-    { path: '/settings', label: 'Settings', icon: Settings },
-  ];
+const primaryNav = [
+  { path: '/screens', label: 'Screens', icon: Monitor },
+  { path: '/programs', label: 'Programs', icon: Layers },
+  { path: '/sources', label: 'Sources', icon: Database },
+];
 
+const Navigation = () => {
   return (
     <nav className="navigation">
       <div className="navigation-header">
-        <div className="navigation-brand" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <Logo size={38} />
-          <div className="navigation-brand-text" style={{ display: 'flex', flexDirection: 'column' }}>
-            <h1 className="navigation-title" style={{ margin: 0 }}>mimir</h1>
-          </div>
+        <div className="navigation-brand">
+          <Logo size={32} />
+          <h1 className="navigation-title">mimir</h1>
         </div>
       </div>
-      
+
       <ul className="navigation-menu">
-        {navItems.map(({ path, label, icon: Icon }) => (
+        {primaryNav.map(({ path, label, icon: Icon }) => (
           <li key={path}>
             <NavLink
               to={path}
               className={({ isActive }) =>
                 `navigation-link ${isActive ? 'navigation-link-active' : ''}`
               }
-              end={path === '/'}
             >
-              <Icon size={18} />
+              <Icon size={16} />
               <span>{label}</span>
             </NavLink>
           </li>
         ))}
       </ul>
-      
-      
+
+      <div className="navigation-footer">
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `navigation-link navigation-link-system ${isActive ? 'navigation-link-active' : ''}`
+          }
+        >
+          <Settings size={16} />
+          <span>System</span>
+        </NavLink>
+      </div>
     </nav>
   );
 };

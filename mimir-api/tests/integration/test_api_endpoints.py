@@ -78,6 +78,55 @@ class TestChannelsAPI:
 
 @pytest.mark.integration
 @pytest.mark.api
+class TestDisplayUnpair:
+    def test_delete_display(self, client: TestClient, seeded_display):
+        response = client.delete(f"/api/displays/{seeded_display.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["display_id"] == seeded_display.id
+        assert "deleted" in data["message"].lower()
+
+    def test_deleted_display_gone_from_db(self, client: TestClient, seeded_display, test_db_session):
+        from app.db.models import DisplayClient
+
+        client.delete(f"/api/displays/{seeded_display.id}")
+
+        remaining = test_db_session.query(DisplayClient).filter(
+            DisplayClient.id == seeded_display.id
+        ).first()
+        assert remaining is None
+
+    def test_delete_display_cleans_related_records(self, client: TestClient, seeded_display, test_db_session):
+        import datetime
+
+        from app.db.models import ContentLease
+
+        lease = ContentLease(
+            lease_id="lease-1",
+            display_id=seeded_display.id,
+            scene_id="some-scene",
+            content_id="content-1",
+            expires_at=datetime.datetime.now() + datetime.timedelta(hours=1),
+            distribution_mode="MIRROR",
+        )
+        test_db_session.add(lease)
+        test_db_session.commit()
+
+        response = client.delete(f"/api/displays/{seeded_display.id}")
+
+        assert response.status_code == 200
+        assert response.json()["deleted_content_leases"] == 1
+        assert test_db_session.query(ContentLease).count() == 0
+
+    def test_delete_unknown_display_404(self, client: TestClient):
+        response = client.delete("/api/displays/never-existed")
+
+        assert response.status_code == 404
+
+
+@pytest.mark.integration
+@pytest.mark.api
 class TestScenesAPI:
     def test_list_scenes_empty(self, client: TestClient):
         response = client.get("/api/scenes")

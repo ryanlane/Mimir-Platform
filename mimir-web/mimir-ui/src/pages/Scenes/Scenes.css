@@ -84,9 +84,42 @@
     align-items: flex-start;
     gap: var(--spacing-md);
   }
-  
+
   .scenes-grid {
     grid-template-columns: 1fr;
   }
-  
+}
+
+/* ── Programs split-pane layout ── */
+.programs-split-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-lg);
+}
+
+.programs-list-pane {
+  flex: 1;
+  min-width: 0;
+}
+
+.program-card-wrapper {
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.program-card-wrapper:hover {
+  border-color: var(--color-border);
+}
+
+.program-card-wrapper--selected {
+  border-color: var(--color-accent);
+  background: rgba(0, 200, 81, 0.03);
+}
+
+@media (max-width: 1024px) {
+  .programs-split-layout {
+    flex-direction: column;
+  }
 }

@@ -3,7 +3,6 @@ import { Plus, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
-import SceneForm from './SceneForm';
 import DistributionManager from '../../components/DistributionManager/DistributionManager';
 import './Scenes.css';
 import SceneLiveStatus from './components/SceneLiveStatus';
@@ -11,7 +10,9 @@ import Header from '../../components/Header/Header';
 import Button from '../../components/Button/Button';
 import SceneCard from '../../components/SceneCard/SceneCard';
 import Modal from '../../components/Modal/Modal';
-import Loading from '../../components/Loading/Loading';
+import { SkeletonProgramCard } from '../../components/Skeleton/Skeleton';
+import { ProgramDetailPanel } from './components/ProgramDetailPanel';
+import { ProgramEditorPanel } from './components/ProgramEditorPanel';
 
 const Scenes = () => {
   const [scenes, setScenes] = useState([]);
@@ -22,8 +23,8 @@ const Scenes = () => {
   const [channelManifests, setChannelManifests] = useState({}); // Cache for channel manifests
   const [displayStatus, setDisplayStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingScene, setEditingScene] = useState(null);
+  const [panelMode, setPanelMode] = useState(null); // null | 'detail' | 'editor'
+  const [panelScene, setPanelScene] = useState(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [currentImageData, setCurrentImageData] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
@@ -388,19 +389,45 @@ const Scenes = () => {
   }, [displayStatus]);
 
   const handleCreateScene = () => {
-    setEditingScene(null);
-    setShowForm(true);
+    setPanelScene(null);
+    setPanelMode('editor');
   };
 
   const handleEditScene = (scene) => {
-    setEditingScene(scene);
-    setShowForm(true);
+    setPanelScene(scene);
+    setPanelMode('editor');
+  };
+
+  const handleCardClick = (scene, e) => {
+    if (e.target.closest('button, a, input')) return;
+    if (panelMode === 'detail' && panelScene?.id === scene.id) {
+      setPanelMode(null);
+      setPanelScene(null);
+    } else {
+      setPanelScene(scene);
+      setPanelMode('detail');
+    }
+  };
+
+  const handleEditorClose = () => {
+    setPanelMode(panelScene ? 'detail' : null);
+    loadData();
+  };
+
+  const handleEditorSaved = () => {
+    setPanelMode(null);
+    setPanelScene(null);
+    loadData();
   };
 
   const handleDeleteScene = async (sceneId) => {
-    if (window.confirm('Are you sure you want to delete this scene?')) {
+    if (window.confirm('Are you sure you want to delete this program?')) {
       try {
         await api.deleteScene(sceneId);
+        if (panelScene?.id === sceneId) {
+          setPanelMode(null);
+          setPanelScene(null);
+        }
         await loadData();
       } catch (error) {
         console.error('Error deleting scene:', error);
@@ -528,32 +555,53 @@ const Scenes = () => {
     }
   };
 
-  const handleFormClose = () => {
-    setShowForm(false);
-    setEditingScene(null);
-    loadData();
-  };
+  // Sync panelScene reference when scenes refresh (e.g. after WS event)
+  useEffect(() => {
+    if (panelScene) {
+      const fresh = scenes.find(s => s.id === panelScene.id);
+      if (fresh) setPanelScene(fresh);
+    }
+  }, [scenes]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading) {
-    return <Loading message="Loading scenes..." />;
-  }
+
+  const activePanel = panelMode === 'editor'
+    ? (
+      <ProgramEditorPanel
+        scene={panelScene}
+        channels={channels}
+        onClose={handleEditorClose}
+        onSaved={handleEditorSaved}
+      />
+    )
+    : panelMode === 'detail' && panelScene
+    ? (
+      <ProgramDetailPanel
+        scene={panelScene}
+        channels={channels}
+        channelManifests={channelManifests}
+        isLive={panelScene.id === (displayStatus?.currentScene || displayStatus?.current_scene)}
+        scheduleStatus={getSceneScheduleStatus(panelScene.id)}
+        onClose={() => { setPanelMode(null); setPanelScene(null); }}
+        onEdit={handleEditScene}
+        onDelete={handleDeleteScene}
+      />
+    )
+    : null;
 
   return (
     <div className="scenes">
-     
       <div className="scenes-header">
         <Header
-          title="Scenes"
+          title="Programs"
           icon="layers"
           iconSize={36}
-          description="Manage your display scenes and configurations"
+          description="Build and manage display programs from your sources"
           actions={[
             <Button
               key="sync"
               variant="secondary"
               icon={<RefreshCw size={18} aria-hidden="true" />}
               onClick={() => {
-                console.log('🔄 Manual state sync requested');
                 requestStateSync();
               }}
             >
@@ -565,7 +613,7 @@ const Scenes = () => {
               icon={<Plus size={18} aria-hidden="true" />}
               onClick={handleCreateScene}
             >
-              Create Scene
+              New Program
             </Button>
           ]}
         />
@@ -577,46 +625,56 @@ const Scenes = () => {
         />
       </div>
 
-      {scenes.length > 0 ? (
-        <div className="scenes-grid">
-          {scenes.map(scene => (
-            <SceneCard
-              key={scene.id}
-              scene={scene}
-              channels={channels}
-              channelManifests={channelManifests}
-              scheduleStatus={getSceneScheduleStatus(scene.id)}
-              onChangeDistribution={handleDistributionModeChange}
-              onDisplay={handleDisplayScene}
-              onEdit={handleEditScene}
-              onDelete={handleDeleteScene}
-              loadingDisplay={imageLoading}
-            />
-          ))}
+      <div className="programs-split-layout">
+        <div className="programs-list-pane">
+          {loading ? (
+            <div className="scenes-grid">
+              {[1, 2, 3].map(i => <SkeletonProgramCard key={i} />)}
+            </div>
+          ) : scenes.length > 0 ? (
+            <div className="scenes-grid">
+              {scenes.map(scene => {
+                const isSelected = panelScene?.id === scene.id && panelMode !== null;
+                return (
+                  <div
+                    key={scene.id}
+                    className={`program-card-wrapper${isSelected ? ' program-card-wrapper--selected' : ''}`}
+                    onClick={(e) => handleCardClick(scene, e)}
+                  >
+                    <SceneCard
+                      scene={scene}
+                      channels={channels}
+                      channelManifests={channelManifests}
+                      scheduleStatus={getSceneScheduleStatus(scene.id)}
+                      onChangeDistribution={handleDistributionModeChange}
+                      onDisplay={handleDisplayScene}
+                      onEdit={handleEditScene}
+                      onDelete={handleDeleteScene}
+                      loadingDisplay={imageLoading}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <h3>No programs yet</h3>
+              <p className="text-tertiary">
+                Programs define what plays on your screens. Create your first one to get started.
+              </p>
+              <Button
+                variant="primary"
+                icon={<Plus size={18} aria-hidden="true" />}
+                onClick={handleCreateScene}
+              >
+                New Program
+              </Button>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="empty-state">
-          <h3>No scenes created yet</h3>
-          <p className="text-tertiary">
-            Create your first scene to start displaying content on your Mimir device.
-          </p>
-          <Button
-            variant="primary"
-            icon={<Plus size={18} aria-hidden="true" />}
-            onClick={handleCreateScene}
-          >
-            Create Your First Scene
-          </Button>
-        </div>
-      )}
 
-      {showForm && (
-        <SceneForm
-          scene={editingScene}
-          channels={channels}
-          onClose={handleFormClose}
-        />
-      )}
+        {activePanel}
+      </div>
 
       {showImageModal && currentImageData && (
         <Modal

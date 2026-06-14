@@ -187,13 +187,6 @@
   background-color: var(--color-tertiary);
 }
 
-/* Network Status Container */
-.network-status-container {
-  position: fixed;
-  bottom: 1rem;
-  left: 1rem;
-  z-index: 1000;
-}
 
 /* Performance Optimizations */
 .virtual-scroll-container {
@@ -253,18 +246,6 @@
 
 /* Responsive design for performance components */
 @media (max-width: 768px){
-  .network-status-container {
-    position: fixed;
-    top: 0.5rem;
-    right: 0.5rem;
-    bottom: auto; /* reset */
-    left: auto;   /* reset */
-  }
-
-  .network-status-container .network-text{
-    display: none;
-  }
-  
   .virtual-scroll-container {
     height: calc(100vh - 200px);
   }

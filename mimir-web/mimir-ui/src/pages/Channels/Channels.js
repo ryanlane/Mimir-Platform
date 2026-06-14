@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Info, Plus, FolderOpen } from 'lucide-react';
+import { RefreshCw, Plus, FolderOpen } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
@@ -10,6 +10,8 @@ import Button from '../../components/Button/Button';
 import ChannelCard from './ChannelCard';
 import InstallChannel from './InstallChannel';
 import LinkDevChannel from './LinkDevChannel';
+import { SourceDetailPanel } from './SourceDetailPanel';
+import { SkeletonSourceCard } from '../../components/Skeleton/Skeleton';
 import './Channels.css';
 
 // Legacy in-memory cache removed; persistent IndexedDB cache now used.
@@ -18,6 +20,7 @@ const Channels = () => {
     const navigate = useNavigate();
     const [channels, setChannels] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [panelChannel, setPanelChannel] = useState(null);
     const [showInstallModal, setShowInstallModal] = useState(false);
     const [showLinkDevModal, setShowLinkDevModal] = useState(false);
 
@@ -127,8 +130,26 @@ const Channels = () => {
       return () => window.removeEventListener('websocket-message', handleChannelUpdate);
     }, []);
 
+    // Sync panelChannel when list refreshes (health updates, enable/disable, etc.)
+    useEffect(() => {
+      if (panelChannel) {
+        const fresh = channels.find(c => c.id === panelChannel.id);
+        if (fresh) setPanelChannel(fresh);
+        else setPanelChannel(null); // uninstalled
+      }
+    }, [channels]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const handleCardClick = (channel, e) => {
+      if (e.target.closest('button, a, input')) return;
+      if (panelChannel?.id === channel.id) {
+        setPanelChannel(null);
+      } else {
+        setPanelChannel(channel);
+      }
+    };
+
     const handleSettings = (channel) => {
-      navigate(`/channels/${encodeURIComponent(channel.id)}`);
+      navigate(`/sources/${encodeURIComponent(channel.id)}`);
     };
 
     const handleToggleEnabled = useCallback(async (channel) => {
@@ -149,6 +170,7 @@ const Channels = () => {
     const handleUninstall = useCallback(async (channel) => {
       try {
         await api.uninstallChannel(channel.id);
+        setPanelChannel(prev => prev?.id === channel.id ? null : prev);
         await refreshChannels();
       } catch (error) {
         // eslint-disable-next-line no-console
@@ -169,6 +191,7 @@ const Channels = () => {
     const handleUnlinkDev = useCallback(async (channel) => {
       try {
         await api.unlinkDevChannel(channel.id);
+        setPanelChannel(prev => prev?.id === channel.id ? null : prev);
         await refreshChannels();
       } catch (error) {
         // eslint-disable-next-line no-console
@@ -196,108 +219,123 @@ const Channels = () => {
       return { type: 'success', text: 'Active' };
     };
 
-    if (loading) {
-      return (
-        <div className="loading">
-          <div className="loading-spinner" />
-          <span>Loading channels...</span>
-        </div>
-      );
-    }
+    const panelChannelHealth = panelChannel ? channelHealth[panelChannel.id] : null;
+    const panelManifest = panelChannel ? manifest.find(m => m.id === panelChannel.id) : null;
+    const panelStatusInfo = panelChannel ? getStatusInfo(panelChannel) : null;
 
     return (
       <div className="channels">
         <div className="channels-header">
           <Header
-            title="Channels"
-              icon="tv"
-              iconSize={36}
-              description="Manage channel configurations and settings"
-              actions={[
+            title="Sources"
+            icon="database"
+            iconSize={36}
+            description="Manage content sources and their configurations"
+            actions={[
+              <Button
+                key="install"
+                variant="primary"
+                onClick={() => setShowInstallModal(true)}
+                icon={<Plus />}
+                type="button"
+              >
+                Install Source
+              </Button>,
+              devModeEnabled && (
                 <Button
-                  key="install"
+                  key="link-dev"
+                  variant="secondary"
+                  onClick={() => setShowLinkDevModal(true)}
+                  icon={<FolderOpen />}
+                  type="button"
+                >
+                  Link Dev Source
+                </Button>
+              ),
+              <Button
+                key="refresh"
+                variant="secondary"
+                onClick={refreshChannels}
+                icon={<RefreshCw />}
+                type="button"
+              >
+                Refresh
+              </Button>
+            ].filter(Boolean)}
+          />
+        </div>
+
+        <div className="sources-split-layout">
+          <div className="sources-list-pane">
+            {loading ? (
+              <div className="channels-grid">
+                {[1, 2, 3].map(i => <SkeletonSourceCard key={i} />)}
+              </div>
+            ) : channels.length > 0 ? (
+              <div className="channels-grid">
+                {channels.map(channel => {
+                  const statusInfo = getStatusInfo(channel);
+                  const health = channelHealth[channel.id];
+                  const manifestData = manifest.find(m => m.id === channel.id);
+                  const isSelected = panelChannel?.id === channel.id;
+                  return (
+                    <div
+                      key={channel.id}
+                      className={`source-card-wrapper${isSelected ? ' source-card-wrapper--selected' : ''}`}
+                      onClick={(e) => handleCardClick(channel, e)}
+                    >
+                      <ChannelCard
+                        channel={channel}
+                        statusInfo={statusInfo}
+                        health={health}
+                        manifestData={manifestData}
+                        v21Supported={supportsV21()}
+                        channelHealthSupported={supportsChannelHealth()}
+                        onOpenSettings={handleSettings}
+                        onToggleEnabled={handleToggleEnabled}
+                        onUninstall={handleUninstall}
+                        onReloadDev={handleReloadDev}
+                        onUnlinkDev={handleUnlinkDev}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <h3>No sources installed</h3>
+                <p className="text-tertiary">
+                  Sources are the content plugins that feed your programs. Install one to begin.
+                </p>
+                <Button
                   variant="primary"
                   onClick={() => setShowInstallModal(true)}
                   icon={<Plus />}
                   type="button"
                 >
-                  Install Channel
-                </Button>,
-                devModeEnabled && (
-                  <Button
-                    key="link-dev"
-                    variant="secondary"
-                    onClick={() => setShowLinkDevModal(true)}
-                    icon={<FolderOpen />}
-                    type="button"
-                  >
-                    Link Dev Channel
-                  </Button>
-                ),
-                supportsPluginSystem() && (
-                  <Button
-                    key="manifest"
-                    variant="secondary"
-                    onClick={loadManifest}
-                    icon={<Info />}
-                    type="button"
-                  >
-                    Manifest
-                  </Button>
-                ),
-                <Button
-                  key="refresh"
-                  variant="secondary"
-                  onClick={refreshChannels}
-                  icon={<RefreshCw />}
-                  type="button"
-                >
-                  Refresh
+                  Install Source
                 </Button>
-              ].filter(Boolean)}
-          />
-        </div>
+              </div>
+            )}
+          </div>
 
-        {channels.length > 0 ? (
-          <div className="channels-grid">
-            {channels.map(channel => {
-              const statusInfo = getStatusInfo(channel);
-              const health = channelHealth[channel.id];
-              const manifestData = manifest.find(m => m.id === channel.id);
-              return (
-                <ChannelCard
-                  key={channel.id}
-                  channel={channel}
-                  statusInfo={statusInfo}
-                  health={health}
-                  manifestData={manifestData}
-                  v21Supported={supportsV21()}
-                  channelHealthSupported={supportsChannelHealth()}
-                  onOpenSettings={handleSettings}
-                  onToggleEnabled={handleToggleEnabled}
-                  onUninstall={handleUninstall}
-                  onReloadDev={handleReloadDev}
-                  onUnlinkDev={handleUnlinkDev}
-                />
-              );
-            })}
-          </div>
-        ) : (
-          <div className="empty-state">
-            <h3>No channels available</h3>
-            <p className="text-tertiary">
-              No channels were discovered. Install a channel plugin to get started.
-            </p>
-            <Button
-              variant="primary"
-              onClick={() => setShowInstallModal(true)}
-              icon={<Plus />}
-              type="button"
-            >
-              Install Channel
-            </Button>
-          </div>
-        )}
+          {panelChannel && (
+            <SourceDetailPanel
+              channel={panelChannel}
+              health={panelChannelHealth}
+              manifestData={panelManifest}
+              statusInfo={panelStatusInfo}
+              v21Supported={supportsV21()}
+              channelHealthSupported={supportsChannelHealth()}
+              onClose={() => setPanelChannel(null)}
+              onOpenSettings={handleSettings}
+              onToggleEnabled={handleToggleEnabled}
+              onUninstall={handleUninstall}
+              onUnlinkDev={handleUnlinkDev}
+              onReloadDev={handleReloadDev}
+            />
+          )}
+        </div>
 
         <InstallChannel
           isOpen={showInstallModal}

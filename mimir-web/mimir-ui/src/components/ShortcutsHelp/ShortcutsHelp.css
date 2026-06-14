@@ -1,0 +1,99 @@
+.sh-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 900;
+  animation: sh-fade-in 80ms ease;
+}
+
+.sh-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(400px, calc(100vw - 2rem));
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  z-index: 901;
+  overflow: hidden;
+  animation: sh-slide-in 100ms ease;
+}
+
+@keyframes sh-fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sh-slide-in { from { opacity: 0; transform: translate(-50%, -52%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+
+.sh-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sh-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.sh-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  transition: color 80ms ease, background 80ms ease;
+}
+.sh-close:hover { color: var(--color-text); background: var(--color-surface-hover); }
+
+.sh-body {
+  padding: var(--spacing-sm) 0;
+}
+
+.sh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px var(--spacing-md);
+  gap: var(--spacing-md);
+}
+.sh-row:hover { background: var(--color-surface-hover); }
+
+.sh-keys {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.sh-key {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  color: var(--color-text);
+  min-width: 22px;
+  text-align: center;
+  box-shadow: 0 1px 0 var(--color-border);
+}
+
+.sh-plus {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin: 0 1px;
+}
+
+.sh-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: right;
+}

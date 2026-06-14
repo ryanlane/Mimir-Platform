@@ -1,6 +1,6 @@
 // Multi-Display Management page for v2.3 API
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw } from 'lucide-react';
+import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -13,6 +13,7 @@ import DebugPanel from '../../components/DebugPanel/DebugPanel';
 import Modal from '../../components/Modal/Modal';
 import './Displays.css';
 import Header from '../../components/Header/Header';
+import { SkeletonScreenCard } from '../../components/Skeleton/Skeleton';
 import Button from '../../components/Button/Button';
 import { formatOrientationLabel, getOrientationOptionsForDisplay, normalizeOrientationValue } from './orientationOptions';
 
@@ -20,6 +21,110 @@ import { formatOrientationLabel, getOrientationOptionsForDisplay, normalizeOrien
 let displaysCache = null;
 let displaysCacheTime = null;
 const DISPLAYS_CACHE_TIMEOUT = 30 * 1000; // 30 seconds
+
+function formatRelativeTs(ts) {
+  if (!ts) return null;
+  const n = typeof ts === 'number' ? (ts < 1e12 ? ts * 1000 : ts) : Date.parse(ts);
+  if (isNaN(n)) return null;
+  const diff = Math.round((Date.now() - n) / 1000);
+  if (diff < 5) return 'just now';
+  if (diff < 60) return `${diff}s ago`;
+  const m = Math.round(diff / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+const ScreenDetailPanel = ({ display, onClose, onAssignScene, onOpenSettings }) => {
+  const sceneName = display.assigned_scene_name || display.assignedSceneName;
+  const resolution = display.resolution && Array.isArray(display.resolution) && display.resolution.length >= 2
+    ? `${display.resolution[0]}×${display.resolution[1]}`
+    : display.width && display.height
+    ? `${display.width}×${display.height}`
+    : null;
+
+  return (
+    <aside className="screen-detail-panel">
+      <div className="screen-detail-header">
+        <div className="screen-detail-title-row">
+          <span className={`screen-detail-status-dot ${display.is_online ? 'online' : 'offline'}`} />
+          <h2 className="screen-detail-name">{display.name}</h2>
+          <button className="screen-detail-close" onClick={onClose} aria-label="Close panel">
+            <X size={14} />
+          </button>
+        </div>
+        {display.location && (
+          <div className="screen-detail-location">
+            <MapPin size={12} />
+            {display.location}
+          </div>
+        )}
+      </div>
+
+      <div className="screen-detail-section">
+        <div className="screen-detail-section-label">PROGRAM</div>
+        {sceneName ? (
+          <div className="screen-detail-program">
+            <Layers size={14} />
+            <span className="screen-detail-program-name">{sceneName}</span>
+          </div>
+        ) : (
+          <div className="screen-detail-no-program">No program assigned</div>
+        )}
+        <Button
+          variant="primary"
+          onClick={onAssignScene}
+          className="screen-detail-assign-btn"
+        >
+          {sceneName ? 'Change Program →' : 'Assign Program →'}
+        </Button>
+      </div>
+
+      <div className="screen-detail-section">
+        <div className="screen-detail-section-label">DETAILS</div>
+        <div className="screen-detail-rows">
+          <div className="screen-detail-row">
+            <span>Status</span>
+            <span className={display.is_online ? 'screen-detail-val--online' : 'screen-detail-val--offline'}>
+              {display.is_online ? 'Online' : 'Offline'}
+            </span>
+          </div>
+          {resolution && (
+            <div className="screen-detail-row">
+              <span>Resolution</span>
+              <span>{resolution}</span>
+            </div>
+          )}
+          {display.orientation && (
+            <div className="screen-detail-row">
+              <span>Orientation</span>
+              <span style={{ textTransform: 'capitalize' }}>{display.orientation}</span>
+            </div>
+          )}
+          {display.last_seen && (
+            <div className="screen-detail-row">
+              <span>Last seen</span>
+              <span>{formatRelativeTs(display.last_seen)}</span>
+            </div>
+          )}
+          {display.displayType && (
+            <div className="screen-detail-row">
+              <span>Type</span>
+              <span style={{ textTransform: 'capitalize' }}>{display.displayType}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="screen-detail-footer">
+        <Button variant="secondary" onClick={() => onOpenSettings(display)}>
+          Display Settings
+        </Button>
+      </div>
+    </aside>
+  );
+};
 
 const Displays = () => {
   console.log('🚀 Displays component is rendering!');
@@ -66,6 +171,7 @@ const Displays = () => {
   const [settingsDisplay, setSettingsDisplay] = useState(null);
   const [settingsOrientation, setSettingsOrientation] = useState('landscape');
   const [savingDisplaySettings, setSavingDisplaySettings] = useState(false);
+  const [removingDisplay, setRemovingDisplay] = useState(false);
   const [displaySettingsError, setDisplaySettingsError] = useState(null);
   const [configStatus, setConfigStatus] = useState({});
   const [showPairing, setShowPairing] = useState(false);
@@ -103,6 +209,9 @@ const Displays = () => {
     return () => mq.removeEventListener('change', apply);
   }, []);
   
+  // Detail panel — display currently focused in the split-pane right panel
+  const [panelDisplay, setPanelDisplay] = useState(null);
+
   // Discovery service status
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
   // Reference discoveryStatus to avoid lint unused var (could be shown later in UI)
@@ -114,6 +223,14 @@ const Displays = () => {
     // Clear expired cache on component mount
     featureDetection.clearExpiredCache();
   }, []);
+
+  // Keep detail panel in sync with latest display data
+  useEffect(() => {
+    if (panelDisplay) {
+      const updated = displays.find(d => d.id === panelDisplay.id);
+      if (updated) setPanelDisplay(updated);
+    }
+  }, [displays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debug state changes
   useEffect(() => {
@@ -635,11 +752,32 @@ const Displays = () => {
   }, []);
 
   const closeDisplaySettings = useCallback(() => {
-    if (savingDisplaySettings) return;
+    if (savingDisplaySettings || removingDisplay) return;
     setShowDisplaySettings(false);
     setSettingsDisplay(null);
     setDisplaySettingsError(null);
-  }, [savingDisplaySettings]);
+  }, [savingDisplaySettings, removingDisplay]);
+
+  const handleUnpairDisplay = useCallback(async () => {
+    if (!settingsDisplay) return;
+    const confirmed = window.confirm(
+      `Unpair "${settingsDisplay.name}"? The display will be removed from Mimir and must be paired again before it can show scenes.`
+    );
+    if (!confirmed) return;
+
+    setRemovingDisplay(true);
+    setDisplaySettingsError(null);
+    try {
+      await api.deleteDisplay(settingsDisplay.id);
+      setShowDisplaySettings(false);
+      setSettingsDisplay(null);
+      await refreshDisplays();
+    } catch (err) {
+      setDisplaySettingsError(err?.response?.data?.detail || err?.message || 'Failed to unpair display');
+    } finally {
+      setRemovingDisplay(false);
+    }
+  }, [refreshDisplays, settingsDisplay]);
 
   const handleSaveDisplaySettings = useCallback(async () => {
     if (!settingsDisplay) return;
@@ -737,9 +875,10 @@ const Displays = () => {
 
   return (
     <PullToRefresh onRefresh={refreshDisplays}>
-    <div className="page-container">
+    <div className={`screens-split-layout ${panelDisplay ? 'screens-split-layout--open' : ''}`}>
+    <div className="screens-list-pane">
         <Header
-          title="Displays"
+          title="Screens"
           icon="MonitorSpeaker"
           iconSize={36}
           description="Manage display clients and scene assignments"
@@ -749,7 +888,7 @@ const Displays = () => {
               variant="primary"
               onClick={() => setShowPairing(true)}
             >
-              + Add Display
+              + Add Screen
             </Button>,
             <Button
               key="refresh"
@@ -917,9 +1056,8 @@ const Displays = () => {
 
       {/* Main Content */}
       {loading ? (
-        <div className="loading-state">
-          <div className="spinner" />
-          <p>Loading displays...</p>
+        <div className="displays-grid">
+          {[1, 2, 3, 4].map(i => <SkeletonScreenCard key={i} />)}
         </div>
       ) : error ? (
         <div className="error-state">
@@ -931,72 +1069,70 @@ const Displays = () => {
         </div>
       ) : filteredDisplays.length === 0 ? (
         <div className="empty-state">
-          <h3>No Displays Found</h3>
+          <h3>{displays.length === 0 ? 'No screens connected' : 'No screens match your filters'}</h3>
           <p className="text-tertiary">
-            {displays.length === 0 
-              ? "No display clients have been registered yet."
-              : "No displays match your current filters."
+            {displays.length === 0
+              ? 'Screens are the physical displays connected to Mimir. Add a screen to get started.'
+              : 'Try adjusting your filters to see more screens.'
             }
           </p>
         </div>
       ) : (
         <div className="displays-grid">
-          {console.log('🔍 About to render', filteredDisplays.length, 'display cards')}
-          {filteredDisplays.map((display, index) => {
-            console.log(`🔍 Rendering DisplayCard ${index} for:`, display.name, 'with ID:', display.id);
-            return (
+          {filteredDisplays.map((display) => (
+            <div
+              key={display.id}
+              className={`display-card-wrapper ${panelDisplay?.id === display.id ? 'display-card-wrapper--active' : ''}`}
+              onClick={(e) => {
+                if (!e.target.closest('button, a, input, .display-thumbnail')) {
+                  setPanelDisplay(prev => prev?.id === display.id ? null : display);
+                }
+              }}
+            >
               <DisplayCard
-                key={display.id}
                 display={display}
-                onAssignScene={(display) => {
-                  setSelectedDisplay(display);
+                onAssignScene={(d) => {
+                  setSelectedDisplay(d);
                   setShowSceneAssignment(true);
                 }}
                 onConfigure={handlePairDisplay}
                 configureStatus={configStatus[display.id]}
-                onEdit={(display, action) => {
-                  if (action === 'approve' && display.displayType === 'discovered') {
-                    // Optimistic state update
-                    setDisplays(prev => prev.map(d => d.id === display.id ? { ...d, approving: true } : d));
-                    api.approveDiscoveredDisplay(display.id)
+                onEdit={(d, action) => {
+                  if (action === 'approve' && d.displayType === 'discovered') {
+                    setDisplays(prev => prev.map(x => x.id === d.id ? { ...x, approving: true } : x));
+                    api.approveDiscoveredDisplay(d.id)
                       .then(() => refreshDisplays())
                       .catch(err => {
                         console.error('Approve failed', err);
-                        setDisplays(prev => prev.map(d => d.id === display.id ? { ...d, approving: false, approve_error: err.message } : d));
+                        setDisplays(prev => prev.map(x => x.id === d.id ? { ...x, approving: false, approve_error: err.message } : x));
                       });
-                  } else if (action === 'reject' && display.displayType === 'discovered') {
-                    // Optimistic removal
+                  } else if (action === 'reject' && d.displayType === 'discovered') {
                     const original = displays;
-                    setDisplays(prev => prev.filter(d => d.id !== display.id));
-                    api.rejectDiscoveredDisplay(display.id)
+                    setDisplays(prev => prev.filter(x => x.id !== d.id));
+                    api.rejectDiscoveredDisplay(d.id)
                       .then(() => refreshDisplays())
                       .catch(err => {
                         console.error('Reject failed', err);
-                        // Revert on failure
                         setDisplays(original);
                       });
-                  } else if (action === 'register' && display.displayType === 'discovered') {
+                  } else if (action === 'register' && d.displayType === 'discovered') {
                     setSelectedDisplay({
-                      ...display,
-                      name: display.name || display.service_name,
-                      ip_address: display.addresses?.[0] || display.ip_address,
-                      port: display.webhook_port || display.port,
-                      resolution: display.resolution || [display.width, display.height],
-                      orientation: display.orientation || 'landscape'
+                      ...d,
+                      name: d.name || d.service_name,
+                      ip_address: d.addresses?.[0] || d.ip_address,
+                      port: d.webhook_port || d.port,
+                      resolution: d.resolution || [d.width, d.height],
+                      orientation: d.orientation || 'landscape'
                     });
                   } else if (action === 'settings') {
-                    openDisplaySettings(display);
-                  } else if (display.displayType === 'registered') {
-                    console.log('Edit registered display:', display);
-                  } else {
-                    console.log('Interact with discovered display:', display);
+                    openDisplaySettings(d);
                   }
                 }}
                 onDelete={handleDeleteDisplay}
                 onRefresh={refreshDisplays}
               />
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
 
@@ -1067,11 +1203,25 @@ const Displays = () => {
               <div style={{ color: 'var(--color-error)' }}>{displaySettingsError}</div>
             )}
 
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                Unpairing removes this display from Mimir. If it is still on the network it will reappear as an unpaired discovered display.
+              </div>
+              <Button
+                variant="danger"
+                onClick={handleUnpairDisplay}
+                loading={removingDisplay}
+                disabled={savingDisplaySettings}
+              >
+                Unpair Display
+              </Button>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <Button variant="secondary" onClick={closeDisplaySettings} disabled={savingDisplaySettings}>
+              <Button variant="secondary" onClick={closeDisplaySettings} disabled={savingDisplaySettings || removingDisplay}>
                 Cancel
               </Button>
-              <Button variant="primary" onClick={handleSaveDisplaySettings} loading={savingDisplaySettings}>
+              <Button variant="primary" onClick={handleSaveDisplaySettings} loading={savingDisplaySettings} disabled={removingDisplay}>
                 Save Settings
               </Button>
             </div>
@@ -1080,7 +1230,20 @@ const Displays = () => {
       </Modal>
       
   {/* DebugPanel now rendered inside Header via rightSlot */}
-    </div>
+    </div>{/* end screens-list-pane */}
+
+      {panelDisplay && (
+        <ScreenDetailPanel
+          display={panelDisplay}
+          onClose={() => setPanelDisplay(null)}
+          onAssignScene={() => {
+            setSelectedDisplay(panelDisplay);
+            setShowSceneAssignment(true);
+          }}
+          onOpenSettings={openDisplaySettings}
+        />
+      )}
+    </div>{/* end screens-split-layout */}
     </PullToRefresh>
   );
 };

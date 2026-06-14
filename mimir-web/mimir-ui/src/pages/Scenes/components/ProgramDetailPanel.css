@@ -1,0 +1,213 @@
+.program-detail-panel {
+  width: 380px;
+  min-width: 380px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-left: var(--spacing-lg);
+  position: sticky;
+  top: calc(32px + var(--spacing-xl));
+  max-height: calc(100vh - 32px - var(--spacing-xl) * 2);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ── */
+.pdp-header {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pdp-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+}
+
+.pdp-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-mimir-green);
+  box-shadow: 0 0 6px 0px var(--color-mimir-green);
+  flex-shrink: 0;
+}
+
+.pdp-name {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdp-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: color 100ms ease, background 100ms ease;
+}
+.pdp-close:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.pdp-close:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 2px; }
+
+.pdp-meta-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.pdp-strategy-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+.pdp-strategy-badge.push {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: rgba(0, 200, 81, 0.06);
+}
+.pdp-strategy-badge.scheduled {
+  color: var(--color-text-tertiary);
+  border-color: var(--color-border);
+  background: transparent;
+}
+
+.pdp-source-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* ── Sections ── */
+.pdp-section {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.pdp-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+}
+
+/* ── Composition strip ── */
+.composition-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.composition-empty {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.composition-tile {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--color-background-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 12px;
+  color: var(--color-text);
+  max-width: 120px;
+}
+
+.composition-tile-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composition-tile-sub {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composition-arrow {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── Detail rows ── */
+.pdp-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.pdp-detail-secondary {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.pdp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pdp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  gap: var(--spacing-sm);
+}
+.pdp-row > span:first-child { color: var(--color-text-secondary); }
+.pdp-row > span:last-child { color: var(--color-text); text-align: right; }
+
+/* ── Actions ── */
+.pdp-actions {
+  padding: var(--spacing-md);
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.pdp-action-btn {
+  width: 100%;
+  justify-content: center;
+  gap: var(--spacing-sm);
+}
+
+.pdp-action-btn--ghost {
+  background: transparent !important;
+}
+
+/* Hide on small viewports */
+@media (max-width: 1024px) {
+  .program-detail-panel { display: none; }
+}

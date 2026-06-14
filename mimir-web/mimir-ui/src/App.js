@@ -1,27 +1,29 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import Layout from './components/Layout/Layout';
 import AddToHomeScreenNudge from './components/AddToHomeScreen/AddToHomeScreenNudge';
-import Dashboard from './pages/Dashboard/Dashboard';
 import Scenes from './pages/Scenes/Scenes';
 import Channels from './pages/Channels/Channels';
 import ChannelDetail from './pages/Channels/ChannelDetail';
 import Settings from './pages/Settings/Settings';
 import Displays from './pages/Displays/Displays';
-import { ErrorBoundary, useToast, ToastContainer, NetworkStatus } from './components/ErrorHandling/ErrorHandling';
+import { ErrorBoundary, useToast, ToastContainer } from './components/ErrorHandling/ErrorHandling';
 import CacheDebug from './utils/cacheDebug';
 import './styles/theme.css';
 import './App.css';
 import { usePwaUpdates } from './hooks/usePwaUpdates';
 import { useSystemTheme } from './hooks/useSystemTheme';
 
+function RedirectChannelDetail() {
+  const { channelId } = useParams();
+  return <Navigate to={`/sources/${channelId}`} replace />;
+}
+
 export const ThemeContext = React.createContext(null);
 
 function AppContent() {
   const toast = useToast();
   const themeState = useSystemTheme();
-  const poorConnectionToastRef = React.useRef(null);
-  const offlineToastRef = React.useRef(null);
 
   // Provide toast context to the whole app
   React.createContext(toast);
@@ -98,46 +100,6 @@ function AppContent() {
     return () => window.removeEventListener('mimir:sw-skip-waiting', handler);
   }, []);
 
-  const clearPoorConnectionToast = React.useCallback(() => {
-    if (poorConnectionToastRef.current !== null) {
-      toast.removeToast(poorConnectionToastRef.current);
-      poorConnectionToastRef.current = null;
-    }
-  }, [toast]);
-
-  const clearOfflineToast = React.useCallback(() => {
-    if (offlineToastRef.current !== null) {
-      toast.removeToast(offlineToastRef.current);
-      offlineToastRef.current = null;
-    }
-  }, [toast]);
-
-  const handleNetworkStatusChange = React.useCallback((isOnline, quality) => {
-    if (!isOnline) {
-      clearPoorConnectionToast();
-      if (offlineToastRef.current === null) {
-        offlineToastRef.current = toast.error('Connection lost. Some features may not work properly.', {
-          duration: 0,
-          dismissible: false
-        });
-      }
-      return;
-    }
-
-    clearOfflineToast();
-
-    if (quality === 'poor') {
-      if (poorConnectionToastRef.current === null) {
-        poorConnectionToastRef.current = toast.warning('Poor connection detected. Performance may be affected.', {
-          duration: 0,
-          dismissible: false
-        });
-      }
-      return;
-    }
-
-    clearPoorConnectionToast();
-  }, [clearOfflineToast, clearPoorConnectionToast, toast]);
 
   return (
     <ThemeContext.Provider value={themeState}>
@@ -145,14 +107,20 @@ function AppContent() {
       <Router>
         <Layout>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/scenes" element={<Scenes />} />
-            <Route path="/channels" element={<Channels />} />
-            <Route path="/channels/:channelId" element={<ChannelDetail />} />
-            <Route path="/displays" element={<Displays />} />
+            {/* Primary routes */}
+            <Route path="/screens" element={<Displays />} />
+            <Route path="/programs" element={<Scenes />} />
+            <Route path="/sources" element={<Channels />} />
+            <Route path="/sources/:channelId" element={<ChannelDetail />} />
             <Route path="/settings" element={<Settings />} />
-            {/* Catch-all route for unmatched paths */}
-            <Route path="*" element={<Dashboard />} />
+            {/* Legacy redirects */}
+            <Route path="/" element={<Navigate to="/screens" replace />} />
+            <Route path="/displays" element={<Navigate to="/screens" replace />} />
+            <Route path="/scenes" element={<Navigate to="/programs" replace />} />
+            <Route path="/channels" element={<Navigate to="/sources" replace />} />
+            <Route path="/channels/:channelId" element={<RedirectChannelDetail />} />
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/screens" replace />} />
           </Routes>
         </Layout>
       </Router>
@@ -165,10 +133,7 @@ function AppContent() {
       {/* Global Toast Container */}
       <ToastContainer toasts={toast.toasts} removeToast={toast.removeToast} />
       
-      {/* Network Status Indicator */}
-      <div className="network-status-container">
-        <NetworkStatus onStatusChange={handleNetworkStatusChange} />
-      </div>
+
     </ThemeContext.Provider>
   );
 }

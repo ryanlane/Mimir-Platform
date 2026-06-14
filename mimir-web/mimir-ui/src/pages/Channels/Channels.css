@@ -62,10 +62,44 @@
     align-items: flex-start;
     gap: var(--spacing-md);
   }
-  
+
   .channels-grid {
     grid-template-columns: 1fr;
   }
-  
+
   /* ChannelCard responsive behavior now lives with its component stylesheet */
+}
+
+/* ── Sources split-pane layout ── */
+.sources-split-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-lg);
+}
+
+.sources-list-pane {
+  flex: 1;
+  min-width: 0;
+}
+
+.source-card-wrapper {
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.source-card-wrapper:hover {
+  border-color: var(--color-border);
+}
+
+.source-card-wrapper--selected {
+  border-color: var(--color-accent);
+  background: rgba(0, 200, 81, 0.03);
+}
+
+@media (max-width: 1024px) {
+  .sources-split-layout {
+    flex-direction: column;
+  }
 }

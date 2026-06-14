@@ -8,7 +8,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db.models import Base, Scene
+from app.api.routes.displays._helpers import get_db as displays_get_db
+from app.db.models import Base, DisplayClient, Scene
 from app.db.session import get_session
 from app.main import create_app
 
@@ -50,6 +51,7 @@ def app(test_db_session):
         yield test_db_session
 
     application.dependency_overrides[get_session] = override_get_session
+    application.dependency_overrides[displays_get_db] = override_get_session
     return application
 
 
@@ -74,6 +76,21 @@ def sample_scene_payload():
         "distribution_mode": "MIRROR",
         "is_active": False,
     }
+
+
+@pytest.fixture()
+def seeded_display(test_db_session):
+    """A registered display persisted directly through the ORM."""
+    display = DisplayClient(
+        id="seeded-display",
+        name="Seeded Display",
+        location="Test Lab",
+        hostname="seeded-host",
+        is_online=False,
+    )
+    test_db_session.add(display)
+    test_db_session.commit()
+    return display
 
 
 @pytest.fixture()

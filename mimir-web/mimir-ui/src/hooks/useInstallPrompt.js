@@ -1,20 +1,22 @@
 import { useEffect, useState, useCallback } from 'react';
 
-/**
- * useInstallPrompt
- * Captures the beforeinstallprompt event, defers it, and exposes a UI-friendly API.
- * Provides: canInstall, promptInstall(), dismissed, installed.
- */
+const LS_KEY = 'mimir-a2hs-dismissed-at';
+const SUPPRESS_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function isDismissedRecently() {
+  const ts = localStorage.getItem(LS_KEY);
+  if (!ts) return false;
+  return Date.now() - Number(ts) < SUPPRESS_MS;
+}
+
 export function useInstallPrompt() {
   const [deferredEvent, setDeferredEvent] = useState(null);
   const [installed, setInstalled] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => isDismissedRecently());
 
   useEffect(() => {
     const handleBeforeInstall = (e) => {
-      // Prevent the mini-infobar on mobile Chrome
       e.preventDefault();
-      // Save the event for triggering later
       setDeferredEvent(e);
       window.dispatchEvent(new CustomEvent('mimir:a2hs-available'));
     };
@@ -22,6 +24,7 @@ export function useInstallPrompt() {
     const handleInstalled = () => {
       setInstalled(true);
       setDeferredEvent(null);
+      localStorage.removeItem(LS_KEY);
       window.dispatchEvent(new CustomEvent('mimir:a2hs-installed'));
     };
 
@@ -33,27 +36,36 @@ export function useInstallPrompt() {
     };
   }, []);
 
+  const dismiss = useCallback(() => {
+    localStorage.setItem(LS_KEY, String(Date.now()));
+    setDismissed(true);
+  }, []);
+
   const promptInstall = useCallback(async () => {
     if (!deferredEvent) return { outcome: 'unavailable' };
     deferredEvent.prompt();
     const choice = await deferredEvent.userChoice;
     if (choice.outcome === 'dismissed') {
-      setDismissed(true);
+      dismiss();
     }
     if (choice.outcome === 'accepted') {
       setInstalled(true);
     }
     return choice;
-  }, [deferredEvent]);
+  }, [deferredEvent, dismiss]);
 
-  const resetDismissed = () => setDismissed(false);
+  const resetDismissed = useCallback(() => {
+    localStorage.removeItem(LS_KEY);
+    setDismissed(false);
+  }, []);
 
   return {
     canInstall: !!deferredEvent && !installed && !dismissed,
     installed,
     dismissed,
     promptInstall,
-    resetDismissed
+    dismiss,
+    resetDismissed,
   };
 }
 

@@ -1,0 +1,90 @@
+.status-bar {
+  height: 32px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-md);
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.status-bar-left,
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 100px;
+}
+
+.status-bar-right {
+  justify-content: flex-end;
+}
+
+.status-bar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.status-bar-brand {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  user-select: none;
+}
+
+.status-bar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 300ms ease, box-shadow 300ms ease;
+}
+
+.status-bar-dot--live {
+  background: #00C851;
+  box-shadow: 0 0 5px 0px rgba(0, 200, 81, 0.55);
+}
+
+.status-bar-dot--offline {
+  background: var(--color-warning);
+  box-shadow: none;
+}
+
+.status-bar-ws-label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+}
+
+.status-bar-theme-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  transition: color 100ms ease, background 100ms ease;
+  line-height: 1;
+}
+
+.status-bar-theme-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+.status-bar-theme-btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}

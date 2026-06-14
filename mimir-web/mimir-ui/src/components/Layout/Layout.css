@@ -1,31 +1,37 @@
 .layout {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
+}
+
+.layout-body {
+  display: flex;
+  flex: 1;
 }
 
 .layout-main {
   flex: 1;
   padding: var(--spacing-xl);
   background-color: var(--color-background);
-  /* Body/viewport will now scroll (Option A); remove internal scroll */
-  overflow: visible;
-  min-height: 100vh;
+  min-height: calc(100vh - 32px);
   box-sizing: border-box;
+  /* Body/viewport scrolls; no internal overflow clipping */
+  overflow: visible;
 }
 
-@media (max-width: 768px){
-  .layout {
+@media (max-width: 768px) {
+  .layout-body {
     flex-direction: column;
   }
-  
+
   .layout-main {
     padding: var(--spacing-lg);
-    padding-bottom: calc(var(--spacing-lg) + 70px + env(safe-area-inset-bottom, 0px)); /* Space for tab bar + safe area */
-    min-height: calc(100vh - 70px - env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--spacing-lg) + 70px + env(safe-area-inset-bottom, 0px));
+    min-height: calc(100vh - 32px - 70px - env(safe-area-inset-bottom, 0px));
   }
 }
 
-/* Promote mobile nav layer & ensure independent compositing */
+/* Mobile nav layer promotion */
 @media (max-width: 768px) {
   .mobile-navigation {
     transform: translateZ(0);

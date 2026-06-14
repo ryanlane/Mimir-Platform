@@ -1,16 +1,14 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Settings, Tv, Layers, Home, MonitorSpeaker, Database } from 'lucide-react';
+import { Settings, Layers, Monitor, Database } from 'lucide-react';
 import './MobileNavigation.css';
 
 const MobileNavigation = () => {
   const navItems = [
-    { path: '/', label: 'Dashboard', icon: Home },
-    { path: '/scenes', label: 'Scenes', icon: Layers },
-    { path: '/channels', label: 'Channels', icon: Tv },
-    { path: '/displays', label: 'Displays', icon: MonitorSpeaker },
-    // { path: '/distribution', label: 'Distribution', icon: Database },
-    { path: '/settings', label: 'Settings', icon: Settings },
+    { path: '/screens', label: 'Screens', icon: Monitor },
+    { path: '/programs', label: 'Programs', icon: Layers },
+    { path: '/sources', label: 'Sources', icon: Database },
+    { path: '/settings', label: 'System', icon: Settings },
   ];
 
   return (
@@ -23,7 +21,7 @@ const MobileNavigation = () => {
             className={({ isActive }) =>
               `mobile-nav-item ${isActive ? 'mobile-nav-item-active' : ''}`
             }
-            end={path === '/'}
+
           >
             <div className="mobile-nav-icon">
               <Icon size={20} strokeWidth={1.5} />
