@@ -265,6 +265,49 @@
 .pep-well-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .pep-well-btn--remove:hover { color: var(--color-error); }
 
+/* ── Subchannel selector ── */
+.pep-well-item-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pep-well-subchannel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 0 10px 6px 10px;
+}
+
+.pep-well-subchannel-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pep-well-subchannel-loading {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.pep-well-subchannel-select {
+  flex: 1;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  font-size: 12px;
+  color: var(--color-text);
+  font-family: var(--font-base);
+  cursor: pointer;
+}
+.pep-well-subchannel-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
 /* ── Advanced section ── */
 .pep-advanced-toggle {
   display: flex;

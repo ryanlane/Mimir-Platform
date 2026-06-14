@@ -49,7 +49,7 @@ function SourceCompositionPreview({ assignments, channels }) {
   );
 }
 
-function SourceWell({ assignments, channels, onChange }) {
+function SourceWell({ assignments, channels, subChannelSupport, availableSubChannels, loadingSubChannels, onChange }) {
   if (!assignments?.length) {
     return <div className="pep-well-empty">No sources added</div>;
   }
@@ -63,7 +63,13 @@ function SourceWell({ assignments, channels, onChange }) {
   };
 
   const remove = (index) => {
-    const next = assignments.filter((_, i) => i !== index);
+    onChange(assignments.filter((_, i) => i !== index));
+  };
+
+  const setSubchannel = (index, subId) => {
+    const next = assignments.map((a, i) =>
+      i === index ? { ...a, subchannel_id: subId || null } : a
+    );
     onChange(next);
   };
 
@@ -71,42 +77,51 @@ function SourceWell({ assignments, channels, onChange }) {
     <div className="pep-well">
       {assignments.map((assignment, i) => {
         const chId = typeof assignment === 'string' ? assignment : assignment.channel_id;
+        const subId = assignment.subchannel_id || null;
         const ch = channels.find(c => c.id === chId);
         const type = getChannelType(ch);
         const Icon = TYPE_ICONS[type] || Package;
+        const supportsSubchannels = subChannelSupport?.[chId];
+        const subchannels = availableSubChannels?.[chId] || [];
+
         return (
-          <div key={`${chId}-${i}`} className="pep-well-item">
-            <span className="pep-well-index">{i + 1}</span>
-            <Icon size={13} className="pep-well-type-icon" />
-            <span className="pep-well-name">{ch?.name || chId}</span>
-            <div className="pep-well-controls">
-              <button
-                type="button"
-                className="pep-well-btn"
-                onClick={() => move(i, -1)}
-                disabled={i === 0}
-                aria-label="Move up"
-              >
-                <ArrowUp size={12} />
-              </button>
-              <button
-                type="button"
-                className="pep-well-btn"
-                onClick={() => move(i, 1)}
-                disabled={i === assignments.length - 1}
-                aria-label="Move down"
-              >
-                <ArrowDown size={12} />
-              </button>
-              <button
-                type="button"
-                className="pep-well-btn pep-well-btn--remove"
-                onClick={() => remove(i)}
-                aria-label="Remove source"
-              >
-                <Trash2 size={12} />
-              </button>
+          <div key={`${chId}-${i}`} className="pep-well-item-group">
+            <div className="pep-well-item">
+              <span className="pep-well-index">{i + 1}</span>
+              <Icon size={13} className="pep-well-type-icon" />
+              <span className="pep-well-name">{ch?.name || chId}</span>
+              <div className="pep-well-controls">
+                <button type="button" className="pep-well-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">
+                  <ArrowUp size={12} />
+                </button>
+                <button type="button" className="pep-well-btn" onClick={() => move(i, 1)} disabled={i === assignments.length - 1} aria-label="Move down">
+                  <ArrowDown size={12} />
+                </button>
+                <button type="button" className="pep-well-btn pep-well-btn--remove" onClick={() => remove(i)} aria-label="Remove source">
+                  <Trash2 size={12} />
+                </button>
+              </div>
             </div>
+
+            {supportsSubchannels && (
+              <div className="pep-well-subchannel">
+                <label className="pep-well-subchannel-label">Gallery</label>
+                {loadingSubChannels ? (
+                  <span className="pep-well-subchannel-loading">Loading galleries…</span>
+                ) : (
+                  <select
+                    className="pep-well-subchannel-select"
+                    value={subId || ''}
+                    onChange={e => setSubchannel(i, e.target.value || null)}
+                  >
+                    <option value="">All galleries</option>
+                    {subchannels.map(sc => (
+                      <option key={sc.id} value={sc.id}>{sc.name}{sc.image_count != null ? ` (${sc.image_count})` : ''}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -156,6 +171,9 @@ export function ProgramEditorPanel({ scene, channels = [], onClose }) {
     setFormData,
     validationErrors,
     loading,
+    subChannelSupport,
+    availableSubChannels,
+    loadingSubChannels,
     pushSelectable,
     pushSelectableReason,
     scheduleData,
@@ -239,6 +257,9 @@ export function ProgramEditorPanel({ scene, channels = [], onClose }) {
           <SourceWell
             assignments={formData.channels}
             channels={channels}
+            subChannelSupport={subChannelSupport}
+            availableSubChannels={availableSubChannels}
+            loadingSubChannels={loadingSubChannels}
             onChange={handleReorderSources}
           />
         </div>
