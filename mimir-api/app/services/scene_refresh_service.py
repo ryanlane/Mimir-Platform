@@ -244,7 +244,7 @@ class SceneRefreshService:
                             errors.append(f"plugin_not_loaded:{ch_id}")
                             continue
                         # Determine fetch strategy: mirror (one fetch per group) vs sequential (per-device)
-                        distribution_mode = getattr(scene, "distribution_mode", "mirror") or "mirror"
+                        distribution_mode = (getattr(scene, "distribution_mode", "mirror") or "mirror").lower()
                         # Evaluate content-gating once per scene execution
                         checked_gating = False
 
