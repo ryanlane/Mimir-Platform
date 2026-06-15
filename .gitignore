@@ -233,3 +233,4 @@ mosquitto/passwd
 # Legacy / removed files
 mimir-api/deploy.sh
 mimir-api/api-deploy.sh
+/mimir-api/channels/slow_movie
