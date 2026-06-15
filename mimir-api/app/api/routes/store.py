@@ -6,7 +6,7 @@ import json
 import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query
 
 from app.core.logging import get_logger
 
@@ -26,7 +26,7 @@ async def _fetch_registry(url: str) -> dict:
     try:
         import httpx
     except ImportError:
-        raise HTTPException(502, "httpx is required for registry fetching (pip install httpx)")
+        raise HTTPException(502, "httpx is required for registry fetching (pip install httpx)") from None
 
     # Append a timestamp so CDNs (e.g. raw.githubusercontent.com) don't serve
     # a stale cached response after a registry push.
