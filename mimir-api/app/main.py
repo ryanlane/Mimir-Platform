@@ -11,10 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes.admin import admin_router, health_router
-
-# Import routers
 from app.api.routes.channels import router as channels_router
-from app.api.routes.store import router as store_router
 from app.api.routes.client_releases import router as client_releases_router
 from app.api.routes.debug_mqtt import router as debug_mqtt_router
 from app.api.routes.discovery import router as discovery_router
@@ -22,10 +19,9 @@ from app.api.routes.display_scene import router as display_scene_router
 from app.api.routes.displays import router as displays_router
 from app.api.routes.scenes import router as scenes_router
 from app.api.routes.scheduler import router as scheduler_router
+from app.api.routes.store import router as store_router
 from app.api.routes.websockets import router as websockets_router
 from app.config import settings
-
-# Import infrastructure components
 from app.core.logging import get_logger, setup_logging
 from app.core.metrics import metrics_app, metrics_middleware, setup_metrics
 from app.core.scheduler import scheduler_service
@@ -36,8 +32,6 @@ from app.services.mqtt.publisher import (
     MQTTSceneAssignmentPublisher,
     setup_mqtt_scene_assignment,
 )
-
-# Import services actually used in startup
 from app.services.plugin_discovery import plugin_discovery_service
 from app.services.scheduler_worker import SchedulerWorker
 
