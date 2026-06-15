@@ -530,7 +530,11 @@ class PluginManagerService:
     async def update_plugin(self, plugin_id: str, app: FastAPI, git_url: str | None = None) -> dict[str, Any]:
         """Update an installed plugin by re-cloning from its git source.
 
-        The data/ subdirectory is preserved so user content is not lost.
+        Directories listed in the plugin manifest's ``user_data_dirs`` field are
+        backed up before the swap and restored after, so user content survives
+        updates. Plugins that don't declare ``user_data_dirs`` fall back to
+        preserving ``data/`` only.
+
         A git_url override can be supplied (e.g. from the registry); otherwise
         the URL stored in .mimir_meta.json is used.
         """
@@ -566,8 +570,6 @@ class PluginManagerService:
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             clone_dir = Path(tmp_dir) / "repo"
-            data_backup = Path(tmp_dir) / "data_backup"
-            uploads_backup = Path(tmp_dir) / "uploads_backup"
 
             # Clone new version
             try:
@@ -592,15 +594,19 @@ class PluginManagerService:
             new_manifest = self._validate_plugin_dir(new_root)
             new_version = new_manifest.get("version")
 
-            # Back up user data from whichever path actually exists
-            old_data = existing_dir / "data"
-            if old_data.exists():
-                shutil.copytree(old_data, data_backup)
+            # Determine which directories hold user data. Plugins declare this via
+            # user_data_dirs in their manifest; fall back to ["data"] for older plugins.
+            user_data_dirs: list[str] = new_manifest.get("user_data_dirs") or ["data"]
 
-            # Back up user-uploaded assets (plugins store uploads under assets/uploads/)
-            old_uploads = existing_dir / "assets" / "uploads"
-            if old_uploads.exists():
-                shutil.copytree(old_uploads, uploads_backup)
+            # Back up each user data directory before wiping the install
+            user_data_backups: dict[str, Path] = {}
+            for rel in user_data_dirs:
+                src = existing_dir / rel
+                if src.exists():
+                    backup = Path(tmp_dir) / f"udd_{rel.replace('/', '_')}"
+                    shutil.copytree(src, backup)
+                    user_data_backups[rel] = backup
+                    logger.debug("[update] Backed up user data dir: %s", rel)
 
             # Unload running instance
             await plugin_discovery_service.unload_plugin(plugin_id, app)
@@ -617,20 +623,14 @@ class PluginManagerService:
             shutil.copytree(new_root, install_dir)
             existing_dir = install_dir  # point remaining steps at the real location
 
-            # Restore data
-            if data_backup.exists():
-                new_data = existing_dir / "data"
-                if new_data.exists():
-                    shutil.rmtree(new_data)
-                shutil.copytree(data_backup, new_data)
-
-            # Restore uploaded assets
-            if uploads_backup.exists():
-                new_uploads = existing_dir / "assets" / "uploads"
-                if new_uploads.exists():
-                    shutil.rmtree(new_uploads)
-                new_uploads.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(uploads_backup, new_uploads)
+            # Restore user data directories, overwriting anything the new code ships
+            for rel, backup in user_data_backups.items():
+                dest = existing_dir / rel
+                if dest.exists():
+                    shutil.rmtree(dest)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(backup, dest)
+                logger.debug("[update] Restored user data dir: %s", rel)
 
             # Save updated meta
             self._save_install_meta(existing_dir, new_manifest, effective_git_url)
