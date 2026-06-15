@@ -567,6 +567,7 @@ class PluginManagerService:
         with tempfile.TemporaryDirectory() as tmp_dir:
             clone_dir = Path(tmp_dir) / "repo"
             data_backup = Path(tmp_dir) / "data_backup"
+            uploads_backup = Path(tmp_dir) / "uploads_backup"
 
             # Clone new version
             try:
@@ -596,6 +597,11 @@ class PluginManagerService:
             if old_data.exists():
                 shutil.copytree(old_data, data_backup)
 
+            # Back up user-uploaded assets (plugins store uploads under assets/uploads/)
+            old_uploads = existing_dir / "assets" / "uploads"
+            if old_uploads.exists():
+                shutil.copytree(old_uploads, uploads_backup)
+
             # Unload running instance
             await plugin_discovery_service.unload_plugin(plugin_id, app)
 
@@ -617,6 +623,14 @@ class PluginManagerService:
                 if new_data.exists():
                     shutil.rmtree(new_data)
                 shutil.copytree(data_backup, new_data)
+
+            # Restore uploaded assets
+            if uploads_backup.exists():
+                new_uploads = existing_dir / "assets" / "uploads"
+                if new_uploads.exists():
+                    shutil.rmtree(new_uploads)
+                new_uploads.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(uploads_backup, new_uploads)
 
             # Save updated meta
             self._save_install_meta(existing_dir, new_manifest, effective_git_url)

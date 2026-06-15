@@ -13,32 +13,6 @@ const CSS = `
 
   .manager { display: flex; flex-direction: column; gap: 16px; padding: 16px 0; }
 
-  /* Now Playing */
-  .now-playing {
-    background: var(--color-surface, #162325);
-    border: 1px solid var(--color-border, #2a3a3c);
-    border-radius: 8px;
-    padding: 16px;
-  }
-  .now-playing h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-secondary, #888); margin-bottom: 12px; }
-  .np-empty { color: var(--color-text-secondary, #888); font-style: italic; }
-  .np-content { display: flex; align-items: center; gap: 16px; }
-  .np-thumb { width: 120px; height: 68px; object-fit: cover; border-radius: 4px; background: #0a1a1c; flex-shrink: 0; }
-  .np-thumb-placeholder { width: 120px; height: 68px; background: #0a1a1c; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #444; font-size: 24px; }
-  .np-info { flex: 1; min-width: 0; }
-  .np-title { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .np-meta { font-size: 12px; color: var(--color-text-secondary, #888); margin-top: 4px; }
-  .np-progress-bar { margin-top: 10px; background: #0a1a1c; border-radius: 4px; height: 4px; overflow: hidden; }
-  .np-progress-fill { height: 100%; background: var(--color-accent, #00C851); transition: width 0.3s; }
-  .np-controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-
-  /* Quiet hours badge */
-  .quiet-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
-    background: #2a1a00; border: 1px solid #6b3d00; border-radius: 12px;
-    font-size: 12px; color: #ffaa44;
-  }
-
   /* Section */
   .section { display: flex; flex-direction: column; gap: 8px; }
   .section-header { display: flex; align-items: center; justify-content: space-between; }
@@ -58,15 +32,24 @@ const CSS = `
     transition: border-color 0.15s, background 0.15s;
   }
   .movie-card:hover { border-color: var(--color-accent, #00C851); background: var(--color-surface-hover, #1e2f31); }
-  .movie-card.active { border-color: var(--color-accent, #00C851); background: #0e2418; }
   .movie-card-info { flex: 1; min-width: 0; }
   .movie-card-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .movie-card-meta { font-size: 12px; color: var(--color-text-secondary, #888); margin-top: 2px; }
   .movie-card-progress { margin-top: 6px; background: #0a1a1c; border-radius: 3px; height: 3px; overflow: hidden; }
   .movie-card-progress-fill { height: 100%; background: var(--color-accent, #00C851); }
-  .active-pip { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent, #00C851); flex-shrink: 0; box-shadow: 0 0 6px #00C851; }
-  .inactive-pip { width: 8px; height: 8px; flex-shrink: 0; }
   .movie-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+  .movie-item { display: flex; flex-direction: column; }
+  .movie-card.has-panel { border-radius: 8px 8px 0 0; border-bottom-color: transparent; }
+  .movie-settings-panel {
+    background: var(--color-background, #0B1314);
+    border: 1px solid var(--color-border, #2a3a3c);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .panel-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-tertiary, #666); margin-top: 2px; }
 
   /* Buttons */
   .btn {
@@ -170,6 +153,7 @@ class XSlowMovieManager extends HTMLElement {
       seekMovieId: null,
       seekFrame: 0,
       seekTotal: 0,
+      editMovieId: null,
     };
     this._refreshTimer = null;
   }
@@ -252,14 +236,6 @@ class XSlowMovieManager extends HTMLElement {
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
-  async activateMovie(id) {
-    try {
-      await this.apiFetch(`/movies/${id}/activate`, { method: 'POST' });
-      await this.loadAll();
-      this.toast('Movie activated');
-    } catch (e) { this.toast(e.message, true); }
-  }
-
   async advanceFrame(id) {
     try {
       await this.apiFetch(`/movies/${id}/advance`, { method: 'POST',
@@ -293,23 +269,46 @@ class XSlowMovieManager extends HTMLElement {
     } catch (e) { this.toast(e.message, true); }
   }
 
-  async uploadFile(file) {
+  uploadFile(file) {
     this.setState({ uploadProgress: 0 });
     const formData = new FormData();
     formData.append('file', file);
-    try {
-      const base = this.getApiBase();
-      const url = `${base}/api/channels/${this.channelId}/upload`;
-      const resp = await fetch(url, { method: 'POST', credentials: 'include', body: formData });
-      const data = await resp.json();
-      if (!resp.ok || !data.success) throw new Error(data.detail || data.error || 'Upload failed');
-      this.setState({ uploadProgress: null });
-      await this.loadAll();
-      this.toast(`"${data.movie?.title}" uploaded`);
-    } catch (e) {
-      this.setState({ uploadProgress: null });
-      this.toast(e.message, true);
-    }
+    const base = this.getApiBase();
+    const url = `${base}/api/channels/${this.channelId}/upload`;
+
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          this.setState({ uploadProgress: Math.round((e.loaded / e.total) * 100) });
+        }
+      });
+
+      xhr.addEventListener('load', async () => {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch {}
+        if (xhr.status >= 200 && xhr.status < 300 && data.success) {
+          this.setState({ uploadProgress: null });
+          await this.loadAll();
+          this.toast(`"${data.movie?.title}" uploaded`);
+        } else {
+          this.setState({ uploadProgress: null });
+          this.toast(data.detail || data.error || 'Upload failed', true);
+        }
+        resolve();
+      });
+
+      xhr.addEventListener('error', () => {
+        this.setState({ uploadProgress: null });
+        this.toast('Upload failed — network error', true);
+        resolve();
+      });
+
+      xhr.open('POST', url);
+      xhr.withCredentials = true;
+      xhr.send(formData);
+    });
   }
 
   async saveSettings() {
@@ -392,18 +391,10 @@ class XSlowMovieManager extends HTMLElement {
     if (loading) return `<div style="padding:32px;text-align:center"><div class="loading-spinner"></div></div>`;
     if (error) return `<div class="error-msg">⚠ ${error} <button class="btn btn-ghost" id="retry-btn">Retry</button></div>`;
 
-    const activeMovie = movies.find(m => m.is_active);
-    const inQuiet = status?.in_quiet_hours;
-
     return `
       ${showSeekModal ? this.buildSeekModal(seekFrame, seekTotal) : ''}
 
-      <!-- Now Playing -->
-      <div class="now-playing">
-        <h2>Now Playing</h2>
-        ${inQuiet ? `<div class="quiet-badge" style="margin-bottom:10px">🌙 Quiet hours active — frames paused</div>` : ''}
-        ${activeMovie ? this.buildNowPlaying(activeMovie, status) : `<p class="np-empty">No movie selected. Activate one from the library below.</p>`}
-      </div>
+      ${status?.last_error ? `<div class="error-msg">⚠ ${this.esc(status.last_error)}</div>` : ''}
 
       <!-- Movie Library -->
       <div class="section">
@@ -417,7 +408,7 @@ class XSlowMovieManager extends HTMLElement {
         </div>
         ${movies.length === 0
           ? `<div class="empty">No movies yet. Add one below.</div>`
-          : `<div class="movie-list">${movies.map(m => this.buildMovieCard(m)).join('')}</div>`
+          : `<div class="movie-list">${movies.map(m => this.buildMovieItem(m)).join('')}</div>`
         }
       </div>
 
@@ -438,56 +429,157 @@ class XSlowMovieManager extends HTMLElement {
     `;
   }
 
-  buildNowPlaying(movie, status) {
-    const pct = movie.progress_pct ?? 0;
-    const eff = status || {};
-    return `
-      <div class="np-content">
-        <div class="np-thumb-placeholder">🎬</div>
-        <div class="np-info">
-          <div class="np-title">${this.esc(movie.title)}</div>
-          <div class="np-meta">
-            Frame ${(movie.current_frame || 0).toLocaleString()} / ${(movie.total_frames || 0).toLocaleString()}
-            &nbsp;·&nbsp; ${pct}% complete
-            &nbsp;·&nbsp; ${this.fmtDuration(movie.duration_seconds)}
-          </div>
-          <div class="np-progress-bar"><div class="np-progress-fill" style="width:${pct}%"></div></div>
-        </div>
-      </div>
-      <div class="np-controls">
-        <button class="btn btn-primary btn-sm" data-action="advance" data-id="${movie.id}">▶ Advance Frame</button>
-        <button class="btn btn-secondary btn-sm" data-action="seek" data-id="${movie.id}"
-          data-current="${movie.current_frame || 0}" data-total="${movie.total_frames || 0}">
-          ⤢ Seek
-        </button>
-      </div>
-    `;
-  }
-
-  buildMovieCard(m) {
+  buildMovieCard(m, hasPanel = false) {
     const pct = m.progress_pct ?? 0;
-    const isActive = m.is_active;
+    const badges = [
+      m.is_random && '🔀',
+      m.grayscale && (m.dither_mode !== 'none' ? `⬛ ${m.dither_mode.replace('_', '-')}` : '⬛ gray'),
+      m.fit_mode && m.fit_mode !== 'letterbox' && m.fit_mode,
+      !m.loop && '⏹ no-loop',
+    ].filter(Boolean);
     return `
-      <div class="movie-card${isActive ? ' active' : ''}">
-        <div class="${isActive ? 'active-pip' : 'inactive-pip'}"></div>
+      <div class="movie-card${hasPanel ? ' has-panel' : ''}">
         <div class="movie-card-info">
           <div class="movie-card-title">${this.esc(m.title)}</div>
           <div class="movie-card-meta">
             ${(m.total_frames || 0).toLocaleString()} frames &nbsp;·&nbsp; ${this.fmtDuration(m.duration_seconds)}
-            ${m.is_random ? '&nbsp;·&nbsp; 🔀 random' : ''}
+            ${badges.map(b => `&nbsp;·&nbsp; ${b}`).join('')}
           </div>
           <div class="movie-card-progress">
             <div class="movie-card-progress-fill" style="width:${pct}%"></div>
           </div>
         </div>
         <div class="movie-card-actions">
-          ${!isActive ? `<button class="btn btn-primary btn-sm" data-action="activate" data-id="${m.id}">Play</button>` : ''}
           <button class="btn btn-secondary btn-sm btn-icon" data-action="seek" data-id="${m.id}"
             data-current="${m.current_frame || 0}" data-total="${m.total_frames || 0}" title="Seek">⤢</button>
+          <button class="btn btn-secondary btn-sm btn-icon" data-action="edit" data-id="${m.id}" title="Settings">⚙</button>
           <button class="btn btn-danger btn-sm btn-icon" data-action="delete" data-id="${m.id}" data-title="${this.esc(m.title)}" title="Remove">✕</button>
         </div>
       </div>
     `;
+  }
+
+  buildMovieItem(m) {
+    const isEditing = m.id === this.state.editMovieId;
+    return `
+      <div class="movie-item">
+        ${this.buildMovieCard(m, isEditing)}
+        ${isEditing ? this.buildMovieEditPanel(m) : ''}
+      </div>
+    `;
+  }
+
+  buildMovieEditPanel(m) {
+    const hasEnd = m.end_frame !== null && m.end_frame !== undefined;
+    const hasSkip = m.skip_frames !== null && m.skip_frames !== undefined;
+    const id = m.id;
+    return `
+      <div class="movie-settings-panel">
+        <div class="field">
+          <label>Title</label>
+          <input type="text" class="me-title" data-id="${id}" value="${this.esc(m.title)}" />
+        </div>
+        <div class="field">
+          <label>Path</label>
+          <div style="font-size:12px;color:var(--color-text-secondary,#888);word-break:break-all;padding:2px 0">${this.esc(m.video_path || '—')}</div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label>Start Frame</label>
+            <input type="number" class="me-start" data-id="${id}" min="0" max="${(m.total_frames||1)-1}"
+              value="${m.start_frame || 0}" />
+          </div>
+          <div class="field">
+            <label>End Frame (blank = last)</label>
+            <input type="number" class="me-end" data-id="${id}" min="0" max="${(m.total_frames||1)-1}"
+              value="${hasEnd ? m.end_frame : ''}" placeholder="${(m.total_frames||1)-1}" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Frames to Skip (blank = global default)</label>
+          <input type="number" class="me-skip" data-id="${id}" min="1"
+            value="${hasSkip ? m.skip_frames : ''}" placeholder="global" />
+        </div>
+
+        <div class="toggle-row">
+          <span>Loop when finished</span>
+          <label class="toggle">
+            <input type="checkbox" class="me-loop" data-id="${id}" ${m.loop !== false ? 'checked' : ''} />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span>Random frame order</span>
+          <label class="toggle">
+            <input type="checkbox" class="me-random" data-id="${id}" ${m.is_random ? 'checked' : ''} />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <hr/>
+        <div class="panel-section-label">Display Output</div>
+        <div class="field">
+          <label>Fit Mode</label>
+          <select class="me-fit" data-id="${id}">
+            <option value="letterbox"${(m.fit_mode||'letterbox')==='letterbox' ? ' selected':''}>Letterbox (black bars)</option>
+            <option value="crop"${m.fit_mode==='crop' ? ' selected':''}>Crop (fill, lose edges)</option>
+            <option value="stretch"${m.fit_mode==='stretch' ? ' selected':''}>Stretch (distort)</option>
+          </select>
+        </div>
+        <div class="toggle-row">
+          <span>Grayscale output</span>
+          <label class="toggle">
+            <input type="checkbox" class="me-gray" data-id="${id}" ${m.grayscale ? 'checked' : ''} />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="field">
+          <label>Dither Mode</label>
+          <select class="me-dither" data-id="${id}">
+            <option value="none"${(m.dither_mode||'none')==='none' ? ' selected':''}>None</option>
+            <option value="floyd_steinberg"${m.dither_mode==='floyd_steinberg' ? ' selected':''}>Floyd-Steinberg</option>
+            <option value="atkinson"${m.dither_mode==='atkinson' ? ' selected':''}>Atkinson (e-paper)</option>
+          </select>
+        </div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+          <button class="btn btn-ghost btn-sm" data-action="edit" data-id="${id}">Cancel</button>
+          <button class="btn btn-primary btn-sm" data-action="save-movie" data-id="${id}">Save</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async saveMovieSettings(id) {
+    const root = this.shadowRoot;
+    const get = (cls) => root.querySelector(`.${cls}[data-id="${id}"]`);
+    const parseOptInt = (v) => (v !== '' && v !== null && v !== undefined) ? parseInt(v, 10) : null;
+
+    const updates = {
+      title: get('me-title')?.value.trim() || undefined,
+      start_frame: parseInt(get('me-start')?.value || '0', 10),
+      end_frame: parseOptInt(get('me-end')?.value.trim() ?? ''),
+      skip_frames: parseOptInt(get('me-skip')?.value.trim() ?? ''),
+      loop: get('me-loop')?.checked ?? true,
+      is_random: get('me-random')?.checked ?? false,
+      fit_mode: get('me-fit')?.value || 'letterbox',
+      grayscale: get('me-gray')?.checked ?? false,
+      dither_mode: get('me-dither')?.value || 'none',
+    };
+    Object.keys(updates).forEach(k => updates[k] === undefined && delete updates[k]);
+
+    try {
+      await this.apiFetch(`/movies/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      this.setState({ editMovieId: null });
+      await this.loadAll();
+      this.toast('Movie settings saved');
+    } catch (e) { this.toast(e.message, true); }
   }
 
   buildAddByPath(path, title) {
@@ -523,21 +615,11 @@ class XSlowMovieManager extends HTMLElement {
   buildSettings(s) {
     return `
       <div class="section">
-        <div class="section-title">Global Settings</div>
+        <div class="section-title">Global Defaults</div>
         <div class="add-panel">
           <div class="settings-grid">
             <div class="field">
-              <label>Time Per Frame</label>
-              <input type="number" id="s-time-val" min="1" value="${s.time_per_frame ?? 30}" />
-            </div>
-            <div class="field">
-              <label>Unit</label>
-              <select id="s-time-unit">
-                ${['seconds','minutes','hours'].map(u => `<option value="${u}"${s.time_per_frame_unit === u ? ' selected' : ''}>${u}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field">
-              <label>Frames to Skip</label>
+              <label>Frames to Skip (default)</label>
               <input type="number" id="s-skip" min="1" value="${s.skip_frames ?? 1}" />
             </div>
             <div class="field">
@@ -545,26 +627,7 @@ class XSlowMovieManager extends HTMLElement {
               <input type="text" id="s-root" placeholder="/mnt/media/movies" value="${this.esc(s.video_root_path ?? '')}" />
             </div>
           </div>
-          <hr />
-          <div class="toggle-row">
-            <span>Quiet Hours</span>
-            <label class="toggle">
-              <input type="checkbox" id="s-quiet" ${s.use_quiet_hours ? 'checked' : ''} />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          ${s.use_quiet_hours ? `
-          <div class="settings-grid">
-            <div class="field">
-              <label>Quiet Start (hour, 0–23)</label>
-              <input type="number" id="s-quiet-start" min="0" max="23" value="${s.quiet_start ?? 22}" />
-            </div>
-            <div class="field">
-              <label>Quiet End (hour, 0–23)</label>
-              <input type="number" id="s-quiet-end" min="0" max="23" value="${s.quiet_end ?? 7}" />
-            </div>
-          </div>` : ''}
-          <button class="btn btn-primary" id="save-settings-btn">Save Settings</button>
+          <button class="btn btn-primary" id="save-settings-btn">Save</button>
         </div>
       </div>
     `;
@@ -606,9 +669,10 @@ class XSlowMovieManager extends HTMLElement {
         e.stopPropagation();
         const action = el.dataset.action;
         const id = el.dataset.id;
-        if (action === 'activate') this.activateMovie(id);
-        else if (action === 'advance') this.advanceFrame(id);
+        if (action === 'advance') this.advanceFrame(id);
         else if (action === 'delete') this.deleteMovie(id, el.dataset.title);
+        else if (action === 'edit') this.setState({ editMovieId: id === this.state.editMovieId ? null : id });
+        else if (action === 'save-movie') this.saveMovieSettings(id);
         else if (action === 'seek') this.openSeek({
           id,
           current_frame: parseInt(el.dataset.current || '0', 10),
@@ -646,24 +710,12 @@ class XSlowMovieManager extends HTMLElement {
     if (saveBtn) {
       const syncSettings = () => {
         const s = { ...this.state.settings };
-        const tv = container.querySelector('#s-time-val');
-        const tu = container.querySelector('#s-time-unit');
         const sk = container.querySelector('#s-skip');
         const rp = container.querySelector('#s-root');
-        const qu = container.querySelector('#s-quiet');
-        const qs = container.querySelector('#s-quiet-start');
-        const qe = container.querySelector('#s-quiet-end');
-        if (tv) s.time_per_frame = parseInt(tv.value, 10);
-        if (tu) s.time_per_frame_unit = tu.value;
         if (sk) s.skip_frames = parseInt(sk.value, 10);
         if (rp) s.video_root_path = rp.value;
-        if (qu) s.use_quiet_hours = qu.checked;
-        if (qs) s.quiet_start = parseInt(qs.value, 10);
-        if (qe) s.quiet_end = parseInt(qe.value, 10);
         this.state.settings = s;
       };
-      // Re-render on quiet hours toggle to show/hide hours inputs
-      container.querySelector('#s-quiet')?.addEventListener('change', () => { syncSettings(); this.render(); });
       saveBtn.addEventListener('click', () => { syncSettings(); this.saveSettings(); });
     }
 

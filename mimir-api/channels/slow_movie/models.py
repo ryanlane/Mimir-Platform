@@ -17,12 +17,17 @@ class Movie:
     video_path: str
     total_frames: int = 0
     current_frame: int = 0
-    # Per-movie overrides (None = inherit global setting)
-    time_per_frame: Optional[int] = None
-    time_per_frame_unit: Optional[str] = None
+    # Per-movie override (None = inherit global skip_frames)
     skip_frames: Optional[int] = None
-    is_active: bool = False
     is_random: bool = False
+    # Playback behaviour
+    loop: bool = True
+    start_frame: int = 0
+    end_frame: Optional[int] = None
+    # Output appearance
+    fit_mode: str = "letterbox"  # "letterbox" | "crop" | "stretch"
+    grayscale: bool = False
+    dither_mode: str = "none"   # "none" | "floyd_steinberg" | "atkinson"
     added_at: str = ""
     last_played_at: Optional[str] = None
     # Computed display info
@@ -33,9 +38,11 @@ class Movie:
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
-        # Compute progress percentage
-        d["progress_pct"] = round(self.current_frame / self.total_frames * 100, 1) if self.total_frames > 0 else 0.0
-        # Compute estimated completion (in days) based on effective settings
+        start = self.start_frame or 0
+        end = self.end_frame if self.end_frame is not None else max(0, self.total_frames - 1)
+        clip_length = max(1, end - start + 1)
+        relative_frame = max(0, self.current_frame - start)
+        d["progress_pct"] = round(relative_frame / clip_length * 100, 1)
         return d
 
     @classmethod
@@ -46,12 +53,7 @@ class Movie:
 
 @dataclass
 class GlobalSettings:
-    time_per_frame: int = 30
-    time_per_frame_unit: str = "minutes"
     skip_frames: int = 1
-    use_quiet_hours: bool = False
-    quiet_start: int = 22
-    quiet_end: int = 7
     video_root_path: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -62,9 +64,6 @@ class GlobalSettings:
         known = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in data.items() if k in known})
 
-    def time_per_frame_seconds(self) -> int:
-        multipliers = {"seconds": 1, "minutes": 60, "hours": 3600}
-        return self.time_per_frame * multipliers.get(self.time_per_frame_unit, 60)
 
 
 class MovieDatabase:
@@ -113,12 +112,6 @@ class MovieDatabase:
     def get_movie(self, movie_id: str) -> Optional[Movie]:
         return self._movies.get(movie_id)
 
-    def get_active_movie(self) -> Optional[Movie]:
-        for m in self._movies.values():
-            if m.is_active:
-                return m
-        return None
-
     def add_movie(self, movie: Movie) -> Movie:
         self._movies[movie.id] = movie
         self._save_movies()
@@ -140,16 +133,6 @@ class MovieDatabase:
         del self._movies[movie_id]
         self._save_movies()
         return True
-
-    def activate_movie(self, movie_id: str) -> Optional[Movie]:
-        if movie_id not in self._movies:
-            return None
-        # Deactivate all others
-        for m in self._movies.values():
-            m.is_active = False
-        self._movies[movie_id].is_active = True
-        self._save_movies()
-        return self._movies[movie_id]
 
     # -------------------------------------------------------------------------
     # Settings

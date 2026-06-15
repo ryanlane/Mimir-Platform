@@ -31,59 +31,18 @@
   "permissions": ["read:videos", "write:videos"],
   "settings": {
     "defaults": {
-      "time_per_frame": 30,
-      "time_per_frame_unit": "minutes",
       "skip_frames": 1,
-      "use_quiet_hours": false,
-      "quiet_start": 22,
-      "quiet_end": 7,
       "video_root_path": ""
     },
     "schema": {
       "type": "object",
       "properties": {
-        "time_per_frame": {
-          "type": "integer",
-          "minimum": 1,
-          "title": "Time Per Frame",
-          "description": "How long each frame is displayed before advancing",
-          "default": 30
-        },
-        "time_per_frame_unit": {
-          "type": "string",
-          "enum": ["seconds", "minutes", "hours"],
-          "title": "Time Per Frame Unit",
-          "description": "Unit for frame display duration",
-          "default": "minutes"
-        },
         "skip_frames": {
           "type": "integer",
           "minimum": 1,
           "title": "Frames to Skip",
           "description": "Number of source video frames to advance per display update",
           "default": 1
-        },
-        "use_quiet_hours": {
-          "type": "boolean",
-          "title": "Enable Quiet Hours",
-          "description": "Pause frame updates during quiet hours",
-          "default": false
-        },
-        "quiet_start": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 23,
-          "title": "Quiet Hours Start",
-          "description": "Hour to begin quiet period (0-23)",
-          "default": 22
-        },
-        "quiet_end": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 23,
-          "title": "Quiet Hours End",
-          "description": "Hour to end quiet period (0-23)",
-          "default": 7
         },
         "video_root_path": {
           "type": "string",
@@ -123,17 +82,12 @@
     {
       "path": "/movies/{movie_id}",
       "method": "PUT",
-      "description": "Update movie settings (time_per_frame, skip_frames, is_random)"
+      "description": "Update movie settings (title, loop, start/end frame, fit mode, grayscale, dither, time overrides)"
     },
     {
       "path": "/movies/{movie_id}",
       "method": "DELETE",
       "description": "Remove a movie from the library"
-    },
-    {
-      "path": "/movies/{movie_id}/activate",
-      "method": "POST",
-      "description": "Set a movie as the active (now playing) movie"
     },
     {
       "path": "/movies/{movie_id}/advance",
