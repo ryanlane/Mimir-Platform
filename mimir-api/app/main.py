@@ -14,6 +14,7 @@ from app.api.routes.admin import admin_router, health_router
 
 # Import routers
 from app.api.routes.channels import router as channels_router
+from app.api.routes.store import router as store_router
 from app.api.routes.client_releases import router as client_releases_router
 from app.api.routes.debug_mqtt import router as debug_mqtt_router
 from app.api.routes.discovery import router as discovery_router
@@ -357,6 +358,7 @@ def create_app() -> FastAPI:
     app.include_router(scheduler_router, prefix=settings.api_prefix, tags=["scheduler"])
     app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])
     app.include_router(client_releases_router, prefix=settings.api_prefix, tags=["client-releases"])
+    app.include_router(store_router, prefix=settings.api_prefix, tags=["store"])
 
     # Include WebSocket routes (no prefix for WebSockets)
     app.include_router(websockets_router)

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Plus, FolderOpen } from 'lucide-react';
+import { RefreshCw, Plus, FolderOpen, Store } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
@@ -10,6 +10,7 @@ import Button from '../../components/Button/Button';
 import ChannelCard from './ChannelCard';
 import InstallChannel from './InstallChannel';
 import LinkDevChannel from './LinkDevChannel';
+import PluginStore from './PluginStore';
 import { SourceDetailPanel } from './SourceDetailPanel';
 import { SkeletonSourceCard } from '../../components/Skeleton/Skeleton';
 import './Channels.css';
@@ -23,6 +24,8 @@ const Channels = () => {
     const [panelChannel, setPanelChannel] = useState(null);
     const [showInstallModal, setShowInstallModal] = useState(false);
     const [showLinkDevModal, setShowLinkDevModal] = useState(false);
+    const [showPluginStore, setShowPluginStore] = useState(false);
+    const [storeUpdateCount, setStoreUpdateCount] = useState(0);
 
     const devModeEnabled = localStorage.getItem('mimir-developer-mode') === 'true';
 
@@ -171,6 +174,7 @@ const Channels = () => {
       try {
         await api.uninstallChannel(channel.id);
         setPanelChannel(prev => prev?.id === channel.id ? null : prev);
+        await persistentCache.invalidateChannels();
         await refreshChannels();
       } catch (error) {
         // eslint-disable-next-line no-console
@@ -199,10 +203,18 @@ const Channels = () => {
       }
     }, [refreshChannels]);
 
-    const handleInstalled = useCallback(() => {
-      refreshChannels();
+    const handleInstalled = useCallback(async () => {
+      await persistentCache.invalidateChannels();
+      await refreshChannels();
       loadManifest();
     }, [refreshChannels, loadManifest]);
+
+    // Poll store for available updates badge (once per page load)
+    useEffect(() => {
+      api.getStoreUpdates()
+        .then(r => setStoreUpdateCount(r.data?.pending_count || 0))
+        .catch(() => {});
+    }, [channels]);
 
     const handleDevLinked = useCallback(() => {
       refreshChannels();
@@ -232,6 +244,18 @@ const Channels = () => {
             iconSize={36}
             description="Manage content sources and their configurations"
             actions={[
+              <Button
+                key="store"
+                variant="secondary"
+                onClick={() => setShowPluginStore(true)}
+                icon={<Store size={16} />}
+                type="button"
+              >
+                Browse Store
+                {storeUpdateCount > 0 && (
+                  <span className="store-update-badge">{storeUpdateCount}</span>
+                )}
+              </Button>,
               <Button
                 key="install"
                 variant="primary"
@@ -336,6 +360,13 @@ const Channels = () => {
             />
           )}
         </div>
+
+        <PluginStore
+          isOpen={showPluginStore}
+          onClose={() => setShowPluginStore(false)}
+          installedChannels={channels}
+          onInstalled={() => { handleInstalled(); setStoreUpdateCount(0); }}
+        />
 
         <InstallChannel
           isOpen={showInstallModal}

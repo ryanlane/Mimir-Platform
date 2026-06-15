@@ -1,0 +1,174 @@
+{
+  "id": "com.mimir.slowmovie",
+  "name": "Slow Movie Player",
+  "description": "Plays movies one frame at a time at ultra-slow speeds, inspired by the Very Slow Movie Player concept",
+  "version": "1.0.0",
+  "type": "embedded",
+  "entry_point": "channel.py",
+  "class_name": "SlowMovieChannel",
+  "icon": "film",
+  "author": "Ryan Lane",
+  "tags": ["video", "movie", "slow", "frame", "epaper", "display"],
+  "schemaVersion": "2.4",
+  "settingsType": "advanced",
+  "config": {
+    "supports_upload": true,
+    "video_formats": ["mp4", "avi", "mov", "mkv", "webm"],
+    "max_file_size": "10GB"
+  },
+  "requirements": {
+    "python": ">=3.8",
+    "dependencies": ["fastapi", "pillow", "opencv-python-headless"]
+  },
+  "update_schedule": {
+    "unit": "minutes",
+    "duration": 30,
+    "settings_driven": true,
+    "settings_key": "time_per_frame"
+  },
+  "placeholder_image": "placeholder.jpg",
+  "current_image": "data/current.jpg",
+  "permissions": ["read:videos", "write:videos"],
+  "settings": {
+    "defaults": {
+      "time_per_frame": 30,
+      "time_per_frame_unit": "minutes",
+      "skip_frames": 1,
+      "use_quiet_hours": false,
+      "quiet_start": 22,
+      "quiet_end": 7,
+      "video_root_path": ""
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "time_per_frame": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Time Per Frame",
+          "description": "How long each frame is displayed before advancing",
+          "default": 30
+        },
+        "time_per_frame_unit": {
+          "type": "string",
+          "enum": ["seconds", "minutes", "hours"],
+          "title": "Time Per Frame Unit",
+          "description": "Unit for frame display duration",
+          "default": "minutes"
+        },
+        "skip_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "title": "Frames to Skip",
+          "description": "Number of source video frames to advance per display update",
+          "default": 1
+        },
+        "use_quiet_hours": {
+          "type": "boolean",
+          "title": "Enable Quiet Hours",
+          "description": "Pause frame updates during quiet hours",
+          "default": false
+        },
+        "quiet_start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23,
+          "title": "Quiet Hours Start",
+          "description": "Hour to begin quiet period (0-23)",
+          "default": 22
+        },
+        "quiet_end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23,
+          "title": "Quiet Hours End",
+          "description": "Hour to end quiet period (0-23)",
+          "default": 7
+        },
+        "video_root_path": {
+          "type": "string",
+          "title": "Video Root Path",
+          "description": "Optional external directory to scan for video files",
+          "default": ""
+        }
+      }
+    }
+  },
+  "endpoints": [
+    {
+      "path": "/manifest",
+      "method": "GET",
+      "description": "Get channel manifest and capabilities"
+    },
+    {
+      "path": "/request_image",
+      "method": "POST",
+      "description": "Request the current movie frame as an image"
+    },
+    {
+      "path": "/movies",
+      "method": "GET",
+      "description": "List all movies in the library"
+    },
+    {
+      "path": "/movies",
+      "method": "POST",
+      "description": "Add a movie by file path reference"
+    },
+    {
+      "path": "/movies/{movie_id}",
+      "method": "GET",
+      "description": "Get details for a specific movie"
+    },
+    {
+      "path": "/movies/{movie_id}",
+      "method": "PUT",
+      "description": "Update movie settings (time_per_frame, skip_frames, is_random)"
+    },
+    {
+      "path": "/movies/{movie_id}",
+      "method": "DELETE",
+      "description": "Remove a movie from the library"
+    },
+    {
+      "path": "/movies/{movie_id}/activate",
+      "method": "POST",
+      "description": "Set a movie as the active (now playing) movie"
+    },
+    {
+      "path": "/movies/{movie_id}/advance",
+      "method": "POST",
+      "description": "Manually advance to the next frame"
+    },
+    {
+      "path": "/movies/{movie_id}/seek",
+      "method": "POST",
+      "description": "Seek to a specific frame number"
+    },
+    {
+      "path": "/upload",
+      "method": "POST",
+      "description": "Upload a video file to the library"
+    },
+    {
+      "path": "/settings",
+      "method": "GET",
+      "description": "Get global channel settings"
+    },
+    {
+      "path": "/settings",
+      "method": "PUT",
+      "description": "Update global channel settings"
+    },
+    {
+      "path": "/status",
+      "method": "GET",
+      "description": "Get current playback status"
+    },
+    {
+      "path": "/frame/current",
+      "method": "GET",
+      "description": "Get the current frame as an image file"
+    }
+  ]
+}

@@ -509,6 +509,16 @@ export const api = {
   enableChannel: (channelId) => apiClient.post(`/admin/channels/${channelId}/enable`),
   getDisabledChannels: () => apiClient.get('/admin/channels/disabled'),
 
+  updateChannel: (channelId, gitUrl = null) =>
+    apiClient.post(`/admin/channels/${channelId}/update`, gitUrl ? { git_url: gitUrl } : {}, { timeout: 120000 }),
+
+  // Plugin Store
+  getStoreRegistry: (registryUrl = null) =>
+    apiClient.get('/store/registry', registryUrl ? { params: { url: registryUrl } } : {}),
+  refreshStoreRegistry: (registryUrl = null) =>
+    apiClient.post('/store/registry/refresh', {}, registryUrl ? { params: { url: registryUrl } } : {}),
+  getStoreUpdates: () => apiClient.get('/store/updates'),
+
   // Dev Channel Management
   linkDevChannel: (path) => apiClient.post('/admin/dev/channels', { path }),
   unlinkDevChannel: (channelId) => apiClient.delete(`/admin/dev/channels/${channelId}`),

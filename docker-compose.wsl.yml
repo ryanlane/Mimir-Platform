@@ -125,7 +125,7 @@ services:
       dockerfile: Dockerfile
     container_name: mimir-web
     ports:
-      - "8080:80"
+      - "3000:80"
     environment:
       - REACT_APP_API_URL
     depends_on:

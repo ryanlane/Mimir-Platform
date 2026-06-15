@@ -77,8 +77,8 @@ async function loadWebComponent(channelId, configData) {
     (channelId === 'com.spotify.status'
       ? 'x-spotify-status-manager'
       : channelId === 'com.epaperframe.photoframe'
-      ? 'x-photo-frame-manager'
-      : null);
+        ? 'x-photo-frame-manager'
+        : null);
 
   if (!expectedElement) return null;
 
@@ -263,7 +263,7 @@ const ChannelDetail = () => {
     if (!config?.ui?.components?.manager) {
       return (
         <div className="cd-no-plugin">
-          <p>This channel has no management interface.</p>
+          <p>This source has no management interface.</p>
         </div>
       );
     }
@@ -294,8 +294,8 @@ const ChannelDetail = () => {
         updateSettings: (d) => api.callChannelAPI(channelId, 'settings', 'PUT', d),
         getHardwareStatus: () => api.callChannelAPI(channelId, 'hardware', 'GET'),
       },
-      onSettingsChange: () => {},
-      onSave: () => {},
+      onSettingsChange: () => { },
+      onSave: () => { },
       onClose: () => navigate('/channels'),
     };
 

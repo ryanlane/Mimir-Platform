@@ -24,6 +24,8 @@ logger = get_logger(__name__)
 _DISABLED_FILE = "disabled_plugins.json"
 # Name of the file that tracks dev-linked channels
 _DEV_CHANNELS_FILE = "dev_channels.json"
+# Per-plugin install metadata (git_url, version, installed_at)
+_META_FILE = ".mimir_meta.json"
 
 
 class PluginManagerService:
@@ -133,7 +135,7 @@ class PluginManagerService:
 
             return await self._finalize_install(plugin_root, app, plugin_discovery_service)
 
-    async def install_from_git(self, git_url: str, app: FastAPI) -> dict[str, Any]:
+    async def install_from_git(self, git_url: str, app: FastAPI, registry_meta: dict | None = None) -> dict[str, Any]:
         """Install a plugin by cloning a Git repository.
 
         Returns a dict with install results including the plugin ID on success.
@@ -163,7 +165,12 @@ class PluginManagerService:
                     "(expected channel.py + plugin.json/config.json)"
                 )
 
-            return await self._finalize_install(plugin_root, app, plugin_discovery_service)
+            # Stash the git_url so _finalize_install can persist it in meta
+            self._pending_git_url = git_url
+            result = await self._finalize_install(plugin_root, app, plugin_discovery_service)
+            # If _finalize_install didn't consume it (e.g. raised), clean up
+            self._pending_git_url = None
+            return result
 
     def _find_plugin_root(self, search_dir: Path) -> Path | None:
         """Locate the plugin root directory inside an extracted archive or cloned repo.
@@ -216,6 +223,11 @@ class PluginManagerService:
         # Move to channels directory
         shutil.copytree(plugin_root, dest_path)
         logger.info("Installed plugin files to %s", dest_path)
+
+        # Persist install metadata so updates can re-clone from the same source
+        if hasattr(self, "_pending_git_url") and self._pending_git_url:
+            self._save_install_meta(dest_path, manifest, self._pending_git_url)
+            self._pending_git_url = None
 
         # Best-effort dependency installation
         req_file = dest_path / "requirements.txt"
@@ -480,6 +492,165 @@ class PluginManagerService:
 
         logger.info("Reloaded dev channel: %s (healthy=%s)", plugin_id, healthy)
         return {"plugin_id": plugin_id, "reloaded": True, "healthy": healthy}
+
+    # ------------------------------------------------------------------
+    # Install metadata helpers
+    # ------------------------------------------------------------------
+
+    def _save_install_meta(self, plugin_dir: Path, manifest: dict[str, Any], git_url: str | None) -> None:
+        """Write .mimir_meta.json into the plugin directory after a git install."""
+        meta = {
+            "plugin_id": manifest.get("id"),
+            "version": manifest.get("version"),
+            "git_url": git_url,
+            "installed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            (plugin_dir / _META_FILE).write_text(json.dumps(meta, indent=2))
+        except OSError as exc:
+            logger.warning("Could not write install metadata for %s: %s", plugin_dir.name, exc)
+
+    def get_install_meta(self, plugin_id: str) -> dict[str, Any] | None:
+        """Read .mimir_meta.json for an installed plugin. Returns None if not found."""
+        plugin_dir = self._find_plugin_dir_by_id(plugin_id)
+        if not plugin_dir:
+            return None
+        meta_path = plugin_dir / _META_FILE
+        if not meta_path.exists():
+            return None
+        try:
+            return json.loads(meta_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    # ------------------------------------------------------------------
+    # Update
+    # ------------------------------------------------------------------
+
+    async def update_plugin(self, plugin_id: str, app: FastAPI, git_url: str | None = None) -> dict[str, Any]:
+        """Update an installed plugin by re-cloning from its git source.
+
+        The data/ subdirectory is preserved so user content is not lost.
+        A git_url override can be supplied (e.g. from the registry); otherwise
+        the URL stored in .mimir_meta.json is used.
+        """
+        from app.services.plugin_discovery import plugin_discovery_service
+
+        plugin = plugin_discovery_service.get_plugin(plugin_id)
+        if not plugin:
+            raise ValueError(f"Plugin '{plugin_id}' is not installed")
+
+        meta = self.get_install_meta(plugin_id)
+        effective_git_url = git_url or (meta or {}).get("git_url")
+        if not effective_git_url:
+            raise ValueError(
+                f"No git_url found for '{plugin_id}'. "
+                "Only plugins installed via Git URL or from the store can be auto-updated."
+            )
+
+        existing_dir = plugin.plugin_path
+
+        # Dev-linked channels point to an arbitrary path that may not be in
+        # channels_dir (and may not exist on the current filesystem at all).
+        # Redirect the update to a proper install inside channels_dir so the
+        # swap can always succeed, and clean up the dev-link entry.
+        is_dev = plugin_id in self.get_dev_channel_ids()
+        if is_dev:
+            dest_name = plugin_id.replace(".", "_")
+            install_dir = self.channels_dir / dest_name
+            # Avoid a collision if the derived name is somehow already taken
+            if install_dir.exists() and install_dir != existing_dir:
+                install_dir = self.channels_dir / (dest_name + "_updated")
+        else:
+            install_dir = existing_dir
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            clone_dir = Path(tmp_dir) / "repo"
+            data_backup = Path(tmp_dir) / "data_backup"
+
+            # Clone new version
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "clone", "--depth", "1", effective_git_url, str(clone_dir),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+                if proc.returncode != 0:
+                    raise ValueError(
+                        f"git clone failed (exit {proc.returncode}): "
+                        f"{stderr.decode(errors='replace')[:500]}"
+                    )
+            except asyncio.TimeoutError:
+                raise ValueError("git clone timed out after 120 seconds") from None
+
+            new_root = self._find_plugin_root(clone_dir)
+            if not new_root:
+                raise ValueError("Cloned repo does not contain a valid plugin directory")
+
+            new_manifest = self._validate_plugin_dir(new_root)
+            new_version = new_manifest.get("version")
+
+            # Back up user data from whichever path actually exists
+            old_data = existing_dir / "data"
+            if old_data.exists():
+                shutil.copytree(old_data, data_backup)
+
+            # Unload running instance
+            await plugin_discovery_service.unload_plugin(plugin_id, app)
+
+            # If dev-linked, remove the dev entry before we install to channels_dir
+            if is_dev:
+                entries = self.get_dev_channels()
+                entries = [e for e in entries if e.get("plugin_id") != plugin_id]
+                self._save_dev_channels(entries)
+
+            # Swap in new files (existing_dir may not exist for stale dev paths — that's fine)
+            install_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(install_dir, ignore_errors=True)
+            shutil.copytree(new_root, install_dir)
+            existing_dir = install_dir  # point remaining steps at the real location
+
+            # Restore data
+            if data_backup.exists():
+                new_data = existing_dir / "data"
+                if new_data.exists():
+                    shutil.rmtree(new_data)
+                shutil.copytree(data_backup, new_data)
+
+            # Save updated meta
+            self._save_install_meta(existing_dir, new_manifest, effective_git_url)
+
+            # Install deps
+            req_file = existing_dir / "requirements.txt"
+            if req_file.exists():
+                try:
+                    subprocess.run(
+                        ["pip", "install", "-r", str(req_file)],
+                        capture_output=True, text=True, timeout=120,
+                    )
+                except Exception as exc:
+                    logger.warning("pip install failed during update of %s: %s", plugin_id, exc)
+
+            # Hot-load updated plugin
+            try:
+                new_plugin = await plugin_discovery_service.load_single_plugin(existing_dir, app)
+                healthy = new_plugin.healthy if new_plugin else False
+            except Exception as exc:
+                logger.error("Hot-reload failed after update of %s: %s", plugin_id, exc)
+                healthy = False
+
+            logger.info(
+                "[store] Updated plugin %s: %s → %s (healthy=%s)",
+                plugin_id, (meta or {}).get("version", "?"), new_version, healthy,
+            )
+            return {
+                "plugin_id": plugin_id,
+                "name": new_manifest.get("name"),
+                "old_version": (meta or {}).get("version"),
+                "new_version": new_version,
+                "healthy": healthy,
+            }
 
     async def load_dev_channels_on_startup(self, app: FastAPI) -> None:
         """Load all dev channels from dev_channels.json on server startup.

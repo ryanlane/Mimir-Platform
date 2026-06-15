@@ -464,6 +464,25 @@ async def uninstall_channel(channel_id: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Uninstall failed: {exc}") from exc
 
 
+@admin_router.post("/channels/{channel_id}/update", summary="Update a channel plugin from its git source")
+async def update_channel(channel_id: str, request: Request):
+    """Re-clone the plugin from its stored git URL, preserve data/, and hot-reload."""
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    git_url_override = body.get("git_url")
+    try:
+        result = await plugin_manager_service.update_plugin(channel_id, request.app, git_url=git_url_override)
+        return {"status": "updated", **result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Update failed for %s: %s", channel_id, exc)
+        raise HTTPException(status_code=500, detail=f"Update failed: {exc}") from exc
+
+
 @admin_router.post("/channels/{channel_id}/disable", summary="Disable a channel plugin")
 async def disable_channel(channel_id: str, request: Request):
     """Disable a running channel plugin (keeps files on disk)."""

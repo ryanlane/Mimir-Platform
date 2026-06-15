@@ -99,6 +99,9 @@ export const persistentCache = {
       onUpdate
     });
   },
+  async invalidateChannels() {
+    await idb.delete(idb.STORES.CHANNELS, 'list');
+  },
   async clearAll() {
     await Promise.all([
       idb.clear(idb.STORES.SCENES),
