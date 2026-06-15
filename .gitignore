@@ -215,8 +215,8 @@ Thumbs.db
 mimir-api/app.db
 mimir-api/mimir.db
 
-# Channel data directories (runtime-generated)
-mimir-api/channels/*/data/
+# Installed channel plugins — managed at runtime, not tracked in this repo
+mimir-api/channels/
 
 # Build output
 mimir-web/mimir-ui/build/
@@ -229,8 +229,3 @@ mosquitto/passwd
 
 # Claude local settings
 .claude/settings.local.json
-
-# Legacy / removed files
-mimir-api/deploy.sh
-mimir-api/api-deploy.sh
-/mimir-api/channels/slow_movie
