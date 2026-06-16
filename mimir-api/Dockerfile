@@ -5,12 +5,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Runtime deps (keep minimal; add build-essential only if needed)
+# Runtime deps
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       git \
+      ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt

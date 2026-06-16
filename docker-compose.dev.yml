@@ -114,6 +114,7 @@ services:
       # keep working after the workspace flatten.
       - ../mimir-channel-photoframe:/plugins/image-frame-channel-mimir
       - ../mimir-channel-spotify:/plugins/spotify-status
+      - ../mimir-slow-movie:/plugins/mimir-slow-movie
     depends_on:
       db:
         condition: service_healthy

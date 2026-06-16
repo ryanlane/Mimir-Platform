@@ -52,6 +52,9 @@ export function SceneCard({
         if (gallery) {
           subChannelDisplayName = `${gallery.name} (${gallery.image_count || 0} images)`;
         }
+      } else if (manifest.subchannels) {
+        const sc = manifest.subchannels.find(s => s.id === subChannelId);
+        if (sc) subChannelDisplayName = sc.name;
       }
     }
 

@@ -265,7 +265,20 @@ const Scenes = () => {
       const manifestPromises = channelList.map(async (channel) => {
         try {
           const manifestResponse = await api.getChannelManifest(channel.id);
-          return { channelId: channel.id, manifest: manifestResponse.data };
+          const manifest = manifestResponse.data;
+          // For channels that use subchannels (not galleries), fetch the list so
+          // SceneCard can resolve subchannel IDs to human-readable names.
+          const supportsSubchannels =
+            manifest?.capabilities?.supports_subchannels || manifest?.supports_subchannels;
+          if (supportsSubchannels && !manifest?.galleries) {
+            try {
+              const subResp = await api.getSubChannels(channel.id);
+              if (Array.isArray(subResp?.data)) {
+                manifest.subchannels = subResp.data;
+              }
+            } catch (_) {}
+          }
+          return { channelId: channel.id, manifest };
         } catch (error) {
           console.log(`Could not load manifest for ${channel.id}:`, error.response?.data?.detail || error.message);
           return { channelId: channel.id, manifest: null };
