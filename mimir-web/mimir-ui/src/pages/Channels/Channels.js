@@ -120,18 +120,23 @@ const Channels = () => {
 
     useEffect(() => {
       const handleChannelUpdate = (event) => {
-        if (event.data?.type === 'channel_status_update') {
-          const { channelId, status } = event.data;
+        const msg = event.detail || {};
+        if (msg.type === 'channel_status_update') {
+          const { channelId, status } = msg.data || {};
           setChannels(prev => prev.map(channel => (
             channel.id === channelId
               ? { ...channel, status: { ...channel.status, ...status } }
               : channel
           )));
+        } else if (msg.type === 'sources_changed') {
+          persistentCache.invalidateChannels().catch(() => {});
+          refreshChannels();
+          loadManifest();
         }
       };
       window.addEventListener('websocket-message', handleChannelUpdate);
       return () => window.removeEventListener('websocket-message', handleChannelUpdate);
-    }, []);
+    }, [refreshChannels, loadManifest]);
 
     // Sync panelChannel when list refreshes (health updates, enable/disable, etc.)
     useEffect(() => {

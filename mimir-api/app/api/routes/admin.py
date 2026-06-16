@@ -403,6 +403,19 @@ async def reset_channels():
 # ---------------------------------------------------------------------------
 
 
+async def _broadcast_sources_changed(action: str, plugin_id: str | None) -> None:
+    """Notify dashboard clients that the source list has changed."""
+    try:
+        from app.services.websocket_manager import websocket_manager
+        await websocket_manager.emit_event(
+            "sources_changed",
+            {"action": action, "plugin_id": plugin_id},
+            audience="dashboards",
+        )
+    except Exception as exc:
+        logger.warning("Failed to broadcast sources_changed (%s): %s", action, exc)
+
+
 @admin_router.post("/channels/install", summary="Install a channel plugin")
 async def install_channel(
     request: Request,
@@ -429,6 +442,7 @@ async def install_channel(
     if file and file.filename:
         try:
             result = await plugin_manager_service.install_from_zip(file, app)
+            await _broadcast_sources_changed("installed", result.get("plugin_id"))
             return {"status": "installed", **result}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -438,6 +452,7 @@ async def install_channel(
     elif git_url:
         try:
             result = await plugin_manager_service.install_from_git(git_url, app)
+            await _broadcast_sources_changed("installed", result.get("plugin_id"))
             return {"status": "installed", **result}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -456,6 +471,7 @@ async def uninstall_channel(channel_id: str, request: Request):
     """Uninstall a channel plugin: unload from server and remove from disk."""
     try:
         result = await plugin_manager_service.uninstall(channel_id, request.app)
+        await _broadcast_sources_changed("uninstalled", channel_id)
         return {"status": "uninstalled", **result}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -475,6 +491,7 @@ async def update_channel(channel_id: str, request: Request):
     git_url_override = body.get("git_url")
     try:
         result = await plugin_manager_service.update_plugin(channel_id, request.app, git_url=git_url_override)
+        await _broadcast_sources_changed("updated", channel_id)
         return {"status": "updated", **result}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -488,6 +505,7 @@ async def disable_channel(channel_id: str, request: Request):
     """Disable a running channel plugin (keeps files on disk)."""
     try:
         result = await plugin_manager_service.disable(channel_id, request.app)
+        await _broadcast_sources_changed("disabled", channel_id)
         return {"status": "disabled", **result}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -501,6 +519,7 @@ async def enable_channel(channel_id: str, request: Request):
     """Re-enable a previously disabled channel plugin."""
     try:
         result = await plugin_manager_service.enable(channel_id, request.app)
+        await _broadcast_sources_changed("enabled", channel_id)
         return {"status": "enabled", **result}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

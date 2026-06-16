@@ -323,9 +323,9 @@ const ChannelDetail = () => {
     <div className="channel-detail">
       {/* Breadcrumb */}
       <div className="cd-breadcrumb">
-        <button className="cd-back" onClick={() => navigate('/channels')}>
+        <button className="cd-back" onClick={() => navigate('/sources')}>
           <ArrowLeft size={16} />
-          Channels
+          Sources
         </button>
         <span className="cd-breadcrumb-sep">/</span>
         <span className="cd-breadcrumb-current">
