@@ -171,7 +171,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
     <Modal
       isOpen={true}
       onClose={onClose}
-      title={`Assign Scene to ${display.name}`}
+      title={`Assign Program to ${display.name}`}
       size="large"
     >
       <div className="scene-assignment-modal">
@@ -216,9 +216,9 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
           ) : (
             <form onSubmit={handleSubmit} autoComplete="off">
               <div className="scene-selection">
-                <h3 style={{ marginBottom: '0.5rem' }}>Select Scene</h3>
+                <h3 style={{ marginBottom: '0.5rem' }}>Select Program</h3>
                 <div className="scene-combobox-wrapper">
-                  <label className="scene-combobox-label" id="scene-combobox-label">Scene</label>
+                  <label className="scene-combobox-label" id="scene-combobox-label">Program</label>
                   <div
                     className="scene-combobox"
                     role="combobox"
@@ -230,7 +230,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                     <input
                       ref={inputRef}
                       type="text"
-                      placeholder="Search scenes..."
+                      placeholder="Search programs..."
                       value={query}
                       aria-labelledby="scene-combobox-label"
                       onChange={(e) => {
@@ -276,7 +276,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                       role="listbox"
                       ref={listRef}
                       className="scene-combobox-dropdown"
-                      aria-label="Scene options"
+                      aria-label="Program options"
                     >
                       {/* Unassign option at index 0 */}
                       <li
@@ -287,7 +287,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                         onMouseEnter={() => setActiveIndex(0)}
                         onMouseDown={(e) => { e.preventDefault(); commitSelection(''); }}
                       >
-                        <span className="scene-name">No Scene (Unassign)</span>
+                        <span className="scene-name">No Program (Unassign)</span>
                         <span className="scene-combobox-meta">Remove assignment</span>
                       </li>
                       {filteredScenes.map((scene, idx) => {
@@ -322,14 +322,14 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                         );
                       })}
                       {filteredScenes.length === 0 && (
-                        <li className="scene-combobox-empty">No scenes match "{query}"</li>
+                        <li className="scene-combobox-empty">No programs match "{query}"</li>
                       )}
                     </ul>
                   )}
                 </div>
                 {scenes.length === 0 && !loading && (
                   <div className="empty-state">
-                    <p>No scenes available. Create a scene first to assign it to displays.</p>
+                    <p>No programs available. Create a program first to assign it to displays.</p>
                   </div>
                 )}
               </div>
@@ -339,7 +339,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                   <div className="preview-info">
                     <h4>Assignment Preview</h4>
                     <p>
-                      Scene "<strong>{selectedSceneObj?.name}</strong>" 
+                      Program "<strong>{selectedSceneObj?.name}</strong>"
                       will be assigned to "<strong>{display.name}</strong>"
                     </p>
                     <div className="preview-details">
@@ -364,7 +364,7 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                   className="btn btn-primary" 
                   disabled={assigning || loading}
                 >
-                  {assigning ? 'Assigning...' : selectedScene ? 'Assign Scene' : 'Unassign Scene'}
+                  {assigning ? 'Assigning...' : selectedScene ? 'Assign Program' : 'Unassign Program'}
                 </button>
               </div>
             </form>

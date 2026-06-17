@@ -617,7 +617,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
             <div className="scene-assigned">
               <div className="scene-info">
                 <Play size={14} />
-                <span>Scene: <strong>{display.assigned_scene_name}</strong></span>
+                <span>Program: <strong>{display.assigned_scene_name}</strong></span>
               </div>
               <div className="scene-buttons">
                 {canEditSettings && (
@@ -682,7 +682,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
             </div>
           ) : (
             <div className="scene-unassigned">
-              <div className="no-scene">No scene assigned</div>
+              <div className="no-scene">No program assigned</div>
               <div className="scene-buttons">
                 {canEditSettings && (
                   <Button
@@ -715,7 +715,7 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                   variant={canConfigure ? 'secondary' : 'primary'}
                   onClick={() => onAssignScene(display)}
                 >
-                  Assign Scene
+                  Assign Program
                 </Button>
               </div>
              

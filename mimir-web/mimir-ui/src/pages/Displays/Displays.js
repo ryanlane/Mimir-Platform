@@ -940,7 +940,7 @@ const Displays = () => {
             <Search size={18} />
             <input
               type="text"
-              placeholder="Search displays..."
+              placeholder="Search screens..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -979,7 +979,7 @@ const Displays = () => {
               value={onlineFilter} 
               onChange={(e) => setOnlineFilter(e.target.value)}
             >
-              <option value="all">All Displays</option>
+              <option value="all">All Screens</option>
               <option value="online">Online Only</option>
               <option value="offline">Offline Only</option>
             </select>
@@ -1030,7 +1030,7 @@ const Displays = () => {
       {/* Display Count */}
       <div className="displays-stats">
         <span className="stats-item">
-          {filteredDisplays.length} display{filteredDisplays.length !== 1 ? 's' : ''}
+          {filteredDisplays.length} screen{filteredDisplays.length !== 1 ? 's' : ''}
         </span>
         <span className="stats-item">
           <Monitor size={14} />
@@ -1061,7 +1061,7 @@ const Displays = () => {
         </div>
       ) : error ? (
         <div className="error-state">
-          <h3>Error Loading Displays</h3>
+          <h3>Error Loading Screens</h3>
           <p>{error}</p>
           <button className="btn btn-primary" onClick={refreshDisplays}>
             Try Again
