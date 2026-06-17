@@ -198,6 +198,7 @@
 .tag-green    { background: rgba(0, 200, 81, 0.12); color: var(--color-accent); }
 .tag-purple   { background: rgba(156, 39, 176, 0.12); color: #ce93d8; }
 .tag-orange   { background: rgba(255, 152, 0, 0.12); color: #ffb74d; }
+.tag-cyan     { background: rgba(0, 188, 212, 0.12); color: #4dd0e1; }
 
 /* Footer */
 .store-card-footer {

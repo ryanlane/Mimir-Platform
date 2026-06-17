@@ -8,13 +8,23 @@ import './PluginStore.css';
 const TAG_COLORS = {
   video: 'tag-blue',
   movie: 'tag-blue',
+  movies: 'tag-blue',
+  posters: 'tag-blue',
+  cinema: 'tag-blue',
   photo: 'tag-green',
   gallery: 'tag-green',
   slideshow: 'tag-green',
   spotify: 'tag-purple',
   music: 'tag-purple',
+  weather: 'tag-cyan',
+  forecast: 'tag-cyan',
+  live: 'tag-cyan',
+  openweathermap: 'tag-cyan',
+  comics: 'tag-orange',
+  art: 'tag-orange',
   display: 'tag-orange',
   epaper: 'tag-orange',
+  rendered: 'tag-orange',
 };
 
 const PluginTag = ({ tag }) => (
@@ -280,6 +290,9 @@ function iconFor(icon) {
     display: '🖥️',
     database: '🗄️',
     globe: '🌐',
+    cloud: '☁️',
+    'book-open': '📚',
+    book: '📚',
   };
   return map[icon] || '🔌';
 }
