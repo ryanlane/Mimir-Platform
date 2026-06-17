@@ -115,6 +115,8 @@ services:
       - ../mimir-channel-photoframe:/plugins/image-frame-channel-mimir
       - ../mimir-channel-spotify:/plugins/spotify-status
       - ../mimir-slow-movie:/plugins/mimir-slow-movie
+      # Media library — read-only access for slow movie browser
+      - /new-pool/PlexMedia:/new-pool/PlexMedia:ro
     depends_on:
       db:
         condition: service_healthy

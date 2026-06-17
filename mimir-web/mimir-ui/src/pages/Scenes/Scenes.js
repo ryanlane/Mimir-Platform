@@ -28,6 +28,8 @@ const Scenes = () => {
   const [showImageModal, setShowImageModal] = useState(false);
   const [currentImageData, setCurrentImageData] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
+  const [seekModal, setSeekModal] = useState(null);
+  // seekModal: null | { channelId, subchannelId, frame, total, title }
   const [showDistributionManager, setShowDistributionManager] = useState(false);
   const [selectedSceneForDistribution, setSelectedSceneForDistribution] = useState(null);
   const [sceneSchedules, setSceneSchedules] = useState({}); // Cache for scene schedules
@@ -577,6 +579,34 @@ const Scenes = () => {
   }, [scenes]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
+  const handleSeekSubchannel = (channelId, subchannelId, currentFrame, totalFrames, title) => {
+    setSeekModal({ channelId, subchannelId, frame: currentFrame, total: totalFrames, title });
+  };
+
+  const updateSeekFrame = (raw) => {
+    const frame = Math.max(0, Math.min(parseInt(raw, 10) || 0, seekModal?.total || 0));
+    setSeekModal(m => m ? { ...m, frame } : m);
+  };
+
+  const confirmSeek = async () => {
+    if (!seekModal) return;
+    const { channelId, subchannelId, frame } = seekModal;
+    try {
+      await api.seekMovieFrame(channelId, subchannelId, frame);
+      const subResp = await api.getSubChannels(channelId, { forceRefresh: true });
+      if (Array.isArray(subResp?.data)) {
+        setChannelManifests(prev => ({
+          ...prev,
+          [channelId]: { ...(prev[channelId] || {}), subchannels: subResp.data },
+        }));
+      }
+    } catch (e) {
+      console.error('Seek failed:', e);
+    } finally {
+      setSeekModal(null);
+    }
+  };
+
   const activePanel = panelMode === 'editor'
     ? (
       <ProgramEditorPanel
@@ -663,6 +693,7 @@ const Scenes = () => {
                       onDisplay={handleDisplayScene}
                       onEdit={handleEditScene}
                       onDelete={handleDeleteScene}
+                      onSeekSubchannel={handleSeekSubchannel}
                       loadingDisplay={imageLoading}
                     />
                   </div>
@@ -723,6 +754,47 @@ const Scenes = () => {
               {currentImageData.generated_at && (
                 <p><strong>Generated:</strong> {new Date(currentImageData.generated_at).toLocaleString()}</p>
               )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {seekModal && (
+        <Modal
+          isOpen={!!seekModal}
+          onClose={() => setSeekModal(null)}
+          title={`Seek — ${seekModal.title}`}
+        >
+          <div className="seek-modal-body">
+            <div className="seek-frame-display">
+              Frame {seekModal.frame.toLocaleString()} of {seekModal.total.toLocaleString()}
+              <span className="seek-pct">
+                {seekModal.total > 0 ? Math.round(seekModal.frame / seekModal.total * 100) : 0}%
+              </span>
+            </div>
+            <input
+              type="range"
+              className="seek-range"
+              min={0}
+              max={seekModal.total}
+              value={seekModal.frame}
+              onChange={e => updateSeekFrame(e.target.value)}
+            />
+            <div className="seek-input-row">
+              <label className="seek-label">Frame</label>
+              <input
+                type="number"
+                className="seek-frame-input form-input"
+                min={0}
+                max={seekModal.total}
+                value={seekModal.frame}
+                onChange={e => updateSeekFrame(e.target.value)}
+              />
+              <span className="seek-of">of {seekModal.total.toLocaleString()}</span>
+            </div>
+            <div className="seek-actions">
+              <Button variant="secondary" onClick={() => setSeekModal(null)}>Cancel</Button>
+              <Button variant="primary" onClick={confirmSeek}>Seek</Button>
             </div>
           </div>
         </Modal>

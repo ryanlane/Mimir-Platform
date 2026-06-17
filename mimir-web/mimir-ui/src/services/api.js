@@ -233,6 +233,9 @@ export const api = {
     return result;
   },
 
+  seekMovieFrame: async (channelId, movieId, frame) =>
+    apiClient.post(`/channels/${channelId}/movies/${movieId}/seek`, { frame }),
+
   getSubChannels: async (channelId, options = {}) => {
     const { forceRefresh = false } = options;
     const key = apiCache.generateKey(`/channels/${channelId}/subchannels`);

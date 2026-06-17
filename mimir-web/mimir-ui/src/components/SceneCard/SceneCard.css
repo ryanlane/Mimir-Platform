@@ -52,7 +52,10 @@
 }
 
 .channel-tag {
-	display: inline-block;
+	display: inline-flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
 	padding: var(--spacing-xs) var(--spacing-sm);
 	background-color: var(--color-surface);
 	border: 1px solid var(--color-border);
@@ -62,10 +65,57 @@
 }
 
 .subchannel-indicator {
-	margin-left: var(--spacing-xs);
 	font-weight: 500;
 	color: var(--color-text-secondary);
 	font-size: 0.7rem;
+}
+
+.subchannel-progress-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	min-width: 140px;
+}
+
+.subchannel-progress-bar {
+	flex: 1;
+	height: 3px;
+	background: var(--color-border);
+	border-radius: 2px;
+	overflow: hidden;
+}
+
+.subchannel-progress-fill {
+	height: 100%;
+	background: var(--color-accent);
+	border-radius: 2px;
+	transition: width 0.3s ease;
+}
+
+.subchannel-frame-count {
+	font-size: 0.65rem;
+	color: var(--color-text-tertiary);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.subchannel-seek-btn {
+	background: none;
+	border: none;
+	padding: 2px 5px;
+	cursor: pointer;
+	color: var(--color-text-secondary);
+	font-size: 0.75rem;
+	border-radius: 3px;
+	line-height: 1;
+	flex-shrink: 0;
+	transition: background 0.1s, color 0.1s;
+}
+
+.subchannel-seek-btn:hover {
+	background: var(--color-surface-hover);
+	color: var(--color-text);
 }
 
 .distribution-mode-select {

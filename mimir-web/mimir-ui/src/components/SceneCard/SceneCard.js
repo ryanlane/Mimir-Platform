@@ -27,6 +27,7 @@ export function SceneCard({
   onDisplay,
   onEdit,
   onDelete,
+  onSeekSubchannel,
   loadingDisplay = false,
 }) {
   if (!scene) return null;
@@ -45,6 +46,8 @@ export function SceneCard({
     const displayName = channel?.name || channelId;
 
     let subChannelDisplayName = subChannelId;
+    let subchannelProgress = null;
+
     if (subChannelId && channelManifests[channelId]) {
       const manifest = channelManifests[channelId];
       if (manifest.galleries) {
@@ -54,15 +57,53 @@ export function SceneCard({
         }
       } else if (manifest.subchannels) {
         const sc = manifest.subchannels.find(s => s.id === subChannelId);
-        if (sc) subChannelDisplayName = sc.name;
+        if (sc) {
+          subChannelDisplayName = sc.name;
+          if (sc.total_frames > 0) {
+            const currentFrame = sc.current_frame || 0;
+            const totalFrames = sc.total_frames;
+            subchannelProgress = {
+              currentFrame,
+              totalFrames,
+              pct: Math.round((currentFrame / totalFrames) * 100),
+            };
+          }
+        }
       }
     }
 
     return (
       <span key={`${channelId}-${subChannelId || 'all'}-${index}`} className="channel-tag">
-        {displayName}
-        {subChannelId && (
-          <span className="subchannel-indicator">→ {subChannelDisplayName}</span>
+        <span>
+          {displayName}
+          {subChannelId && (
+            <span className="subchannel-indicator">→ {subChannelDisplayName}</span>
+          )}
+        </span>
+        {subchannelProgress && (
+          <span className="subchannel-progress-row">
+            <span className="subchannel-progress-bar">
+              <span
+                className="subchannel-progress-fill"
+                style={{ width: `${subchannelProgress.pct}%` }}
+              />
+            </span>
+            <span className="subchannel-frame-count">
+              {subchannelProgress.currentFrame.toLocaleString()} / {subchannelProgress.totalFrames.toLocaleString()}
+            </span>
+            {onSeekSubchannel && (
+              <button
+                className="subchannel-seek-btn"
+                title="Seek to frame"
+                onClick={e => {
+                  e.stopPropagation();
+                  onSeekSubchannel(channelId, subChannelId, subchannelProgress.currentFrame, subchannelProgress.totalFrames, subChannelDisplayName);
+                }}
+              >
+                ⤢
+              </button>
+            )}
+          </span>
         )}
       </span>
     );
