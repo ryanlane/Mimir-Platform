@@ -80,6 +80,14 @@ async def lifespan(app: FastAPI):
     from app.services.dev_watcher import dev_watcher_service
     dev_watcher_service.start(app)
 
+    # Start shared HTML renderer (headless Chromium — used by any plugin that needs it)
+    from app.services.html_renderer import html_renderer_service
+    await html_renderer_service.start()
+    if html_renderer_service.available:
+        logger.info("🌐 HTML renderer: Chromium ready")
+    else:
+        logger.info("🌐 HTML renderer: unavailable (install playwright + chromium for HTML-based plugin styles)")
+
     # Report service status
     logger.info(f"📊 Database: {settings.database_url}")
     logger.info(f"🌐 CORS Origins: {len(settings.cors_origins)} configured")
@@ -166,6 +174,10 @@ async def lifespan(app: FastAPI):
     # Stop dev watcher first (before unloading plugins)
     from app.services.dev_watcher import dev_watcher_service
     dev_watcher_service.stop()
+
+    # Stop shared HTML renderer
+    from app.services.html_renderer import html_renderer_service
+    await html_renderer_service.stop()
 
     # Shutdown plugins (lifecycle hooks + legacy stop)
     await plugin_discovery_service.shutdown_plugins()

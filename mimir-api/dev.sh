@@ -76,10 +76,16 @@ case "$1" in
         ;;
     "install")
         log "📦 Installing dependencies..."
-        pip install -r requirements.txt
+        if [ -f "pyproject.toml" ]; then
+            pip install -e ".[dev]"
+        elif [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+        fi
         if [ -f "requirements-test.txt" ]; then
             pip install -r requirements-test.txt
         fi
+        log "🌐 Installing Playwright Chromium browser..."
+        playwright install chromium
         ;;
     "clean")
         log "🧹 Cleaning up..."
