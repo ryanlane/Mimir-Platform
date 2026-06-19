@@ -35,6 +35,10 @@ aiomqtt>=1.0.0
 # File system watching for dev channel auto-reload
 watchdog>=3.0.0
 
+# HTML→image rendering for web-style channel plugins (Playwright/Chromium)
+playwright>=1.40.0
+jinja2>=3.1.0
+
 # OpenTelemetry stack
 opentelemetry-api>=1.21.0
 opentelemetry-sdk>=1.21.0
