@@ -441,6 +441,11 @@ export const api = {
   getScenesWithDisplayStats: () => apiClient.get('/display-scene/scenes/with-displays'),
   getAssignmentStatus: (sceneId) =>  apiClient.get('/display-scene/assignments/status', { params: { scene_id: sceneId } }),
   
+  // Virtual display endpoints (dev mode only)
+  createVirtualDisplay: (data) => apiClient.post('/displays/virtual', data),
+  deleteVirtualDisplay: (displayId) => apiClient.delete(`/displays/virtual/${encodeURIComponent(displayId)}`),
+  getVirtualPresets: () => apiClient.get('/displays/virtual/presets'),
+
   // Discovery API endpoints
   getDiscoveryStatus: () => apiClient.get('/displays/discovery/status'),
   startDiscovery: () => apiClient.post('/displays/discovery/start'),

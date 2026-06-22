@@ -78,7 +78,8 @@ async def get_displays_status(db: Session = Depends(get_db)):
             "service_available": mdns_discovery_service.is_available,
             "external_feed_enabled": bool(getattr(settings, "mdns_external_feed_enabled", False)),
             "external_feed_token_required": bool(getattr(settings, "mdns_external_feed_token", None)),
-        }
+        },
+        "dev_mode": bool(settings.debug),
     }
 
 

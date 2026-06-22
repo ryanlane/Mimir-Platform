@@ -18,6 +18,7 @@ from .images import router as images_router
 from .pairing import router as pairing_router
 from .provisioning import router as provisioning_router
 from .scenes import router as scenes_router
+from .virtual import router as virtual_router
 
 router = APIRouter(prefix="/displays", tags=["displays"])
 
@@ -28,4 +29,7 @@ router.include_router(provisioning_router)
 router.include_router(pairing_router)
 router.include_router(images_router)
 router.include_router(scenes_router)
+# Virtual display routes before crud so /virtual/presets and /virtual/{id}
+# don't get swallowed by the /{display_id} wildcard.
+router.include_router(virtual_router)
 router.include_router(crud_router)

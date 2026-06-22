@@ -435,10 +435,18 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
                   <Icon name="Unlink" size={14} color="var(--color-mimir-dark-green)" />
                 )}
               </div>
+              {display.discovery_method === 'virtual' && (
+                <span className="source-dot virtual" title="Virtual display (dev mode)" style={{
+                  background: 'var(--color-warning, #CC6324)',
+                  fontSize: '10px', fontWeight: 700, padding: '1px 5px',
+                  borderRadius: '4px', color: '#fff', letterSpacing: '0.04em',
+                  textTransform: 'uppercase', lineHeight: 1,
+                }}>VIRTUAL</span>
+              )}
               {display.displayType === 'discovered' && (
                 <span className="source-dot discovered" title="Discovered" />
               )}
-              {display.displayType === 'registered' && (
+              {display.displayType === 'registered' && display.discovery_method !== 'virtual' && (
                 <span className="source-dot registered" title="Registered" />
               )}
             </div>

@@ -175,6 +175,14 @@ const Displays = () => {
   const [displaySettingsError, setDisplaySettingsError] = useState(null);
   const [configStatus, setConfigStatus] = useState({});
   const [showPairing, setShowPairing] = useState(false);
+  // Developer mode — virtual display creation
+  const [devMode, setDevMode] = useState(false);
+  const [showAddVirtual, setShowAddVirtual] = useState(false);
+  const [virtualName, setVirtualName] = useState('');
+  const [virtualPreset, setVirtualPreset] = useState('landscape_800x480');
+  const [virtualLocation, setVirtualLocation] = useState('Virtual');
+  const [addingVirtual, setAddingVirtual] = useState(false);
+  const [virtualError, setVirtualError] = useState(null);
   // Pre-fill pairing code from ?pair=ABC123 query param (QR code flow)
   const [initialPairCode] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -280,7 +288,7 @@ const Displays = () => {
       }
 
       // Fetch displays and discovery status
-      const [displaysResponse, discoveryResponse, statsResponse] = await Promise.all([
+      const [displaysResponse, discoveryResponse, statsResponse, displayStatusResponse] = await Promise.all([
         api.getDisplays(params),
         api.getDiscoveryStatus().catch(err => {
           console.warn('Discovery status not available:', err);
@@ -289,8 +297,12 @@ const Displays = () => {
         api.getDiscoveryStatus().catch(err => {
           console.warn('Discovered display stats not available:', err);
           return null;
-        })
+        }),
+        api.getDisplayStatus().catch(() => null),
       ]);
+      if (displayStatusResponse?.data?.dev_mode) {
+        setDevMode(true);
+      }
 
       // Normalize displays payload to an array regardless of server shape or errors
       const payload = displaysResponse?.data;
@@ -434,6 +446,44 @@ const Displays = () => {
       setLoading(false);
     }
   }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter, includeDiscovered, isLoading]);
+
+  const handleAddVirtualDisplay = useCallback(async () => {
+    if (!virtualName.trim()) {
+      setVirtualError('Name is required');
+      return;
+    }
+    setAddingVirtual(true);
+    setVirtualError(null);
+    try {
+      await api.createVirtualDisplay({
+        name: virtualName.trim(),
+        location: virtualLocation.trim() || 'Virtual',
+        preset: virtualPreset,
+      });
+      setShowAddVirtual(false);
+      setVirtualName('');
+      setVirtualLocation('Virtual');
+      setVirtualPreset('landscape_800x480');
+      displaysCache = null;
+      displaysCacheTime = null;
+      await loadDisplays();
+    } catch (err) {
+      setVirtualError(err?.response?.data?.detail || err.message || 'Failed to create virtual display');
+    } finally {
+      setAddingVirtual(false);
+    }
+  }, [virtualName, virtualLocation, virtualPreset, loadDisplays]);
+
+  const handleDeleteVirtualDisplay = useCallback(async (displayId) => {
+    try {
+      await api.deleteVirtualDisplay(displayId);
+      displaysCache = null;
+      displaysCacheTime = null;
+      await loadDisplays();
+    } catch (err) {
+      console.error('Failed to delete virtual display:', err);
+    }
+  }, [loadDisplays]);
 
   const handlePairDisplay = useCallback(async (display) => {
     if (!display?.id) return;
@@ -731,12 +781,18 @@ const Displays = () => {
   };
 
   const handleDeleteDisplay = async (displayId) => {
-    if (!window.confirm('Are you sure you want to delete this display client?')) {
+    const display = displays.find(d => d.id === displayId);
+    const isVirtual = display?.discovery_method === 'virtual';
+    const label = isVirtual ? 'Remove this virtual display?' : 'Are you sure you want to delete this display client?';
+    if (!window.confirm(label)) {
       return;
     }
-
     try {
-      await api.deleteDisplay(displayId);
+      if (isVirtual) {
+        await api.deleteVirtualDisplay(displayId);
+      } else {
+        await api.deleteDisplay(displayId);
+      }
       refreshDisplays();
     } catch (error) {
       console.error('Error deleting display:', error);
@@ -760,15 +816,22 @@ const Displays = () => {
 
   const handleUnpairDisplay = useCallback(async () => {
     if (!settingsDisplay) return;
+    const isVirtual = settingsDisplay.discovery_method === 'virtual';
     const confirmed = window.confirm(
-      `Unpair "${settingsDisplay.name}"? The display will be removed from Mimir and must be paired again before it can show scenes.`
+      isVirtual
+        ? `Remove virtual display "${settingsDisplay.name}"?`
+        : `Unpair "${settingsDisplay.name}"? The display will be removed from Mimir and must be paired again before it can show scenes.`
     );
     if (!confirmed) return;
 
     setRemovingDisplay(true);
     setDisplaySettingsError(null);
     try {
-      await api.deleteDisplay(settingsDisplay.id);
+      if (isVirtual) {
+        await api.deleteVirtualDisplay(settingsDisplay.id);
+      } else {
+        await api.deleteDisplay(settingsDisplay.id);
+      }
       setShowDisplaySettings(false);
       setSettingsDisplay(null);
       await refreshDisplays();
@@ -883,6 +946,15 @@ const Displays = () => {
           iconSize={36}
           description="Manage display clients and scene assignments"
           actions={[
+            devMode && (
+              <Button
+                key="virtual"
+                variant="secondary"
+                onClick={() => { setShowAddVirtual(true); setVirtualError(null); }}
+              >
+                + Virtual Display
+              </Button>
+            ),
             <Button
               key="pair"
               variant="primary"
@@ -1213,7 +1285,7 @@ const Displays = () => {
                 loading={removingDisplay}
                 disabled={savingDisplaySettings}
               >
-                Unpair Display
+                {settingsDisplay?.discovery_method === 'virtual' ? 'Remove Virtual Display' : 'Unpair Display'}
               </Button>
             </div>
 
@@ -1229,6 +1301,71 @@ const Displays = () => {
         )}
       </Modal>
       
+      {/* Virtual display creation modal — dev mode only */}
+      <Modal
+        isOpen={showAddVirtual}
+        onClose={() => { setShowAddVirtual(false); setVirtualError(null); }}
+        title="Add Virtual Display"
+        size="small"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+            Virtual displays appear in the Screens view and can be assigned programs, but have no physical hardware. Only available in developer mode (DEBUG=true).
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <span style={{ fontWeight: 600 }}>Display Name</span>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="e.g. Dev Screen 1"
+              value={virtualName}
+              onChange={(e) => setVirtualName(e.target.value)}
+              disabled={addingVirtual}
+              autoFocus
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <span style={{ fontWeight: 600 }}>Location</span>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="Virtual"
+              value={virtualLocation}
+              onChange={(e) => setVirtualLocation(e.target.value)}
+              disabled={addingVirtual}
+            />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <span style={{ fontWeight: 600 }}>Resolution</span>
+            <select
+              className="form-select"
+              value={virtualPreset}
+              onChange={(e) => setVirtualPreset(e.target.value)}
+              disabled={addingVirtual}
+            >
+              <option value="landscape_800x480">Landscape 800×480 (7.5" e-paper)</option>
+              <option value="portrait_480x800">Portrait 480×800</option>
+              <option value="landscape_1280x720">Landscape 1280×720 (HD)</option>
+              <option value="portrait_720x1280">Portrait 720×1280</option>
+              <option value="square_600x600">Square 600×600</option>
+              <option value="landscape_1872x1404">Landscape 1872×1404 (10.3" e-paper)</option>
+              <option value="landscape_960x540">Landscape 960×540</option>
+            </select>
+          </label>
+          {virtualError && (
+            <div style={{ color: 'var(--color-error)', fontSize: '0.9rem' }}>{virtualError}</div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+            <Button variant="secondary" onClick={() => { setShowAddVirtual(false); setVirtualError(null); }} disabled={addingVirtual}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleAddVirtualDisplay} loading={addingVirtual}>
+              Create
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
   {/* DebugPanel now rendered inside Header via rightSlot */}
     </div>{/* end screens-list-pane */}
 
