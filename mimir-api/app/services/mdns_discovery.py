@@ -21,7 +21,12 @@ except ImportError:
 from app.config import settings
 from app.core.logging import get_logger
 
-# (Removed DB imports not used in discovery service logic)
+try:
+    from app.db.database import SessionLocal
+    from app.db.models import DisplayClient
+    _DB_AVAILABLE = True
+except ImportError:
+    _DB_AVAILABLE = False
 
 # Import metrics for instrumentation
 try:
@@ -445,6 +450,20 @@ class MdnsDiscoveryService:
             # New display via heartbeat
             if not service_name:
                 service_name = f"mqtt-{display_id}"
+                # Load the authoritative assignment from the DB rather than trusting
+                # what the display reports it's currently showing.
+                db_scene_id: str | None = None
+                db_subchannel_id: str | None = None
+                if _DB_AVAILABLE:
+                    try:
+                        with SessionLocal() as _db:
+                            _rec = _db.query(DisplayClient).filter(
+                                (DisplayClient.id == display_id) | (DisplayClient.hostname == display_id)
+                            ).first()
+                            if _rec:
+                                db_scene_id = _rec.assigned_scene_id
+                    except Exception as _db_err:
+                        logger.debug("heartbeat.db_lookup_failed display=%s err=%s", display_id, _db_err)
                 placeholder = DiscoveredDisplay(
                     service_name=service_name,
                     display_id=display_id,
@@ -459,8 +478,8 @@ class MdnsDiscoveryService:
                     discovered_at=heartbeat_timestamp,
                     last_seen=heartbeat_timestamp,
                     is_online=True,
-                    assigned_scene_id=scene_id,
-                    assigned_subchannel_id=subchannel_id,
+                    assigned_scene_id=db_scene_id,
+                    assigned_subchannel_id=db_subchannel_id,
                 )
                 self._enrich_from_heartbeat(placeholder, heartbeat_data)
                 self.discovered_displays[service_name] = placeholder
@@ -484,8 +503,10 @@ class MdnsDiscoveryService:
                     display.is_online,
                 )
                 display.last_seen = heartbeat_timestamp
-                display.assigned_scene_id = scene_id
-                display.assigned_subchannel_id = subchannel_id
+                # Do not overwrite assigned_scene_id/subchannel_id from the heartbeat.
+                # The heartbeat reports what the display is *currently showing*, which
+                # lags behind the server's assignment during transitions. The platform
+                # is authoritative; assignments are set only via the explicit assign route.
                 self._enrich_from_heartbeat(display, heartbeat_data)
                 if not prev_online:
                     display.is_online = True
