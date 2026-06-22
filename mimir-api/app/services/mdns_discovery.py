@@ -432,9 +432,6 @@ class MdnsDiscoveryService:
         """
         logger.info("Processing heartbeat for device_id=%s timestamp=%s", display_id, heartbeat_timestamp)
 
-        scene_id = heartbeat_data.get("scene_id") if heartbeat_data else None
-        subchannel_id = heartbeat_data.get("subchannel_id") if heartbeat_data else None
-
         with self._lock:
             # Resolve service name if we have seen this display before
             service_name = self.display_id_to_service_name.get(display_id)
