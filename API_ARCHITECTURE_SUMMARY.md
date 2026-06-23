@@ -19,12 +19,14 @@
 All routers are mounted under `/api` prefix (configured via `settings.api_prefix`):
 
 #### 1. **Health & Admin** (`app.api.routes.admin`)
+
 - `GET /api/health` — Health check endpoint
 - `GET /api/metrics` — OpenTelemetry/Prometheus metrics
 - `POST /api/admin/mqtt/test` — Test MQTT broker connectivity
 - Image upload/persistence endpoints
 
 #### 2. **Channels** (`app.api.routes.channels`)
+
 - `GET /api/channels/` — List all available channel plugins with metadata
 - `GET /api/channels/{channel_id}/manifest` — Get channel capabilities and schema
 - `GET /api/channels/{channel_id}/health` — Check individual channel health
@@ -33,6 +35,7 @@ All routers are mounted under `/api` prefix (configured via `settings.api_prefix
   - Example: `/api/channels/weather/request-image`, `/api/channels/spotify_status/status`
 
 #### 3. **Scenes** (`app.api.routes.scenes`)
+
 - `GET /api/scenes/` — List all scenes (paginated)
 - `GET /api/scenes/{scene_id}` — Get scene details with schedule
 - `POST /api/scenes/` — Create a new scene
@@ -43,6 +46,7 @@ All routers are mounted under `/api` prefix (configured via `settings.api_prefix
 - `POST /api/scenes/{scene_id}/refresh` — Trigger content refresh
 
 #### 4. **Displays** (`app.api.routes.displays/*`)
+
 - `GET /api/displays/` — List all registered display clients
 - `GET /api/displays/{display_id}` — Get display details & current assignment
 - `POST /api/displays/{display_id}/scene` — Assign a scene to a display (via MQTT)
@@ -56,12 +60,14 @@ All routers are mounted under `/api` prefix (configured via `settings.api_prefix
   - `GET /api/displays/mqtt/config` — Get MQTT broker config for clients
 
 #### 5. **Display-Scene Analytics** (`app.api.routes.display_scene`)
+
 - `GET /api/display-scene/scenes/with-displays` — Scenes with display assignment stats
 - `GET /api/display-scene/scenes/{scene_id}/displays` — Scene with assigned displays
 - `GET /api/display-scene/displays/by-location` — Displays grouped by location
 - `GET /api/display-scene/dashboard/overview` — Assignment dashboard data
 
 #### 6. **Scheduler** (`app.api.routes.scheduler`)
+
 - `POST /api/scheduler/jobs` — Create a scheduled job
 - `GET /api/scheduler/jobs` — List all jobs
 - `PUT /api/scheduler/jobs/{job_id}` — Update job
@@ -72,20 +78,24 @@ All routers are mounted under `/api` prefix (configured via `settings.api_prefix
 - `POST /api/scheduler/jobs/bulk-operation` — Bulk operations on jobs
 
 #### 7. **Discovery** (`app.api.routes.discovery`)
+
 - `GET /api/displays/discovery` — List discovered devices (mDNS)
 - `POST /api/displays/{device_id}/approve` — Approve device for registration
 - `POST /api/displays/{device_id}/reject` — Reject device registration
 
 #### 8. **Store & Plugin Registry** (`app.api.routes.store`)
+
 - `GET /api/store/registry` — Fetch plugin registry from external source
 - `POST /api/store/registry/refresh` — Refresh registry cache
 - `GET /api/store/updates` — Check for plugin/channel updates
 
 #### 9. **Client Releases** (`app.api.routes.client_releases`)
+
 - `GET /api/client-releases/latest` — Get latest display client version
 - `GET /api/client-releases/{version}/download` — Download specific client version
 
 #### 10. **Overlays** (`app.api.routes.overlays`)
+
 - `GET /api/overlays/` — List all overlays
 - `GET /api/overlays/{overlay_id}` — Get overlay details
 - `POST /api/overlays/` — Create overlay
@@ -93,10 +103,12 @@ All routers are mounted under `/api` prefix (configured via `settings.api_prefix
 - `DELETE /api/overlays/{overlay_id}` — Delete overlay
 
 #### 11. **Debug/MQTT** (`app.api.routes.debug_mqtt`)
+
 - `POST /api/debug/mqtt/echo` — Echo test to MQTT broker
 - `GET /api/debug/mqtt/stats` — Get MQTT statistics
 
 #### 12. **WebSockets** (No `/api` prefix)
+
 - `WS /ws` — Dashboard/generic client connection
 - `WS /ws/display/{display_id}` — Display client real-time connection
 - `GET /api/websocket/status` — WebSocket service status & stats
@@ -147,6 +159,7 @@ All are discoverable via `GET /api/channels/` and managed through the plugin sys
 ### 1. Display Clients ↔ API
 
 #### MQTT (Primary for Commands)
+
 - **Broker:** Mosquitto (internal or external)
 - **Flow:** API publishes scene assignments → displays subscribe & execute
 - **Topics:**
@@ -155,17 +168,20 @@ All are discoverable via `GET /api/channels/` and managed through the plugin sys
   - Last Will & Testament for presence detection
 
 #### WebSocket (Real-time Feedback)
+
 - `WS /ws/display/{display_id}` — Display keeps persistent connection
 - **Events:** Status updates, render confirmations, error reports
 - Used for instant feedback and monitoring
 
 #### HTTP REST (Content Delivery)
+
 - Displays poll `/api/scenes/{scene_id}/` for scene content
 - Download images, manifests, and configuration via HTTP
 
 ### 2. External Services/Agents ↔ API
 
 #### Direct HTTP REST
+
 Most integrations use standard RESTful endpoints:
 
 ```bash
@@ -185,9 +201,10 @@ curl http://localhost:5000/api/channels/{channel_id}/manifest
 ```
 
 #### WebSocket (Dashboard / Real-time Monitoring)
+
 ```javascript
 // Connect to dashboard endpoint
-const ws = new WebSocket('ws://localhost:5000/ws');
+const ws = new WebSocket("ws://localhost:5000/ws");
 
 // Receive state updates, channel status changes, display events
 ws.onmessage = (event) => {
@@ -196,10 +213,11 @@ ws.onmessage = (event) => {
 };
 
 // Request state snapshot
-ws.send(JSON.stringify({ event: 'state_sync_request' }));
+ws.send(JSON.stringify({ event: "state_sync_request" }));
 ```
 
 #### Scheduler Jobs (Deferred Execution)
+
 External systems can create scheduled jobs that trigger scene assignments:
 
 ```bash
@@ -349,19 +367,19 @@ LOG_LEVEL=INFO
 
 ### Core Services
 
-| Service | Purpose |
-|---------|---------|
-| `PluginDiscoveryService` | Load and lifecycle-manage channel plugins |
-| `SchedulerService` | APScheduler integration for time-based jobs |
-| `WebSocketManager` | Unified WebSocket connection pool & broadcasting |
-| `DistributionService` | Redis-based content distribution (with memory fallback) |
-| `MQTTPresenceService` | Detect online/offline displays via MQTT LWT |
-| `DisplaySceneService` | Queries and analytics on scene-display assignments |
-| `SceneRefreshService` | Trigger channel content refresh on schedule/demand |
-| `MdnsDiscoveryService` | Discover new displays on LAN via mDNS/Bonjour |
-| `PluginManager` | Enable/disable plugins, manage dev linking |
-| `DevWatcher` | Hot reload channels on file changes (dev only) |
-| `HtmlRendererService` | Shared Chromium for HTML→image rendering |
+| Service                  | Purpose                                                 |
+| ------------------------ | ------------------------------------------------------- |
+| `PluginDiscoveryService` | Load and lifecycle-manage channel plugins               |
+| `SchedulerService`       | APScheduler integration for time-based jobs             |
+| `WebSocketManager`       | Unified WebSocket connection pool & broadcasting        |
+| `DistributionService`    | Redis-based content distribution (with memory fallback) |
+| `MQTTPresenceService`    | Detect online/offline displays via MQTT LWT             |
+| `DisplaySceneService`    | Queries and analytics on scene-display assignments      |
+| `SceneRefreshService`    | Trigger channel content refresh on schedule/demand      |
+| `MdnsDiscoveryService`   | Discover new displays on LAN via mDNS/Bonjour           |
+| `PluginManager`          | Enable/disable plugins, manage dev linking              |
+| `DevWatcher`             | Hot reload channels on file changes (dev only)          |
+| `HtmlRendererService`    | Shared Chromium for HTML→image rendering                |
 
 ### External Service Integrations
 
@@ -392,10 +410,10 @@ async def assign_scene_to_display(display_id, scene_id):
 ### Pattern 2: WebSocket Subscription (Monitoring)
 
 ```javascript
-const ws = new WebSocket('ws://api:5000/ws');
+const ws = new WebSocket("ws://api:5000/ws");
 ws.onmessage = (event) => {
   const { event_type, data } = JSON.parse(event.data);
-  if (event_type === 'channel_status_changed') {
+  if (event_type === "channel_status_changed") {
     // React to channel going online/offline
   }
 };
