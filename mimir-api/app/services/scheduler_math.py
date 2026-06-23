@@ -26,6 +26,8 @@ def compute_approx_seconds(unit: FrequencyUnit, value: int) -> int | None:
     Returns:
         Approximate seconds or None for months
     """
+    if unit == FrequencyUnit.SECOND:
+        return value
     if unit == FrequencyUnit.MINUTE:
         return value * 60
     if unit == FrequencyUnit.HOUR:
@@ -54,6 +56,8 @@ def add_interval(dt: datetime, unit: FrequencyUnit, value: int) -> datetime:
     Raises:
         ValueError: If unit is unknown
     """
+    if unit == FrequencyUnit.SECOND:
+        return dt + timedelta(seconds=value)
     if unit == FrequencyUnit.MINUTE:
         return dt + timedelta(minutes=value)
     if unit == FrequencyUnit.HOUR:

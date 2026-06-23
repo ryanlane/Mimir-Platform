@@ -203,6 +203,7 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
         enabled: scheduleData.enabled,
         freq_unit: scheduleData.freq_unit,
         freq_value: parseInt(scheduleData.freq_value),
+        ...(scheduleData.freq_unit === 'second' ? { jitter_seconds: 0 } : {}),
         action_type: 'refresh_scene',
         scene_ids: [scene.id],
         refresh_method: 'content_refresh'
@@ -216,7 +217,12 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
     if (!currentSchedule?.id || !scheduleData.freq_value || scheduleData.freq_value < 1) return;
     try {
       setScheduleLoading(true);
-      const updates = { freq_unit: scheduleData.freq_unit, freq_value: parseInt(scheduleData.freq_value), enabled: scheduleData.enabled };
+      const updates = {
+        freq_unit: scheduleData.freq_unit,
+        freq_value: parseInt(scheduleData.freq_value),
+        enabled: scheduleData.enabled,
+        ...(scheduleData.freq_unit === 'second' ? { jitter_seconds: 0 } : {}),
+      };
       const resp = await api.updateSchedulerJob(currentSchedule.id, updates);
       const updated = resp.data;
       setCurrentSchedule(updated);

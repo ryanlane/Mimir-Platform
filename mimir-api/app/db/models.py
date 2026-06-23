@@ -30,6 +30,7 @@ class DistributionMode(str, Enum):
 
 class FrequencyUnit(str, Enum):
     """Schedule frequency units"""
+    SECOND = "second"
     MINUTE = "minute"
     HOUR = "hour"
     DAY = "day"

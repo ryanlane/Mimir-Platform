@@ -12,6 +12,7 @@ from .common import TimestampMixin
 
 class FrequencyUnit(str, Enum):
     """Available frequency units for scheduling"""
+    SECOND = "second"
     MINUTE = "minute"
     HOUR = "hour"
     DAY = "day"

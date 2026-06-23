@@ -56,12 +56,16 @@ const ScheduleEditor = ({
                   value={scheduleData.freq_unit}
                   onChange={(e) => onChange('freq_unit', e.target.value)}
                 >
+                  <option value="second">Second(s)</option>
                   <option value="minute">Minute(s)</option>
                   <option value="hour">Hour(s)</option>
                   <option value="day">Day(s)</option>
                   <option value="week">Week(s)</option>
                 </select>
               </div>
+              {scheduleData.freq_unit === 'second' && (
+                <p className="schedule-hint">Minimum effective interval is 30s (scheduler tick rate). Jitter is disabled for second-based schedules.</p>
+              )}
               <div className="schedule-actions">
                 <label className="schedule-enabled">
                   <input
@@ -111,12 +115,16 @@ const ScheduleEditor = ({
                   value={scheduleData.freq_unit}
                   onChange={(e) => onChange('freq_unit', e.target.value)}
                 >
+                  <option value="second">Second(s)</option>
                   <option value="minute">Minute(s)</option>
                   <option value="hour">Hour(s)</option>
                   <option value="day">Day(s)</option>
                   <option value="week">Week(s)</option>
                 </select>
               </div>
+              {scheduleData.freq_unit === 'second' && (
+                <p className="schedule-hint">Minimum effective interval is 30s (scheduler tick rate). Jitter is disabled for second-based schedules.</p>
+              )}
               <div className="schedule-actions">
                 <button
                   type="button"
