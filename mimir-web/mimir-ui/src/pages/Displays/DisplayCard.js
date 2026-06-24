@@ -256,64 +256,69 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
     setManualUpdateLoading(true);
     setManualUpdateError(null);
     setManualUpdateSuccess(false);
+
+    const contentVariant = display.content_variant || display.contentVariant || null;
+    const isPairedDisplay = Boolean(contentVariant);
+
     try {
-      // 1) Pre-flight: call channel request_image with correct payload (matches Postman)
-      try {
-        const channelEntry = Array.isArray(sceneInfo?.channels) ? sceneInfo.channels.find(c => c && typeof c === 'object' && (c.channel_id || c.id)) : null;
-        const channelId = channelEntry?.channel_id || channelEntry?.id || null;
-        if (channelId) {
-          // Derive resolution from display
-          let w = null, h = null;
-          if (Array.isArray(display.resolution) && display.resolution.length >= 2) {
-            w = Number(display.resolution[0]);
-            h = Number(display.resolution[1]);
-          } else if (display.width && display.height) {
-            w = Number(display.width);
-            h = Number(display.height);
+      if (isPairedDisplay) {
+        // Paired displays must refresh as a group so all variants stay in sync —
+        // omitting target_devices triggers a full scene refresh.
+        await apiClient.refreshSceneTargeted(assignedSceneId, {
+          reason: 'manual-ui',
+          force: true,
+          public_host_hint: publicHostHint,
+        });
+      } else {
+        // 1) Pre-flight: call channel request_image with correct payload (matches Postman)
+        try {
+          const channelEntry = Array.isArray(sceneInfo?.channels) ? sceneInfo.channels.find(c => c && typeof c === 'object' && (c.channel_id || c.id)) : null;
+          const channelId = channelEntry?.channel_id || channelEntry?.id || null;
+          if (channelId) {
+            let w = null, h = null;
+            if (Array.isArray(display.resolution) && display.resolution.length >= 2) {
+              w = Number(display.resolution[0]);
+              h = Number(display.resolution[1]);
+            } else if (display.width && display.height) {
+              w = Number(display.width);
+              h = Number(display.height);
+            }
+            if (!(w > 0 && h > 0)) {
+              const ori = (display.orientation || 'landscape').toLowerCase();
+              if (ori === 'portrait') { w = 600; h = 800; }
+              else if (ori === 'square') { w = 600; h = 600; }
+              else { w = 800; h = 600; }
+            }
+            const inferred = w === h ? 'square' : (h > w ? 'portrait' : 'landscape');
+            const orientation = (display.orientation || inferred || 'landscape').toLowerCase();
+            const subChannelId = channelEntry?.subchannel_id || channelEntry?.subChannelId || null;
+            const payload = {
+              settings: {
+                resolution: [w, h],
+                orientation,
+                distribution: 'new',
+                ...(subChannelId ? { subChannelId } : {}),
+              },
+            };
+            await apiClient.requestChannelImage(channelId, payload);
           }
-          // Fallback sane defaults
-          if (!(w > 0 && h > 0)) {
-            const ori = (display.orientation || 'landscape').toLowerCase();
-            if (ori === 'portrait') { w = 600; h = 800; }
-            else if (ori === 'square') { w = 600; h = 600; }
-            else { w = 800; h = 600; }
-          }
-          // Orientation
-          const inferred = w === h ? 'square' : (h > w ? 'portrait' : 'landscape');
-          const orientation = (display.orientation || inferred || 'landscape').toLowerCase();
-          // Optional subchannel (gallery)
-          const subChannelId = channelEntry?.subchannel_id || channelEntry?.subChannelId || null;
-          const payload = {
-            settings: {
-              resolution: [w, h],
-              orientation,
-              distribution: 'new',
-              ...(subChannelId ? { subChannelId } : {}),
-            },
-          };
-          // Fire-and-forget the image request (does not distribute, but validates correct generation path)
-          await apiClient.requestChannelImage(channelId, payload);
+        } catch (preflightErr) {
+          console.warn('Channel preflight request_image failed (continuing to trigger job):', preflightErr?.message || preflightErr);
         }
-      } catch (preflightErr) {
-        // Non-fatal: proceed to trigger scheduler distribution anyway
-        console.warn('Channel preflight request_image failed (continuing to trigger job):', preflightErr?.message || preflightErr);
+
+        // 2) Targeted refresh for just this display
+        const deviceId = display.hostname || display.id;
+        if (!deviceId) throw new Error('Missing device for targeted refresh');
+        await apiClient.refreshSceneTargeted(assignedSceneId, {
+          target_devices: [deviceId],
+          reason: 'manual-ui',
+          force: false,
+          public_host_hint: publicHostHint,
+        });
       }
 
-      // 2) Targeted refresh for just this display
-      const deviceId = display.hostname || display.id;
-      if (!assignedSceneId || !deviceId) {
-        throw new Error('Missing scene or device for targeted refresh');
-      }
-      await apiClient.refreshSceneTargeted(assignedSceneId, {
-        target_devices: [deviceId],
-        reason: 'manual-ui',
-        force: false,
-        public_host_hint: publicHostHint,
-      });
       setManualUpdateSuccess(true);
-      // After triggering the job, attempt a refresh of current image (slight delay may be needed externally)
       onRefresh && onRefresh();
-      // Auto-hide success after short duration
       setTimeout(() => setManualUpdateSuccess(false), 4000);
     } catch (e) {
       setManualUpdateError(e?.response?.data?.detail || e.message || 'Manual update failed');
