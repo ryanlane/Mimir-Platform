@@ -83,6 +83,7 @@ class DisplayClientResponse(DisplayClientBase, TimestampMixin):
     is_online: bool | None = Field(None, alias="isOnline")
     last_seen: datetime | None = Field(None, alias="lastSeen")
     assigned_scene_id: AssignedScene | None = Field(None, alias="assignedSceneId")
+    content_variant: str | None = Field(None, alias="contentVariant")
     current_content_hash: str | None = Field(None, alias="currentContentHash")
     websocket_connection_id: str | None = Field(None, alias="websocketConnectionId")
 

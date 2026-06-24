@@ -478,6 +478,21 @@
   border: 1px solid rgba(34, 197, 94, 0.2);
 }
 
+.variant-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(0, 200, 81, 0.12);
+  color: var(--color-accent, #00C851);
+  border: 1px solid rgba(0, 200, 81, 0.25);
+  margin-left: 4px;
+}
+
 .display-specs {
   font-size: 14px;
   color: var(--color-text-secondary);

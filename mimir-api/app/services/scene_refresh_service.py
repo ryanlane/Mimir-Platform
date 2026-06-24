@@ -212,12 +212,13 @@ class SceneRefreshService:
                             duration_ms=int((time.perf_counter()-start)*1000),
                         )
 
-                    # Group by resolution/orientation (infer orientation from aspect to avoid mismatches)
-                    groups: dict[tuple[int, int, str], list[dict[str, Any]]] = {}
+                    # Group by resolution/orientation/variant (infer orientation from aspect to avoid mismatches)
+                    groups: dict[tuple[int, int, str, str | None], list[dict[str, Any]]] = {}
                     for d in displays:
                         w, h = d["width"], d["height"]
                         inferred_orient = "square" if w == h else ("portrait" if h > w else "landscape")
-                        key = (w, h, inferred_orient)
+                        variant = d.get("content_variant") or None
+                        key = (w, h, inferred_orient, variant)
                         groups.setdefault(key, []).append({**d, "orientation": inferred_orient})
 
                     total_updated = 0
@@ -250,7 +251,7 @@ class SceneRefreshService:
 
                         if distribution_mode == "sequential":
                             # Per-device HTTP requests
-                            for (w, h, orientation), display_group in groups.items():
+                            for (w, h, orientation, variant), display_group in groups.items():
                                 for disp in display_group:
                                     logger.info(
                                         "scene.refresh.device_request scene=%s channel=%s sub=%s device=%s w=%s h=%s orient=%s distribution=%s",
@@ -273,6 +274,8 @@ class SceneRefreshService:
                                     if sc_id:
                                         request_payload["gallery_id"] = sc_id
                                         request_payload["settings"]["subChannelId"] = sc_id
+                                    if variant:
+                                        request_payload["settings"]["content_variant"] = variant
                                     try:
                                         raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
                                     except RuntimeError as e:
@@ -402,7 +405,7 @@ class SceneRefreshService:
                             # End sequential loop
                         else:
                             # Mirror mode: one HTTP request per group, fan-out to displays
-                            for (w, h, orientation), display_group in groups.items():
+                            for (w, h, orientation, variant), display_group in groups.items():
                                 logger.info(
                                     "scene.refresh.group_request scene=%s channel=%s sub=%s w=%s h=%s orient=%s distribution=%s count=%s",
                                     scene_id,
@@ -424,6 +427,8 @@ class SceneRefreshService:
                                 if sc_id:
                                     request_payload["gallery_id"] = sc_id
                                     request_payload["settings"]["subChannelId"] = sc_id
+                                if variant:
+                                    request_payload["settings"]["content_variant"] = variant
                                 try:
                                     raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
                                 except RuntimeError as e:
@@ -649,6 +654,7 @@ class SceneRefreshService:
                             "width": w,
                             "height": h,
                             "orientation": orientation,
+                            "content_variant": None,
                         }
             except (RuntimeError, ValueError, OSError) as e:  # discovery iteration resilience
                 logger.debug("collect_discovered.error scene=%s err=%s", scene.id, type(e).__name__)
@@ -674,6 +680,7 @@ class SceneRefreshService:
                     "width": w,
                     "height": h,
                     "orientation": orientation,
+                    "content_variant": display.content_variant or None,
                 }
         return list(collected.values())
 

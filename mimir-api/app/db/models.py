@@ -160,6 +160,7 @@ class DisplayClient(Base):
 
     # Current assignment - Add proper foreign key relationship in future migration
     assigned_scene_id = Column(String, nullable=True, index=True)  # Will be ForeignKey('scenes.id')
+    content_variant = Column(String, nullable=True)  # Per-display content variant (e.g. "image", "details")
     current_content_hash = Column(String, nullable=True)  # Current content hash
 
     # Metadata

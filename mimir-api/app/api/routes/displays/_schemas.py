@@ -6,6 +6,7 @@ class AssignSceneBody(BaseModel):
     scene_id: str
     subchannel_id: str | None = None
     public_host_hint: str | None = None
+    content_variant: str | None = None
 
 
 class MdnsIngestEvent(BaseModel):

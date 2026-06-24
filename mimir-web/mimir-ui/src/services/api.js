@@ -424,13 +424,16 @@ export const api = {
         display_name: displayName,
         display_location: displayLocation,
       }),
-  assignSceneToDisplay: (displayId, sceneId, subchannelId = null, publicHostHint = null) => {
+  assignSceneToDisplay: (displayId, sceneId, subchannelId = null, publicHostHint = null, contentVariant = null) => {
     const payload = { scene_id: sceneId };
     if (subchannelId) {
       payload.subchannel_id = subchannelId;
     }
     if (publicHostHint) {
       payload.public_host_hint = publicHostHint;
+    }
+    if (contentVariant) {
+      payload.content_variant = contentVariant;
     }
     return apiClient.post(`/displays/${encodeURIComponent(displayId)}/scene`, payload);
   },

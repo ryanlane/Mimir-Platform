@@ -105,6 +105,7 @@ async def assign_scene_to_display(
 
     if db_display:
         db_display.assigned_scene_id = str(body.scene_id)
+        db_display.content_variant = body.content_variant
         db.commit()
 
     refresh_targets = list({
@@ -148,6 +149,7 @@ async def assign_scene_to_display(
         "display_id": display_id,
         "scene_id": body.scene_id,
         "subchannel_id": body.subchannel_id,
+        "content_variant": body.content_variant,
         "published_topic": f"mimir/{target_id}/cmd",
         "assignment_id": assignment_id,
         "initial_refresh": refresh_result.to_dict(),

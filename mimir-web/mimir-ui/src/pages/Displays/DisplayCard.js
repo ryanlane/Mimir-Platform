@@ -626,6 +626,9 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
               <div className="scene-info">
                 <Play size={14} />
                 <span>Program: <strong>{display.assigned_scene_name}</strong></span>
+                {((display.content_variant || display.contentVariant) && (display.content_variant || display.contentVariant) !== 'image') && (
+                  <span className="variant-badge">{(display.content_variant || display.contentVariant) === 'details' ? 'Details' : (display.content_variant || display.contentVariant)}</span>
+                )}
               </div>
               <div className="scene-buttons">
                 {canEditSettings && (

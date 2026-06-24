@@ -18,6 +18,8 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const [error, setError] = useState('');
+  const [contentVariants, setContentVariants] = useState([]);
+  const [selectedVariant, setSelectedVariant] = useState(display.content_variant || display.contentVariant || '');
   const publicHostHint = (() => {
     const host = window.location.hostname;
     if (!host || host === 'localhost' || host === '127.0.0.1') return null;
@@ -40,6 +42,49 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
     loadScenes();
   }, []);
 
+  // Fetch content variants whenever the selected scene changes
+  useEffect(() => {
+    if (!selectedScene) {
+      setContentVariants([]);
+      setSelectedVariant('');
+      return;
+    }
+    const scene = scenes.find(s => s.id === selectedScene);
+    if (!scene || !scene.channels || scene.channels.length === 0) {
+      setContentVariants([]);
+      setSelectedVariant('');
+      return;
+    }
+    let cancelled = false;
+    const fetchVariants = async () => {
+      try {
+        const variantMap = [];
+        for (const ch of scene.channels) {
+          const channelId = ch.channel_id || ch;
+          if (typeof channelId !== 'string') continue;
+          try {
+            const resp = await api.getChannelManifest(channelId);
+            const variants = resp?.data?.capabilities?.content_variants;
+            if (Array.isArray(variants) && variants.length > 0) {
+              for (const v of variants) {
+                if (!variantMap.find(x => x.id === v.id)) variantMap.push(v);
+              }
+            }
+          } catch (_) { /* channel manifest unavailable — skip */ }
+        }
+        if (!cancelled) {
+          setContentVariants(variantMap);
+          if (variantMap.length > 0 && !variantMap.find(v => v.id === selectedVariant)) {
+            setSelectedVariant(variantMap[0].id);
+          }
+        }
+      } catch (_) { /* ignore */ }
+    };
+    fetchVariants();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedScene, scenes]);
+
   const handleAssignScene = async (sceneId) => {
     setAssigning(true);
     setError('');
@@ -61,14 +106,9 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
           }
         }
 
-        // Use appropriate assignment endpoint based on display type
-        if (display.displayType === 'discovered') {
-          await api.assignSceneToDisplay(display.id, sceneId, subchannelId, publicHostHint);
-          console.log(`✅ Scene assigned to discovered display: ${sceneId} -> ${display.name}${subchannelId ? ` (subchannel: ${subchannelId})` : ''}`);
-        } else {
-          await api.assignSceneToDisplay(display.id, sceneId, subchannelId, publicHostHint);
-          console.log(`✅ Scene assigned to registered display: ${sceneId} -> ${display.name}${subchannelId ? ` (subchannel: ${subchannelId})` : ''}`);
-        }
+        const variantToSend = contentVariants.length > 0 ? (selectedVariant || contentVariants[0].id) : null;
+        await api.assignSceneToDisplay(display.id, sceneId, subchannelId, publicHostHint, variantToSend);
+        console.log(`✅ Scene assigned: ${sceneId} -> ${display.name}${subchannelId ? ` (sub: ${subchannelId})` : ''}${variantToSend ? ` (variant: ${variantToSend})` : ''}`);
       } else {
         // Unassign scene
         if (display.displayType === 'discovered') {
@@ -334,6 +374,24 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                 )}
               </div>
 
+              {contentVariants.length > 0 && (
+                <div className="form-group" style={{ marginTop: '1rem' }}>
+                  <label className="form-label">Content</label>
+                  <select
+                    className="form-select"
+                    value={selectedVariant}
+                    onChange={e => setSelectedVariant(e.target.value)}
+                  >
+                    {contentVariants.map(v => (
+                      <option key={v.id} value={v.id}>{v.label}</option>
+                    ))}
+                  </select>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
+                    Choose what this display shows from the program.
+                  </p>
+                </div>
+              )}
+
               <div className="assignment-preview">
                 {selectedScene && selectedSceneObj && (
                   <div className="preview-info">
@@ -345,6 +403,9 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
                     <div className="preview-details">
                       <span>Resolution: {display.resolution[0]}×{display.resolution[1]}</span>
                       <span>Orientation: {formatOrientationLabel(display.orientation)}</span>
+                      {contentVariants.length > 0 && selectedVariant && (
+                        <span>Content: {contentVariants.find(v => v.id === selectedVariant)?.label || selectedVariant}</span>
+                      )}
                     </div>
                   </div>
                 )}
