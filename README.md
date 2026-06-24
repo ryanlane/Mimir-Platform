@@ -216,3 +216,19 @@ see [WINDOWS_MDNS_FIREWALL.md](WINDOWS_MDNS_FIREWALL.md) and
   `REACT_APP_ENABLE_PWA=true` at build time.
 - pgAdmin and the DB/Redis ports are bound to `127.0.0.1` — use an SSH tunnel
   for remote access, e.g. `ssh -L 5050:127.0.0.1:5050 user@server`.
+
+## License
+
+Mimir is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+See [`LICENSE`](LICENSE) for the full text.
+
+**Free for:** personal use, non-profits, and open source projects (under AGPL terms).
+
+**Commercial license:** If you want to use Mimir in a proprietary product or service
+without the AGPL's source-sharing obligations, a commercial license is available.
+See [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md) or contact futile@gmail.com.
+
+**Contributing:** By submitting a pull request you agree to the terms in [`CLA.md`](CLA.md),
+which allows Mimir to be offered under both open source and commercial licenses.
+
+Copyright (C) 2026 Ryan Lane
