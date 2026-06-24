@@ -446,6 +446,7 @@ class Settings(BaseSettings):
             self.public_host,
             self.public_mdns_host,
             self._discover_primary_ipv4(),
+            "mimir.local",       # default mDNS name advertised by the discovery service
             f"{hostname}.local",
             hostname,
         ]
