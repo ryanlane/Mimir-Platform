@@ -46,7 +46,7 @@ Access-Control-Allow-Origin: *
 Access-Control-Allow-Credentials: true
 
 // ✅ Recommended (working)
-Access-Control-Allow-Origin: http://localhost:3000, http://mimir-server:3000
+Access-Control-Allow-Origin: http://localhost:3000, http://mimir.local:3000
 Access-Control-Allow-Credentials: true
 Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
 Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With
@@ -57,13 +57,13 @@ Access-Control-Max-Age: 86400
 
 ```bash
 # Development
-CORS_ORIGINS=http://localhost:3000,http://mimir-server:3000,http://127.0.0.1:3000
+CORS_ORIGINS=http://localhost:3000,http://mimir.local:3000,http://127.0.0.1:3000
 
 # Production  
 CORS_ORIGINS=https://your-mimir-frontend.com,https://admin.mimir-platform.com
 
 # Local network (for testing)
-CORS_ORIGINS=http://mimir-server:3000,http://192.168.1.*:3000
+CORS_ORIGINS=http://mimir.local:3000,http://192.168.1.*:3000
 ```
 
 ---
@@ -114,7 +114,7 @@ const cors = require('cors');
 const corsOptions = {
   origin: process.env.CORS_ORIGINS?.split(',') || [
     'http://localhost:3000',
-    'http://mimir-server:3000'
+    'http://mimir.local:3000'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -135,7 +135,7 @@ app.use(cors(corsOptions));
 app.use((req, res, next) => {
   const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
     'http://localhost:3000',
-    'http://mimir-server:3000'
+    'http://mimir.local:3000'
   ];
   
   const origin = req.headers.origin;
@@ -163,21 +163,21 @@ app.use((req, res, next) => {
 ### **Test CORS with curl:**
 ```bash
 # Test preflight request
-curl -H "Origin: http://mimir-server:3000" \
+curl -H "Origin: http://mimir.local:3000" \
      -H "Access-Control-Request-Method: POST" \
      -H "Access-Control-Request-Headers: Content-Type" \
      -X OPTIONS \
-     http://mimir-server:5000/api/channels/photo-frame/upload
+     http://mimir.local:5000/api/channels/photo-frame/upload
 
 # Expected response should include:
-# Access-Control-Allow-Origin: http://mimir-server:3000
+# Access-Control-Allow-Origin: http://mimir.local:3000
 # Access-Control-Allow-Credentials: true
 ```
 
 ### **Test from browser console:**
 ```javascript
 // This should work after CORS fix
-fetch('http://mimir-server:5000/api/channels/photo-frame/images', {
+fetch('http://mimir.local:5000/api/channels/photo-frame/images', {
   credentials: 'include'
 })
 .then(response => console.log('✅ CORS working:', response.status))
@@ -244,7 +244,7 @@ These endpoints are currently broken and need immediate CORS fixes:
 If you need to test the CORS changes or have questions about the frontend requirements:
 
 **Frontend Endpoints Used:**
-- Development: `http://localhost:3000`, `http://mimir-server:3000`
+- Development: `http://localhost:3000`, `http://mimir.local:3000`
 - Web Components: Load from `{server}/api/channels/{id}/ui/component.js`
 - API Calls: `{server}/api/channels/{id}/*`
 

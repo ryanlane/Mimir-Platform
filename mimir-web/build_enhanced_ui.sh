@@ -52,8 +52,8 @@ if [ -d "$BUILD_PATH" ]; then
     echo "   • Distribution: http://localhost:3000/distribution"
     echo "   • Displays: http://localhost:3000/displays"
     echo ""
-    echo "📡 WebSocket connects to: ws://mimir-server:5000/ws"
-    echo "🌐 API connects to: http://mimir-server:5000/api/"
+    echo "📡 WebSocket connects to: ws://mimir.local:5000/ws"
+    echo "🌐 API connects to: http://mimir.local:5000/api/"
     
     # Ask if user wants to start development server
     echo ""
