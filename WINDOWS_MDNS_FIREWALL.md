@@ -12,7 +12,7 @@ On Windows, the most common reasons discovery shows **0 devices** are:
 In PowerShell, set the agent to your Windows LAN IP (the IP on the same subnet as the displays):
 
 ```powershell
-$env:MIMIR_MDNS_INTERFACE='192.168.1.28'
+$env:MIMIR_MDNS_INTERFACE='192.168.1.x'
 $env:LOG_LEVEL='debug'
 $env:MIMIR_BROWSE_ALL='true'
 npm start

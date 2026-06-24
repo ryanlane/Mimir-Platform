@@ -13,7 +13,7 @@
 # -----------------------------------------------------------------------------
 # Usage:
 #   ./api-service/db_migrate_remote.sh \
-#       --host oak --user mimir \
+#       --host mimir-server --user mimir \
 #       --path /opt/mimir/mimir-api \
 #       --expect-push-columns
 #

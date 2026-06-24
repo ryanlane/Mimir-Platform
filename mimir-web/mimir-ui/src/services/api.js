@@ -113,7 +113,7 @@ if (typeof window !== 'undefined') {
 
 // Rewrite server-media URLs to the origin this browser actually uses for the
 // API. The backend builds absolute media URLs from its public LAN identity
-// (e.g. http://192.168.1.28:5000/media/...), which devices on the LAN can
+// (e.g. http://192.168.1.x:5000/media/...), which devices on the LAN can
 // reach but the browser sometimes cannot (e.g. Windows can't loop back to its
 // own LAN IP for a WSL/Docker-published port). Only known server-media paths
 // are rewritten; external URLs pass through untouched.

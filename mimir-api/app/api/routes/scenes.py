@@ -303,7 +303,7 @@ class SceneRefreshRequest(BaseModel):
     public_host_hint: str | None = Field(
         default=None,
         description="Optional LAN-reachable host or URL for generated media URLs.",
-        example="192.168.1.28",
+        example="192.168.1.x",
     )
 
 

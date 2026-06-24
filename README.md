@@ -102,6 +102,19 @@ docker compose -f docker-compose.dev.yml --profile tools up -d --build   # http:
 | Redis | localhost:6379 | same |
 | MQTT (anonymous, dev) | localhost:1883 | same |
 
+### LAN URLs (production server)
+
+When running on a native Linux server, Mimir advertises itself as `mimir.local`
+via mDNS. Other devices on the network can reach it at:
+
+| What | URL |
+|---|---|
+| Web UI | http://mimir.local:8080 |
+| API | http://mimir.local:5000 |
+
+No IP address configuration is needed for most setups. `PUBLIC_HOST` in `.env`
+is only required if mDNS doesn't reach your displays (e.g. separate VLANs).
+
 ## Production deployment
 
 **Recommended:** deploy released GHCR images with the auto-update timer from
@@ -112,7 +125,7 @@ The server then converges to the pinned versions in `versions.yml` every
 **From source** (native Linux server with displays on the LAN):
 
 ```bash
-cp .env.hybrid.example .env     # set PUBLIC_HOST / MQTT_PUBLIC_HOST to the LAN IP
+cp .env.hybrid.example .env     # PUBLIC_HOST optional — mDNS handles LAN discovery
 bash scripts/phase0_harden.sh   # secrets, mosquitto passwd, hardened restart
 task up:build
 ```
@@ -136,8 +149,8 @@ password file, bridge networking.
 ## Configuration
 
 - `.env.example` — local/WSL development (PUBLIC_HOST can stay blank)
-- `.env.hybrid.example` — production server template (LAN identity, MQTT auth,
-  Postgres password)
+- `.env.hybrid.example` — production server template (PUBLIC_HOST optional —
+  mDNS handles LAN discovery; set it only for multi-VLAN or non-mDNS environments)
 - `mimir-api/mimir-api.docker.env` — Docker defaults for the API (no secrets);
   compose `environment:` entries override it
 - The web UI auto-detects the API URL at runtime and can be overridden in the

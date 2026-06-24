@@ -39,7 +39,7 @@ const sampleFeed = [
   {
     ts: mkTs(7_000),
     type: 'mqtt',
-    payload: { topic: 'mimir/display-03/cmd', payload: {"type": "display_image", "image_url": "http://oak.local:5000/media/swap/45510da1-68cc-4c30-b66d-fe21a9a988ae/colorframe05/ac669a8cc2d94d99a6aa85bbb4a13746.jpg", "assignment_id": "display-colorf-1759423369", "timestamp": "2025-10-02T16:42:49.416536+00:00", "image_format": "jpeg"}
+    payload: { topic: 'mimir/display-03/cmd', payload: {"type": "display_image", "image_url": "http://mimir.local:5000/media/swap/45510da1-68cc-4c30-b66d-fe21a9a988ae/display-pi-01/ac669a8cc2d94d99a6aa85bbb4a13746.jpg", "assignment_id": "display-colorf-1759423369", "timestamp": "2025-10-02T16:42:49.416536+00:00", "image_format": "jpeg"}
  }
   },
   {

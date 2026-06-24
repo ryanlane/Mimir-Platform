@@ -13,9 +13,9 @@ The OpenTelemetry metrics modernization for Mimir API has been **successfully im
 
 2. **✅ Production Deployment Working**
    ```
-   Aug 31 11:50:49 oak mimir-api[1525868]: "📊 OpenTelemetry metrics endpoint mounted at /metrics"
-   Aug 31 11:50:49 oak mimir-api[1525868]: "OpenTelemetry metrics collection setup completed successfully"
-   Aug 31 11:50:49 oak mimir-api[1525868]: "📊 OpenTelemetry metrics initialized"
+   Aug 31 11:50:49 mimir-server mimir-api[1525868]: "📊 OpenTelemetry metrics endpoint mounted at /metrics"
+   Aug 31 11:50:49 mimir-server mimir-api[1525868]: "OpenTelemetry metrics collection setup completed successfully"
+   Aug 31 11:50:49 mimir-server mimir-api[1525868]: "📊 OpenTelemetry metrics initialized"
    ```
 
 3. **✅ Fixed Import Issues**

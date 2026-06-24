@@ -54,7 +54,7 @@ from app.services.scheduler_worker import SchedulerWorker
 def _dev_lan_origin_regex() -> str | None:
     if not settings.debug:
         return None
-    # Allow common private-network dev origins such as http://192.168.1.28:3000.
+    # Allow common private-network dev origins such as http://192.168.1.x:3000.
     return r"^https?://((localhost|127\.0\.0\.1)(:\d+)?|(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?)$"
 
 

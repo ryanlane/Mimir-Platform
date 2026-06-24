@@ -16,7 +16,7 @@ def _clean_public_env(monkeypatch):
         "PUBLIC_SCHEME", "API_PUBLIC_SCHEME",
     ):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(socket, "gethostname", lambda: "oak")
+    monkeypatch.setattr(socket, "gethostname", lambda: "mimir-server")
 
 
 def test_public_base_url_prefers_primary_ipv4_over_hostname(monkeypatch):
@@ -37,4 +37,4 @@ def test_public_base_url_prefers_mdns_name_over_bare_hostname(monkeypatch):
     # bare hostname, which other machines cannot resolve.
     monkeypatch.setattr(Settings, "_discover_primary_ipv4", staticmethod(lambda: None))
 
-    assert Settings().public_base_url == "http://oak.local:5000"
+    assert Settings().public_base_url == "http://mimir.local:5000"

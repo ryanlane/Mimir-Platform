@@ -133,24 +133,24 @@ class TestConvertImageToUrl:
         monkeypatch.setattr(
             srs_module,
             "settings",
-            SimpleNamespace(public_base_url="http://oak.local:5000"),
+            SimpleNamespace(public_base_url="http://mimir.local:5000"),
         )
         return SceneRefreshService()
 
     def test_channels_path_kept(self, svc):
         result = svc._convert_image_to_url({"image": "/channels/photo_frame/latest.jpg"})
-        assert result == "http://oak.local:5000/channels/photo_frame/latest.jpg"
+        assert result == "http://mimir.local:5000/channels/photo_frame/latest.jpg"
 
     def test_root_path_prefixed_with_channels(self, svc):
         result = svc._convert_image_to_url({"image": "/img.jpg"})
-        assert result == "http://oak.local:5000/channels/img.jpg"
+        assert result == "http://mimir.local:5000/channels/img.jpg"
 
     def test_long_base64_string_returns_none(self, svc):
         assert svc._convert_image_to_url({"image": "A" * 200}) is None
 
     def test_filename_key_builds_photo_frame_url(self, svc):
         result = svc._convert_image_to_url({"filename": "photo.jpg"})
-        assert result == "http://oak.local:5000/channels/photo_frame/uploads/photo.jpg"
+        assert result == "http://mimir.local:5000/channels/photo_frame/uploads/photo.jpg"
 
     def test_empty_dict_returns_none(self, svc):
         assert svc._convert_image_to_url({}) is None
@@ -252,7 +252,7 @@ class TestFingerprintGating:
         )
         monkeypatch.setattr(
             srs_module, "save_swap_image",
-            MagicMock(return_value=(None, "http://oak.local:5000/swap/s1/img.png", True)),
+            MagicMock(return_value=(None, "http://mimir.local:5000/swap/s1/img.png", True)),
         )
         monkeypatch.setattr(srs_module.mqtt_scene_service, "send_display_image", AsyncMock(return_value=True))
         monkeypatch.setattr(srs_module, "DisplayImagePersistenceService", MagicMock())
@@ -310,7 +310,7 @@ class TestFingerprintGating:
 @pytest.mark.unit
 class TestHairpinFix:
     """
-    The hairpin bug: channel HTTP requests used public_base_url (e.g. http://oak.local:5000),
+    The hairpin bug: channel HTTP requests used public_base_url (e.g. http://mimir.local:5000),
     which timed out after 15 s from inside bridge-networked containers.
     Fix: _request_channel_image_http_blocking uses settings.internal_api_base_url instead.
     """
@@ -327,7 +327,7 @@ class TestHairpinFix:
             "settings",
             SimpleNamespace(
                 internal_api_base_url="http://localhost:5000",
-                public_base_url="http://oak.local:5000",
+                public_base_url="http://mimir.local:5000",
                 channel_http_timeout_seconds=15,
             ),
         )
@@ -341,7 +341,7 @@ class TestHairpinFix:
             service._request_channel_image_http_blocking("photo-frame", {})
 
         assert captured[0].startswith("http://localhost:5000")
-        assert "oak.local" not in captured[0]
+        assert "mimir.local" not in captured[0]
 
     def test_targets_channel_request_image_endpoint(self, service, monkeypatch):
         captured = self._intercept(monkeypatch)

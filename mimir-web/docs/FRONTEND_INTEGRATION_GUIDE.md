@@ -318,7 +318,7 @@ Access-Control-Allow-Credentials: true
 ## 🚀 Live Testing
 
 The channel has been tested against the live API service:
-- **Endpoint**: `oak:5000`
+- **Endpoint**: `mimir-server:5000`
 - **Status**: ✅ All endpoints functional
 - **Images**: 7 test images loaded
 - **Settings**: Enhanced settings validated

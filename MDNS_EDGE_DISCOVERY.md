@@ -87,7 +87,7 @@ From `service/mimir-discovery-node` (PowerShell):
 
 - `npm install`
 - `$env:MIMIR_API_BASE='http://127.0.0.1:5000'`
-- `$env:MIMIR_MDNS_INTERFACE='192.168.1.28'`  # common fix on Windows if you have VPN/Docker/WSL adapters
+- `$env:MIMIR_MDNS_INTERFACE='192.168.1.x'`  # common fix on Windows if you have VPN/Docker/WSL adapters
 - `npm start`
 
 If discovery still finds 0 devices on Windows, see:

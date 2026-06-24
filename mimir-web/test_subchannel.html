@@ -13,7 +13,7 @@
             
             try {
                 // Test the subchannel requirements API
-                const response = await fetch('http://oak:5000/api/channels/com.epaperframe.photoframe/subchannel-config');
+                const response = await fetch('http://mimir-server:5000/api/channels/com.epaperframe.photoframe/subchannel-config');
                 const data = await response.json();
                 
                 resultsDiv.innerHTML = `
