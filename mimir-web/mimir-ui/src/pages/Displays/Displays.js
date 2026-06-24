@@ -1,6 +1,6 @@
 // Multi-Display Management page for v2.3 API
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers, Link2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -898,6 +898,26 @@ const Displays = () => {
     return true;
   });
 
+  // Compute content-paired groups: displays sharing a scene where ≥1 has a content_variant
+  const { pairedGroups, unpairedDisplays } = useMemo(() => {
+    const byScene = {};
+    filteredDisplays.forEach(d => {
+      const sid = d.assigned_scene_id;
+      if (!sid) return;
+      if (!byScene[sid]) byScene[sid] = [];
+      byScene[sid].push(d);
+    });
+    const pairedIds = new Set();
+    const pairedGroups = [];
+    Object.entries(byScene).forEach(([sceneId, group]) => {
+      if (group.length >= 2 && group.some(d => d.content_variant || d.contentVariant)) {
+        pairedGroups.push({ sceneId, displays: group, sceneName: group[0].assigned_scene_name || group[0].assignedSceneName || 'Program' });
+        group.forEach(d => pairedIds.add(d.id));
+      }
+    });
+    return { pairedGroups, unpairedDisplays: filteredDisplays.filter(d => !pairedIds.has(d.id)) };
+  }, [filteredDisplays]);
+
   // Get unique locations and tags for filter options
   const locations = [...new Set((Array.isArray(displays) ? displays : []).map(d => d.location).filter(Boolean))];
   const tags = [...new Set((Array.isArray(displays) ? displays : []).flatMap(d => d.tags || []))];
@@ -935,6 +955,62 @@ const Displays = () => {
       </div>
     );
   }
+
+  const renderCard = (display, paired) => (
+    <div
+      key={display.id}
+      className={`display-card-wrapper ${panelDisplay?.id === display.id ? 'display-card-wrapper--active' : ''}`}
+      onClick={(e) => {
+        if (!e.target.closest('button, a, input, .display-thumbnail')) {
+          setPanelDisplay(prev => prev?.id === display.id ? null : display);
+        }
+      }}
+    >
+      <DisplayCard
+        display={display}
+        paired={paired}
+        onAssignScene={(d) => {
+          setSelectedDisplay(d);
+          setShowSceneAssignment(true);
+        }}
+        onConfigure={handlePairDisplay}
+        configureStatus={configStatus[display.id]}
+        onEdit={(d, action) => {
+          if (action === 'approve' && d.displayType === 'discovered') {
+            setDisplays(prev => prev.map(x => x.id === d.id ? { ...x, approving: true } : x));
+            api.approveDiscoveredDisplay(d.id)
+              .then(() => refreshDisplays())
+              .catch(err => {
+                console.error('Approve failed', err);
+                setDisplays(prev => prev.map(x => x.id === d.id ? { ...x, approving: false, approve_error: err.message } : x));
+              });
+          } else if (action === 'reject' && d.displayType === 'discovered') {
+            const original = displays;
+            setDisplays(prev => prev.filter(x => x.id !== d.id));
+            api.rejectDiscoveredDisplay(d.id)
+              .then(() => refreshDisplays())
+              .catch(err => {
+                console.error('Reject failed', err);
+                setDisplays(original);
+              });
+          } else if (action === 'register' && d.displayType === 'discovered') {
+            setSelectedDisplay({
+              ...d,
+              name: d.name || d.service_name,
+              ip_address: d.addresses?.[0] || d.ip_address,
+              port: d.webhook_port || d.port,
+              resolution: d.resolution || [d.width, d.height],
+              orientation: d.orientation || 'landscape'
+            });
+          } else if (action === 'settings') {
+            openDisplaySettings(d);
+          }
+        }}
+        onDelete={handleDeleteDisplay}
+        onRefresh={refreshDisplays}
+      />
+    </div>
+  );
 
   return (
     <PullToRefresh onRefresh={refreshDisplays}>
@@ -1151,60 +1227,19 @@ const Displays = () => {
         </div>
       ) : (
         <div className="displays-grid">
-          {filteredDisplays.map((display) => (
-            <div
-              key={display.id}
-              className={`display-card-wrapper ${panelDisplay?.id === display.id ? 'display-card-wrapper--active' : ''}`}
-              onClick={(e) => {
-                if (!e.target.closest('button, a, input, .display-thumbnail')) {
-                  setPanelDisplay(prev => prev?.id === display.id ? null : display);
-                }
-              }}
-            >
-              <DisplayCard
-                display={display}
-                onAssignScene={(d) => {
-                  setSelectedDisplay(d);
-                  setShowSceneAssignment(true);
-                }}
-                onConfigure={handlePairDisplay}
-                configureStatus={configStatus[display.id]}
-                onEdit={(d, action) => {
-                  if (action === 'approve' && d.displayType === 'discovered') {
-                    setDisplays(prev => prev.map(x => x.id === d.id ? { ...x, approving: true } : x));
-                    api.approveDiscoveredDisplay(d.id)
-                      .then(() => refreshDisplays())
-                      .catch(err => {
-                        console.error('Approve failed', err);
-                        setDisplays(prev => prev.map(x => x.id === d.id ? { ...x, approving: false, approve_error: err.message } : x));
-                      });
-                  } else if (action === 'reject' && d.displayType === 'discovered') {
-                    const original = displays;
-                    setDisplays(prev => prev.filter(x => x.id !== d.id));
-                    api.rejectDiscoveredDisplay(d.id)
-                      .then(() => refreshDisplays())
-                      .catch(err => {
-                        console.error('Reject failed', err);
-                        setDisplays(original);
-                      });
-                  } else if (action === 'register' && d.displayType === 'discovered') {
-                    setSelectedDisplay({
-                      ...d,
-                      name: d.name || d.service_name,
-                      ip_address: d.addresses?.[0] || d.ip_address,
-                      port: d.webhook_port || d.port,
-                      resolution: d.resolution || [d.width, d.height],
-                      orientation: d.orientation || 'landscape'
-                    });
-                  } else if (action === 'settings') {
-                    openDisplaySettings(d);
-                  }
-                }}
-                onDelete={handleDeleteDisplay}
-                onRefresh={refreshDisplays}
-              />
+          {pairedGroups.map(group => (
+            <div key={group.sceneId} className="paired-group">
+              <div className="paired-group-header">
+                <Link2 size={11} />
+                <span className="paired-group-scene">{group.sceneName}</span>
+                <span className="paired-group-label">Content Paired</span>
+              </div>
+              <div className="paired-group-cards">
+                {group.displays.map(display => renderCard(display, true))}
+              </div>
             </div>
           ))}
+          {unpairedDisplays.map(display => renderCard(display, false))}
         </div>
       )}
 

@@ -34,7 +34,7 @@ function isVersionBehind(current, desired) {
   return false;
 }
 
-const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onConfigure, configureStatus, apiClient = api }) => {
+const DisplayCard = ({ display, paired = false, onAssignScene, onEdit, onDelete, onRefresh, onConfigure, configureStatus, apiClient = api }) => {
   // const [imageLoading, setImageLoading] = useState(false); // (unused after image section commented out)
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -631,9 +631,13 @@ const DisplayCard = ({ display, onAssignScene, onEdit, onDelete, onRefresh, onCo
               <div className="scene-info">
                 <Play size={14} />
                 <span>Program: <strong>{display.assigned_scene_name}</strong></span>
-                {((display.content_variant || display.contentVariant) && (display.content_variant || display.contentVariant) !== 'image') && (
-                  <span className="variant-badge">{(display.content_variant || display.contentVariant) === 'details' ? 'Details' : (display.content_variant || display.contentVariant)}</span>
-                )}
+                {(() => {
+                  const v = display.content_variant || display.contentVariant;
+                  if (!v) return null;
+                  if (!paired && v === 'image') return null;
+                  const label = v === 'image' ? 'Image' : v === 'details' ? 'Details' : v;
+                  return <span className={`variant-badge variant-badge--${v}`}>{label}</span>;
+                })()}
               </div>
               <div className="scene-buttons">
                 {canEditSettings && (

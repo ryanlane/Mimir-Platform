@@ -221,6 +221,14 @@ class SceneRefreshService:
                         key = (w, h, inferred_orient, variant)
                         groups.setdefault(key, []).append({**d, "orientation": inferred_orient})
 
+                    # Primary/image variants must be processed before supplementary variants
+                    # (e.g. "details") so that _last_shown is populated before the details
+                    # render reads from it. None and "image" sort before everything else.
+                    ordered_groups = sorted(
+                        groups.items(),
+                        key=lambda kv: (0 if kv[0][3] in (None, "image") else 1, kv[0][3] or ""),
+                    )
+
                     total_updated = 0
                     errors: list[str] = []
                     sample_url: str | None = None
@@ -251,7 +259,7 @@ class SceneRefreshService:
 
                         if distribution_mode == "sequential":
                             # Per-device HTTP requests
-                            for (w, h, orientation, variant), display_group in groups.items():
+                            for (w, h, orientation, variant), display_group in ordered_groups:
                                 for disp in display_group:
                                     logger.info(
                                         "scene.refresh.device_request scene=%s channel=%s sub=%s device=%s w=%s h=%s orient=%s distribution=%s",
@@ -405,7 +413,7 @@ class SceneRefreshService:
                             # End sequential loop
                         else:
                             # Mirror mode: one HTTP request per group, fan-out to displays
-                            for (w, h, orientation, variant), display_group in groups.items():
+                            for (w, h, orientation, variant), display_group in ordered_groups:
                                 logger.info(
                                     "scene.refresh.group_request scene=%s channel=%s sub=%s w=%s h=%s orient=%s distribution=%s count=%s",
                                     scene_id,

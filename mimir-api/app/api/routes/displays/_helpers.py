@@ -536,6 +536,7 @@ def _build_registered_display_response(client: DisplayClient) -> dict[str, objec
         'is_online': client.is_online,
         'last_seen': client.last_seen,
         'assigned_scene_id': assigned_scene,
+        'content_variant': client.content_variant,
         'current_content_hash': client.current_content_hash,
         'websocket_connection_id': client.websocket_connection_id,
         'created_at': getattr(client, 'created_at', None),
