@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Runtime deps
+# System runtime deps — cached independently of Python packages
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -14,10 +14,18 @@ RUN apt-get update \
       ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./requirements.txt
+# Playwright browser in its own layer, isolated from the rest of requirements.
+# Copying playwright-version.txt separately means changes to requirements.txt
+# (other packages) don't re-download Chromium (~150 MB, ~5 min on arm64).
+# This layer only busts when the playwright version pin itself changes.
+COPY playwright-version.txt ./
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir -r playwright-version.txt \
     && playwright install --with-deps chromium
+
+# Install remaining Python dependencies
+COPY requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -29,5 +37,4 @@ RUN mkdir -p /var/lib/mimir-api \
 
 EXPOSE 5000
 
-# Default: run API on 5000; override in compose if desired
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]
