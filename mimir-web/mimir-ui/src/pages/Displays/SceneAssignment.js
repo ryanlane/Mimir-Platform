@@ -30,7 +30,12 @@ const SceneAssignment = ({ display, onClose, onSuccess }) => {
     const loadScenes = async () => {
       try {
         const response = await api.getScenes();
-        setScenes(response.data.scenes || []);
+        const loaded = response.data.scenes || [];
+        setScenes(loaded);
+        if (display.assigned_scene_id) {
+          const current = loaded.find(s => s.id === display.assigned_scene_id);
+          if (current) setQuery(current.name);
+        }
       } catch (error) {
         console.error('Error loading scenes:', error);
         setError('Failed to load scenes');
