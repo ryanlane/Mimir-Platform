@@ -387,6 +387,8 @@ class MdnsDiscoveryService:
                 existing.is_online = True
                 existing.addresses = display.addresses
                 existing.properties = display.properties
+                if display.webhook_port is not None:
+                    existing.webhook_port = display.webhook_port
                 logger.debug(f"Updated discovered display: {display.display_name} ({display.hostname})")
 
                 # Record metrics for display update
@@ -408,6 +410,27 @@ class MdnsDiscoveryService:
     def _on_display_updated(self, display: DiscoveredDisplay):
         """Handle updated display"""
         self._on_display_discovered(display)  # Same logic as discovery
+
+    def forget_display(self, display_id: str) -> bool:
+        """Remove a display from the in-memory discovery cache by display_id.
+
+        Called when a display is deleted/unpaired so it stops appearing in the
+        Screens UI. Returns True if an entry was removed, False if not found.
+        """
+        with self._lock:
+            service_name = self.display_id_to_service_name.get(display_id)
+            if not service_name:
+                # Fallback: scan by display_id in case the id map is stale
+                for sn, d in list(self.discovered_displays.items()):
+                    if d.display_id == display_id:
+                        service_name = sn
+                        break
+            if service_name:
+                self.discovered_displays.pop(service_name, None)
+                self.display_id_to_service_name.pop(display_id, None)
+                logger.info("Evicted display %s (%s) from discovery cache", display_id, service_name)
+                return True
+            return False
 
     def _on_display_lost(self, service_name: str):
         """Handle lost display"""
@@ -580,6 +603,16 @@ class MdnsDiscoveryService:
             val = cap.get(key)
             if isinstance(val, bool):
                 props[key] = "true" if val else "false"
+
+        # Webhook port — allows pairing to work even when the display was
+        # discovered via heartbeat before mDNS fired. Clients >= current emit
+        # this so the server never gets stuck with webhook_port=None.
+        webhook_port = hb.get("webhook_port")
+        if webhook_port is not None:
+            try:
+                display_obj.webhook_port = int(webhook_port)
+            except (ValueError, TypeError):
+                pass
 
         # Version reporting (Phase 2): clients >= 1.0.4 include these in
         # heartbeat/status payloads. Drives the fleet panel and OTA rollouts.

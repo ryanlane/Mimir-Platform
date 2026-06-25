@@ -270,20 +270,31 @@ async def update_display_client(
 async def delete_display_client(display_id: str, db: Session = Depends(get_db)):
     """Delete a registered display from the service side.
 
-    This is the service-side reset path for a device that has been wiped or
-    needs to be re-paired. If the device is still discoverable over mDNS after
-    deletion, it will reappear in the UI as an unpaired discovered display.
+    Works for both registered (DB) and discovered-only displays. Discovered-only
+    displays (seen via mDNS/MQTT but never fully paired) are evicted from the
+    discovery cache so they stop appearing in the UI.
+
+    If the device is still on the network after deletion it will reappear as an
+    unpaired discovered display.
     """
     client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
-    if not client:
+
+    deleted_leases = 0
+    deleted_images = 0
+
+    if client:
+        deleted_leases = db.query(ContentLease).filter(ContentLease.display_id == display_id).delete(synchronize_session=False)
+        deleted_images = db.query(DisplaySceneImage).filter(DisplaySceneImage.display_id == display_id).delete(synchronize_session=False)
+        db.delete(client)
+        db.commit()
+        display_last_image_store.delete(display_id)
+
+    # Always evict from the live discovery cache so the display disappears from
+    # the UI immediately, even if the device was never fully paired (DB-only).
+    cache_evicted = mdns_discovery_service.forget_display(display_id)
+
+    if not client and not cache_evicted:
         raise HTTPException(status_code=404, detail="Display client not found")
-
-    deleted_leases = db.query(ContentLease).filter(ContentLease.display_id == display_id).delete(synchronize_session=False)
-    deleted_images = db.query(DisplaySceneImage).filter(DisplaySceneImage.display_id == display_id).delete(synchronize_session=False)
-    db.delete(client)
-    db.commit()
-
-    display_last_image_store.delete(display_id)
 
     return {
         "message": "Display client deleted successfully",

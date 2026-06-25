@@ -268,17 +268,22 @@ tasks:
   # ============================================================================
 
   display:deploy:
-    desc: "Deploy latest code to a display over SSH (usage: task display:deploy -- pi@192.168.1.x)"
+    desc: "Deploy latest code to a display over SSH (usage: task display:deploy -- user@host)"
     summary: |
       Copies the client repo to the display and runs update_display.sh.
-      Example: task display:deploy -- pi@colorframe05.local
+      Example: task display:deploy -- ryan@display-pi-01.local
+      Uses SSH ControlMaster so rsync and the install step share one session.
     cmds:
       - |
         TARGET={{.CLI_ARGS}}
         if [ -z "$TARGET" ]; then echo "Usage: task display:deploy -- user@host"; exit 1; fi
+        SOCK="/tmp/mimir-deploy-ctl-${USER}-$$"
+        SSH_OPTS="-o ControlMaster=auto -o ControlPath=${SOCK} -o ControlPersist=60"
+        trap "ssh -O exit -o ControlPath=${SOCK} ${TARGET} 2>/dev/null || true" EXIT
         rsync -az --exclude .venv --exclude __pycache__ --exclude .git \
+          -e "ssh ${SSH_OPTS}" \
           ../mimir-display/ ${TARGET}:/opt/mimir-display/
-        ssh ${TARGET} "cd /opt/mimir-display && sudo bash scripts/update_display.sh"
+        ssh ${SSH_OPTS} ${TARGET} "cd /opt/mimir-display && sudo bash scripts/update_display.sh"
 
   display:ssh:
     desc: "SSH into a display (usage: task display:ssh -- pi@192.168.1.x)"

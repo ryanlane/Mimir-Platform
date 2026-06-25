@@ -170,9 +170,9 @@ task api:format
 task api:test                 # pytest
 
 # Physical displays (dev loop; production updates go through OTA)
-task display:deploy -- pi@colorframe05.local   # rsync ../mimir-display + restart
-task display:logs   -- pi@colorframe05.local
-task display:restart -- pi@colorframe05.local
+task display:deploy -- pi@display-pi-01.local   # rsync ../mimir-display + restart
+task display:logs   -- pi@display-pi-01.local
+task display:restart -- pi@display-pi-01.local
 
 # MQTT debugging (localhost listener)
 task mqtt:sub                 # subscribe to mimir/#
