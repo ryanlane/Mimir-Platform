@@ -44,14 +44,11 @@ function AppContent() {
   React.createContext(toast);
 
   // Enable cache debugging in development
-  React.useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      CacheDebug.showVisualIndicator();
-      console.log('🚀 Sub-Channels Performance System Loaded');
-      console.log('🔍 Use CacheDebug.testCachePerformance() to test API caching');
-      console.log('🎨 Use CacheDebug.testSubChannelCache() to test sub-channel caching');
-    }
-  }, []);
+  // React.useEffect(() => {
+  //   if (process.env.NODE_ENV === 'development') {
+  //     CacheDebug.showVisualIndicator();
+  //   }
+  // }, []);
 
   // Listen for service worker update availability
   React.useEffect(() => {

@@ -4,6 +4,8 @@ The Mimir service stack: FastAPI backend (`mimir-api/`), React web UI
 (`mimir-web/mimir-ui/`), and mDNS discovery (`mimir-discovery/`), orchestrated
 with Docker Compose and [Task](https://taskfile.dev).
 
+![Mimir web UI — Screens page](docs/screenshot-screens.png)
+
 ## Index
 
 - [Which stack do I run?](#which-stack-do-i-run)
