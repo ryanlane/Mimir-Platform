@@ -373,7 +373,7 @@ export function ProgramEditorPanel({ scene, channels = [], onClose }) {
             </button>
           </div>
           <div className="pep-interrupt-hint">
-            Switch to a now-playing source while music is active; revert after it stops.
+            Switch to a now-playing source while media is active; revert after it stops.
           </div>
           {interruptPickerOpen && (
             <InterruptSourcePicker
