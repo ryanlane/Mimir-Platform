@@ -20,6 +20,7 @@ import AddToHomeScreenNudge from './components/AddToHomeScreen/AddToHomeScreenNu
 import Scenes from './pages/Scenes/Scenes';
 import Channels from './pages/Channels/Channels';
 import ChannelDetail from './pages/Channels/ChannelDetail';
+import PluginStore from './pages/Channels/PluginStore';
 import Settings from './pages/Settings/Settings';
 import Displays from './pages/Displays/Displays';
 import { ErrorBoundary, useToast, ToastContainer } from './components/ErrorHandling/ErrorHandling';
@@ -124,6 +125,7 @@ function AppContent() {
             <Route path="/programs" element={<Scenes />} />
             <Route path="/sources" element={<Channels />} />
             <Route path="/sources/:channelId" element={<ChannelDetail />} />
+            <Route path="/store" element={<PluginStore />} />
             <Route path="/settings" element={<Settings />} />
             {/* Legacy redirects */}
             <Route path="/" element={<Navigate to="/screens" replace />} />

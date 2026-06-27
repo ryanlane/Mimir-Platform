@@ -25,7 +25,6 @@ import Button from '../../components/Button/Button';
 import ChannelCard from './ChannelCard';
 import InstallChannel from './InstallChannel';
 import LinkDevChannel from './LinkDevChannel';
-import PluginStore from './PluginStore';
 import { SourceDetailPanel } from './SourceDetailPanel';
 import { SkeletonSourceCard } from '../../components/Skeleton/Skeleton';
 import './Channels.css';
@@ -39,7 +38,6 @@ const Channels = () => {
     const [panelChannel, setPanelChannel] = useState(null);
     const [showInstallModal, setShowInstallModal] = useState(false);
     const [showLinkDevModal, setShowLinkDevModal] = useState(false);
-    const [showPluginStore, setShowPluginStore] = useState(false);
     const [storeUpdateCount, setStoreUpdateCount] = useState(0);
 
     const devModeEnabled = localStorage.getItem('mimir-developer-mode') === 'true';
@@ -226,7 +224,7 @@ const Channels = () => {
     const handleInstalled = useCallback(async () => {
       await persistentCache.invalidateChannels();
       await refreshChannels();
-      loadManifest();
+      await loadManifest();
     }, [refreshChannels, loadManifest]);
 
     // Poll store for available updates badge (once per page load)
@@ -267,7 +265,7 @@ const Channels = () => {
               <Button
                 key="store"
                 variant="secondary"
-                onClick={() => setShowPluginStore(true)}
+                onClick={() => navigate('/store')}
                 icon={<Store size={16} />}
                 type="button"
               >
@@ -380,13 +378,6 @@ const Channels = () => {
             />
           )}
         </div>
-
-        <PluginStore
-          isOpen={showPluginStore}
-          onClose={() => setShowPluginStore(false)}
-          installedChannels={channels}
-          onInstalled={() => { handleInstalled(); setStoreUpdateCount(0); }}
-        />
 
         <InstallChannel
           isOpen={showInstallModal}

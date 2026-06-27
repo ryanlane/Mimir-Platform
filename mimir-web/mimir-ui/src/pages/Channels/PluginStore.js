@@ -14,9 +14,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Download, RefreshCw, CheckCircle, AlertCircle, ArrowUpCircle, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Download, RefreshCw, CheckCircle, AlertCircle, ArrowUpCircle, ExternalLink, ArrowLeft } from 'lucide-react';
 import { api } from '../../services/api';
-import Modal from '../../components/Modal/Modal';
+import Header from '../../components/Header/Header';
 import Button from '../../components/Button/Button';
 import './PluginStore.css';
 
@@ -46,8 +47,10 @@ const PluginTag = ({ tag }) => (
   <span className={`plugin-tag ${TAG_COLORS[tag.toLowerCase()] || 'tag-default'}`}>{tag}</span>
 );
 
-const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) => {
+const PluginStore = () => {
+  const navigate = useNavigate();
   const [plugins, setPlugins] = useState([]);
+  const [installedChannels, setInstalledChannels] = useState([]);
   const [updates, setUpdates] = useState({});   // { pluginId: { update_available, latest_version } }
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -61,14 +64,16 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
   const loadRegistry = useCallback(async () => {
     setLoading(true);
     try {
-      const [regResp, updResp] = await Promise.all([
+      const [regResp, updResp, channelsResp] = await Promise.all([
         api.getStoreRegistry(),
         api.getStoreUpdates().catch(() => ({ data: { updates: [] } })),
+        api.getChannels().catch(() => ({ data: { channels: [] } })),
       ]);
 
       const reg = regResp.data;
       setPlugins(reg.plugins || []);
       setRegistryMeta({ version: reg.version, updated: reg.updated });
+      setInstalledChannels(channelsResp.data?.channels || []);
 
       // Build updates map
       const updMap = {};
@@ -84,8 +89,8 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
   }, []);
 
   useEffect(() => {
-    if (isOpen) loadRegistry();
-  }, [isOpen, loadRegistry]);
+    loadRegistry();
+  }, [loadRegistry]);
 
   const handleRefresh = async () => {
     setLoading(true);
@@ -104,7 +109,7 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
       await api.installChannelFromGit(plugin.git_url);
       setActionState(s => ({ ...s, [plugin.id]: 'done' }));
       setActionMsg(m => ({ ...m, [plugin.id]: `Installed v${plugin.version}` }));
-      if (onInstalled) onInstalled();
+      await loadRegistry();
     } catch (err) {
       const detail = err.response?.data?.detail || err.message;
       setActionState(s => ({ ...s, [plugin.id]: 'error' }));
@@ -119,7 +124,6 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
       await api.updateChannel(plugin.id, plugin.git_url);
       setActionState(s => ({ ...s, [plugin.id]: 'done' }));
       setActionMsg(m => ({ ...m, [plugin.id]: `Updated to v${plugin.version}` }));
-      if (onInstalled) onInstalled();
       await loadRegistry();
     } catch (err) {
       const detail = err.response?.data?.detail || err.message;
@@ -142,9 +146,38 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
   const pendingUpdates = Object.values(updates).filter(u => u.update_available).length;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Source Store" size="large">
+    <div className="plugin-store-page">
+      <div className="store-page-header">
+        <Header
+          title="Source Store"
+          icon="store"
+          iconSize={36}
+          description="Browse and install content source plugins"
+          actions={[
+            <Button
+              key="refresh"
+              variant="secondary"
+              onClick={handleRefresh}
+              icon={<RefreshCw size={14} />}
+              disabled={loading}
+              size="sm"
+            >
+              Refresh
+            </Button>,
+            <Button
+              key="back"
+              variant="ghost"
+              onClick={() => navigate('/sources')}
+              icon={<ArrowLeft size={14} />}
+              size="sm"
+            >
+              Back to Sources
+            </Button>,
+          ]}
+        />
+      </div>
+
       <div className="plugin-store">
-        {/* Toolbar */}
         <div className="store-toolbar">
           <input
             className="store-search"
@@ -152,16 +185,8 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
             placeholder="Search sources…"
             value={search}
             onChange={e => setSearch(e.target.value)}
+            autoFocus
           />
-          <Button
-            variant="secondary"
-            onClick={handleRefresh}
-            icon={<RefreshCw size={14} />}
-            disabled={loading}
-            size="sm"
-          >
-            Refresh
-          </Button>
         </div>
 
         {pendingUpdates > 0 && (
@@ -171,14 +196,12 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
           </div>
         )}
 
-        {/* Registry meta */}
         {registryMeta && (
           <p className="store-meta">
             Registry v{registryMeta.version} · last updated {registryMeta.updated}
           </p>
         )}
 
-        {/* Plugin grid */}
         {loading ? (
           <div className="store-loading">
             <RefreshCw size={24} className="spin" />
@@ -291,7 +314,7 @@ const PluginStore = ({ isOpen, onClose, installedChannels = [], onInstalled }) =
           </div>
         )}
       </div>
-    </Modal>
+    </div>
   );
 };
 
