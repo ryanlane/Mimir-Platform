@@ -163,7 +163,8 @@ export function useSceneFormLogic({ scene, channels, onClose }) {
         }
         if (manifest.supports_push === true) supportsPush = true; // top-level flag
         const rawFlag = manifest.supports_push || manifest.capabilities?.supports_push || manifest.capabilities?.push_supported;
-        pushCaps[channel.id] = { supportsPush, preferredPush, rawFlag: !!rawFlag };
+        const supportsNowPlaying = Boolean(manifest.capabilities?.supports_now_playing);
+        pushCaps[channel.id] = { supportsPush, preferredPush, rawFlag: !!rawFlag, supportsNowPlaying };
         if (typeof window !== 'undefined') {
           window.__mimirPushDebug = window.__mimirPushDebug || { manifests: {}, eval: [] };
           window.__mimirPushDebug.manifests[channel.id] = manifest;

@@ -51,6 +51,34 @@ class ChannelAssignment(BaseModel):
     config: dict[str, Any] | None = None
 
 
+class InterruptSource(BaseModel):
+    """A channel that can pre-empt the scene's base content when it reports is_playing=true.
+
+    The channel must declare supports_now_playing: true in its manifest and include
+    is_playing: bool in its push event payload.
+
+    When multiple interrupt sources are active simultaneously, the one with the
+    highest priority wins. Ties are broken by the most recent push event timestamp.
+    """
+    channel_id: str
+    priority: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Higher value wins when multiple sources are active simultaneously.",
+    )
+    resume_delay_seconds: float = Field(
+        default=5.0,
+        ge=0.0,
+        le=300.0,
+        alias="resumeDelaySeconds",
+        description="Seconds to wait after is_playing goes false before reverting to base content.",
+    )
+
+    class Config:
+        populate_by_name = True
+
+
 class SceneBase(BaseModel):
     """Base scene schema"""
     name: str
@@ -61,6 +89,11 @@ class SceneBase(BaseModel):
     is_active: bool | None = Field(False, alias="isActive")
     update_strategy: str | None = Field("scheduler", alias="updateStrategy", description="scheduler or push")
     push_fallback_poll_seconds: int | None = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
+    interrupt_sources: list[InterruptSource] | None = Field(
+        None,
+        alias="interruptSources",
+        description="Channels that pre-empt base content when they report is_playing=true.",
+    )
 
     class Config:
         populate_by_name = True
@@ -85,6 +118,7 @@ class SceneUpdate(BaseModel):
     schedule: SceneSchedule | None = None
     update_strategy: str | None = Field(None, alias="updateStrategy")
     push_fallback_poll_seconds: int | None = Field(None, alias="pushFallbackPollSeconds", ge=5, le=7200)
+    interrupt_sources: list[InterruptSource] | None = Field(None, alias="interruptSources")
 
     class Config:
         populate_by_name = True

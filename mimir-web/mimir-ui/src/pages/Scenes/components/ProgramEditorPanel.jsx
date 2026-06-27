@@ -14,7 +14,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, ChevronDown, ChevronUp, Save, Image, Music2, Globe, Package, Radio, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Save, Image, Music2, Globe, Package, Radio, Trash2, ArrowUp, ArrowDown, Zap } from 'lucide-react';
 import { useSceneFormLogic } from '../useSceneFormLogic';
 import ValidationErrors from './ValidationErrors.jsx';
 import DistributionModeSelector from './DistributionModeSelector.jsx';
@@ -176,10 +176,69 @@ function SourcePicker({ channels, currentAssignments, onAdd }) {
   );
 }
 
+function InterruptSourceItem({ source, channels, onUpdate, onRemove }) {
+  const ch = channels.find(c => c.id === source.channel_id);
+  return (
+    <div className="pep-interrupt-item">
+      <Music2 size={13} className="pep-interrupt-icon" />
+      <span className="pep-interrupt-name">{ch?.name || source.channel_id}</span>
+      <div className="pep-interrupt-fields">
+        <label className="pep-interrupt-field-label">Pri</label>
+        <input
+          type="number"
+          className="pep-interrupt-field-input"
+          min={1} max={100}
+          value={source.priority}
+          onChange={e => onUpdate({ ...source, priority: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
+          aria-label="Priority"
+        />
+        <label className="pep-interrupt-field-label">Delay</label>
+        <input
+          type="number"
+          className="pep-interrupt-field-input"
+          min={0} max={300} step={0.5}
+          value={source.resume_delay_seconds}
+          onChange={e => onUpdate({ ...source, resume_delay_seconds: Math.min(300, Math.max(0, parseFloat(e.target.value) || 0)) })}
+          aria-label="Resume delay in seconds"
+        />
+        <span className="pep-interrupt-field-unit">s</span>
+      </div>
+      <button type="button" className="pep-well-btn pep-well-btn--remove" onClick={onRemove} aria-label="Remove interrupt source">
+        <Trash2 size={12} />
+      </button>
+    </div>
+  );
+}
+
+function InterruptSourcePicker({ channels, channelCaps, currentSources, onAdd }) {
+  const assignedIds = new Set(currentSources.map(s => s.channel_id));
+  const candidates = channels.filter(c => channelCaps[c.id]?.supportsNowPlaying && !assignedIds.has(c.id));
+  if (!candidates.length) {
+    return <div className="pep-picker-empty">No now-playing channels available</div>;
+  }
+  return (
+    <div className="pep-picker">
+      {candidates.map(ch => (
+        <button
+          key={ch.id}
+          type="button"
+          className="pep-picker-item"
+          onClick={() => onAdd({ channel_id: ch.id, priority: 10, resume_delay_seconds: 5 })}
+        >
+          <Music2 size={13} />
+          <span>{ch.name}</span>
+          <span className="pep-picker-add">+</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ProgramEditorPanel({ scene, channels = [], onClose }) {
   const nameRef = useRef(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [interruptPickerOpen, setInterruptPickerOpen] = useState(false);
 
   const {
     formData,
@@ -189,6 +248,7 @@ export function ProgramEditorPanel({ scene, channels = [], onClose }) {
     subChannelSupport,
     availableSubChannels,
     loadingSubChannels,
+    channelPushCapabilities,
     pushSelectable,
     pushSelectableReason,
     scheduleData,
@@ -220,6 +280,25 @@ export function ProgramEditorPanel({ scene, channels = [], onClose }) {
 
   const handleReorderSources = (newAssignments) => {
     setFormData(prev => ({ ...prev, channels: newAssignments }));
+  };
+
+  const handleAddInterruptSource = (src) => {
+    setFormData(prev => ({ ...prev, interrupt_sources: [...(prev.interrupt_sources || []), src] }));
+    setInterruptPickerOpen(false);
+  };
+
+  const handleUpdateInterruptSource = (index, updated) => {
+    setFormData(prev => ({
+      ...prev,
+      interrupt_sources: prev.interrupt_sources.map((s, i) => i === index ? updated : s),
+    }));
+  };
+
+  const handleRemoveInterruptSource = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      interrupt_sources: prev.interrupt_sources.filter((_, i) => i !== index),
+    }));
   };
 
   return (
@@ -277,6 +356,50 @@ export function ProgramEditorPanel({ scene, channels = [], onClose }) {
             loadingSubChannels={loadingSubChannels}
             onChange={handleReorderSources}
           />
+        </div>
+
+        <div className="pep-section">
+          <div className="pep-section-label-row">
+            <span className="pep-section-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Zap size={11} />
+              NOW PLAYING
+            </span>
+            <button
+              type="button"
+              className="pep-picker-toggle"
+              onClick={() => setInterruptPickerOpen(v => !v)}
+            >
+              {interruptPickerOpen ? 'Cancel' : '+ Add Source'}
+            </button>
+          </div>
+          <div className="pep-interrupt-hint">
+            Switch to a now-playing source while music is active; revert after it stops.
+          </div>
+          {interruptPickerOpen && (
+            <InterruptSourcePicker
+              channels={channels}
+              channelCaps={channelPushCapabilities}
+              currentSources={formData.interrupt_sources || []}
+              onAdd={handleAddInterruptSource}
+            />
+          )}
+          {(formData.interrupt_sources || []).length > 0 ? (
+            <div className="pep-interrupt-list">
+              {(formData.interrupt_sources || []).map((src, i) => (
+                <InterruptSourceItem
+                  key={`${src.channel_id}-${i}`}
+                  source={src}
+                  channels={channels}
+                  onUpdate={(updated) => handleUpdateInterruptSource(i, updated)}
+                  onRemove={() => handleRemoveInterruptSource(i)}
+                />
+              ))}
+            </div>
+          ) : (
+            !interruptPickerOpen && (
+              <div className="pep-well-empty">No now-playing sources configured</div>
+            )
+          )}
         </div>
 
         <ValidationErrors errors={validationErrors} />

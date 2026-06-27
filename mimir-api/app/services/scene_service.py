@@ -52,6 +52,7 @@ class SceneService:
                 "is_active": scene.is_active,
                 "update_strategy": scene.update_strategy,
                 "push_fallback_poll_seconds": scene.push_fallback_poll_seconds,
+                "interrupt_sources": scene.interrupt_sources,
                 "refresh_schedule": refresh_schedule,
                 "created_at": scene.created_at,
                 "updated_at": scene.updated_at
@@ -83,6 +84,7 @@ class SceneService:
             "is_active": scene.is_active,
             "update_strategy": scene.update_strategy,
             "push_fallback_poll_seconds": scene.push_fallback_poll_seconds,
+            "interrupt_sources": scene.interrupt_sources,
             "refresh_schedule": self._derive_refresh_schedule(scene.id),
             "created_at": scene.created_at,
             "updated_at": scene.updated_at,
@@ -102,7 +104,8 @@ class SceneService:
             distribution_mode=scene_data.get("distribution_mode", "MIRROR"),  # New field
             is_active=scene_data.get("is_active", False),
             update_strategy=scene_data.get("update_strategy", "scheduler"),
-            push_fallback_poll_seconds=scene_data.get("push_fallback_poll_seconds")
+            push_fallback_poll_seconds=scene_data.get("push_fallback_poll_seconds"),
+            interrupt_sources=scene_data.get("interrupt_sources"),
         )
 
         self.db.add(scene)
@@ -160,6 +163,8 @@ class SceneService:
             scene.update_strategy = scene_data["update_strategy"]
         if "push_fallback_poll_seconds" in scene_data:
             scene.push_fallback_poll_seconds = scene_data["push_fallback_poll_seconds"]
+        if "interrupt_sources" in scene_data:
+            scene.interrupt_sources = scene_data["interrupt_sources"]
         self.db.commit()
         self.db.refresh(scene)
         return scene

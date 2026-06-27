@@ -33,7 +33,8 @@ export function normalizeScene(scene) {
       },
       schedule: null,
       update_strategy: 'scheduler',
-      push_fallback_poll_seconds: 120
+      push_fallback_poll_seconds: 120,
+      interrupt_sources: [],
     };
   }
   // Normalize channels array into assignment objects; old format may be string ids
@@ -62,7 +63,14 @@ export function normalizeScene(scene) {
     },
     schedule: scene.schedule || null,
     update_strategy: scene.update_strategy || scene.updateStrategy || 'scheduler',
-    push_fallback_poll_seconds: scene.push_fallback_poll_seconds || scene.pushFallbackPollSeconds || 120
+    push_fallback_poll_seconds: scene.push_fallback_poll_seconds || scene.pushFallbackPollSeconds || 120,
+    interrupt_sources: Array.isArray(scene.interrupt_sources)
+      ? scene.interrupt_sources.map(s => ({
+          channel_id: s.channel_id || '',
+          priority: Number(s.priority ?? 10),
+          resume_delay_seconds: Number(s.resume_delay_seconds ?? 5),
+        }))
+      : [],
   };
 }
 
@@ -74,6 +82,8 @@ export function buildPayload(formData) {
   if (payload.update_strategy !== 'push') {
     delete payload.push_fallback_poll_seconds;
   }
+  // Strip incomplete interrupt sources defensively
+  payload.interrupt_sources = (payload.interrupt_sources || []).filter(s => s.channel_id);
   return payload;
 }
 

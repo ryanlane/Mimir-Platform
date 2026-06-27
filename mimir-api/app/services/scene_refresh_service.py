@@ -120,6 +120,7 @@ class SceneRefreshService:
         channel_subset: list[str] | None = None,
         target_devices: list[str] | None = None,
         public_base_url_override: str | None = None,
+        channel_override_entry: dict[str, Any] | None = None,
     ) -> SceneRefreshResult:
         start = time.perf_counter()
         lock = self._get_lock(scene_id)
@@ -147,7 +148,7 @@ class SceneRefreshService:
                             duration_ms=int((time.perf_counter()-start)*1000),
                         )
 
-                    if not scene.channels:
+                    if not scene.channels and not channel_override_entry:
                         return SceneRefreshResult(
                             scene_id=scene_id,
                             status="skipped",
@@ -157,10 +158,15 @@ class SceneRefreshService:
                             duration_ms=int((time.perf_counter()-start)*1000),
                         )
 
-                    # Multi-channel: filter dict entries, optionally subset
-                    channel_entries: list[dict[str, Any]] = [c for c in scene.channels if isinstance(c, dict)]
-                    if channel_subset:
-                        channel_entries = [c for c in channel_entries if c.get("channel_id") in channel_subset]
+                    # When an interrupt source is active, bypass the scene's configured
+                    # channels entirely and use the override channel instead.
+                    if channel_override_entry:
+                        channel_entries = [channel_override_entry]
+                    else:
+                        # Multi-channel: filter dict entries, optionally subset
+                        channel_entries = [c for c in scene.channels if isinstance(c, dict)]
+                        if channel_subset:
+                            channel_entries = [c for c in channel_entries if c.get("channel_id") in channel_subset]
                     if not channel_entries:
                         return SceneRefreshResult(
                             scene_id=scene_id,

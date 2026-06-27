@@ -308,6 +308,78 @@
   border-color: var(--color-accent);
 }
 
+/* ── Interrupt sources ── */
+.pep-interrupt-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+.pep-interrupt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pep-interrupt-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.pep-interrupt-icon {
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.pep-interrupt-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text);
+  min-width: 0;
+}
+
+.pep-interrupt-fields {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pep-interrupt-field-label {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.pep-interrupt-field-input {
+  width: 44px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--color-text);
+  font-family: var(--font-base);
+  text-align: center;
+}
+.pep-interrupt-field-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.pep-interrupt-field-unit {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
 /* ── Advanced section ── */
 .pep-advanced-toggle {
   display: flex;

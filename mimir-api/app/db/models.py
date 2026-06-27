@@ -99,6 +99,9 @@ class Scene(Base):
     update_strategy = Column(String, default="scheduler", index=True)  # 'scheduler' | 'push'
     push_fallback_poll_seconds = Column(Integer, nullable=True)  # Optional fallback interval when using push
 
+    # Now-playing interrupt sources: channels that can pre-empt the base content when active
+    interrupt_sources = Column(JSON, nullable=True)
+
     # Metadata
     created_at = Column(DateTime, index=True)
     updated_at = Column(DateTime)
