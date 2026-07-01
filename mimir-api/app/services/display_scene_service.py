@@ -18,7 +18,6 @@ Display-Scene Relationship Service
 Enhanced service for managing the relationship between displays and scenes
 Handles both registered displays (database) and discovered displays (in-memory)
 """
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Integer, cast, func
@@ -28,6 +27,7 @@ from app.core.logging import get_logger
 from app.db.models import DisplayClient, Scene
 from app.services.discovered_display_manager import discovered_assignment_manager
 from app.services.mdns_discovery import mdns_discovery_service
+from app.services.scheduler_math import now_utc
 
 
 class DisplaySceneService:
@@ -57,7 +57,7 @@ class DisplaySceneService:
             # Handle registered display (database assignment)
             previous_scene_id = display.assigned_scene_id
             display.assigned_scene_id = scene_id
-            display.last_seen = datetime.now()
+            display.last_seen = now_utc()
 
             self.db.commit()
             self.db.refresh(display)
@@ -71,7 +71,7 @@ class DisplaySceneService:
                 "scene_id": scene_id,
                 "scene_name": scene.name,
                 "previous_scene_id": previous_scene_id,
-                "assigned_at": datetime.now(),
+                "assigned_at": now_utc(),
                 "success": True
             }
         else:
@@ -96,7 +96,7 @@ class DisplaySceneService:
                     "scene_id": scene_id,
                     "scene_name": scene.name,
                     "previous_scene_id": previous_scene_id,
-                    "assigned_at": datetime.now(),
+                    "assigned_at": now_utc(),
                     "success": True
                 }
             else:
@@ -112,7 +112,7 @@ class DisplaySceneService:
             # Handle registered display
             previous_scene_id = display.assigned_scene_id
             display.assigned_scene_id = None
-            display.last_seen = datetime.now()
+            display.last_seen = now_utc()
 
             self.db.commit()
 
@@ -123,7 +123,7 @@ class DisplaySceneService:
                 "display_name": display.name,
                 "display_type": "registered",
                 "previous_scene_id": previous_scene_id,
-                "unassigned_at": datetime.now(),
+                "unassigned_at": now_utc(),
                 "success": True
             }
         else:
@@ -142,7 +142,7 @@ class DisplaySceneService:
                     "display_name": discovered_display.display_name,
                     "display_type": "discovered",
                     "previous_scene_id": previous_scene_id,
-                    "unassigned_at": datetime.now(),
+                    "unassigned_at": now_utc(),
                     "success": True
                 }
             else:
@@ -231,7 +231,7 @@ class DisplaySceneService:
                     "online": discovered_online,
                     "offline": len(discovered_displays) - discovered_online
                 },
-                "last_updated": datetime.now()
+                "last_updated": now_utc()
             },
             "assigned_displays": display_list,
             "created_at": scene.created_at,
@@ -277,7 +277,7 @@ class DisplaySceneService:
                     "total_assigned": display_count,
                     "online_displays": online_count,
                     "offline_displays": offline_count,
-                    "last_updated": datetime.now()
+                    "last_updated": now_utc()
                 },
                 "created_at": result.created_at,
                 "updated_at": result.updated_at
@@ -320,7 +320,7 @@ class DisplaySceneService:
                     continue
 
                 display.assigned_scene_id = scene_id
-                display.last_seen = datetime.now()
+                display.last_seen = now_utc()
                 successful_assignments.append(display_id)
 
             except Exception as e:
@@ -476,7 +476,7 @@ class DisplaySceneService:
         count = 0
         for display in affected_displays:
             display.assigned_scene_id = new_scene_id
-            display.last_seen = datetime.now()
+            display.last_seen = now_utc()
             count += 1
 
         self.db.commit()
@@ -506,7 +506,7 @@ class DisplaySceneService:
         return {
             "stale_assignments_removed": removed_count,
             "active_discovered_displays": len(active_ids),
-            "cleanup_timestamp": datetime.now()
+            "cleanup_timestamp": now_utc()
         }
 
     def get_assignment_overview(self) -> dict[str, Any]:
@@ -541,5 +541,5 @@ class DisplaySceneService:
                 "total_unassigned": registered_unassigned + discovered_unassigned
             },
             "discovered_assignment_stats": discovered_stats,
-            "last_updated": datetime.now()
+            "last_updated": now_utc()
         }

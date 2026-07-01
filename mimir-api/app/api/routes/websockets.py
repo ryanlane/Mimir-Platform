@@ -25,11 +25,11 @@ Responsibilities intentionally minimal — business logic now lives in
 from __future__ import annotations
 
 import asyncio
-import datetime
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.services.scheduler_math import now_utc
 from app.services.websocket_manager import websocket_manager as manager
 
 router = APIRouter(tags=["websockets"])  # Reuse global singleton
@@ -67,7 +67,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
             except asyncio.TimeoutError:
                 # Heartbeat ping
-                await manager.emit_event("ping", {"timestamp": datetime.datetime.now().isoformat()}, targets=[websocket])
+                await manager.emit_event("ping", {"timestamp": now_utc().isoformat()}, targets=[websocket])
                 continue
 
             # Attempt JSON parse; if fail echo raw text
@@ -79,7 +79,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             event = msg.get("event")
             if event == "ping":
-                await manager.emit_event("pong", {"timestamp": datetime.datetime.now().isoformat()}, targets=[websocket])
+                await manager.emit_event("pong", {"timestamp": now_utc().isoformat()}, targets=[websocket])
             elif event == "state_sync_request":
                 # Provide snapshot-like minimal info (reuse stats for now)
                 await manager.emit_event("state_snapshot", manager.get_connection_stats(), targets=[websocket])

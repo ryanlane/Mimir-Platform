@@ -21,6 +21,8 @@ import mimetypes
 import shutil
 from pathlib import Path
 
+from PIL import Image
+
 from app.core.logging import get_logger
 from app.core.security import sanitize_filename, validate_file_path
 
@@ -251,6 +253,25 @@ def is_image_file(file_path: Path) -> bool:
 
     mime_type, _ = mimetypes.guess_type(str(file_path))
     return mime_type is not None and mime_type.startswith('image/')
+
+
+def make_thumbnail(image: Image.Image, thumb_path: Path, quality: int = 75) -> None:
+    """
+    Save an already-open (and typically already `.thumbnail()`-resized) PIL
+    Image as a JPEG thumbnail on disk.
+
+    Callers are responsible for opening the source image (e.g. via
+    `Image.open(io.BytesIO(binary))`) and calling `im.thumbnail((w, h))`
+    beforehand; this helper only handles the RGB conversion + JPEG save,
+    which was previously duplicated across several call sites.
+
+    Args:
+        image: An open PIL Image (mode may be non-RGB, e.g. RGBA/P; it will
+            be converted to RGB before saving since JPEG has no alpha channel)
+        thumb_path: Destination path for the JPEG thumbnail
+        quality: JPEG quality (1-95); defaults to 75 to match prior behavior
+    """
+    image.convert("RGB").save(thumb_path, "JPEG", quality=quality, optimize=True)
 
 
 def clean_filename(filename: str) -> str:

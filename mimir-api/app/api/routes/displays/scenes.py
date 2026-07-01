@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.models import DisplayClient
 from app.services.mdns_discovery import mdns_discovery_service
-from app.services.mqtt.publisher import mqtt_scene_assignment, mqtt_scene_service
+from app.services.mqtt.publisher import MQTTSceneAssignmentPublisher, mqtt_scene_service
 from app.services.scene_refresh_service import scene_refresh_service
 
 from ._helpers import (
@@ -52,9 +52,14 @@ async def unassign_scene_from_display(display_id: str):
     if not mqtt_scene_service.is_connected():
         raise HTTPException(status_code=503, detail="MQTT publisher not connected")
 
+    try:
+        publisher = MQTTSceneAssignmentPublisher.get()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail="MQTT scene publisher not initialized") from e
+
     assignment_id = f"clr-{uuid.uuid4().hex[:8]}"
     target_id = getattr(display, "display_id", None) or getattr(display, "hostname", None) or display_id
-    ok = await mqtt_scene_assignment.clear_scene(
+    ok = await publisher.clear_scene(
         device_id=target_id
     )
 

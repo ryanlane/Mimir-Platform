@@ -153,23 +153,14 @@ def setup_logging() -> None:
 
     logging.config.dictConfig(config)
 
-    # Create console handler with colored formatter for development
-    console_handler = logging.StreamHandler(sys.stdout)
-
+    # In debug mode, swap in a colored formatter on the handler dictConfig
+    # already created (named "default") instead of adding a second handler,
+    # which would double every log line.
     if settings.debug:
-        # Use colored formatter in debug mode
         console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         console_formatter = ColoredFormatter(console_format)
-    else:
-        # Use standard formatter in production
-        console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        console_formatter = logging.Formatter(console_format)
-
-    console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(logging.INFO)
-
-    # Add the console handler to the root logger
-    logging.getLogger().addHandler(console_handler)
+        for handler in logging.getLogger().handlers:
+            handler.setFormatter(console_formatter)
 
 
 def get_logger(name: str) -> logging.Logger:

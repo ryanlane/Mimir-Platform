@@ -21,6 +21,7 @@ import threading
 from datetime import datetime
 
 from app.core.logging import get_logger
+from app.services.scheduler_math import now_utc
 
 
 class DiscoveredDisplayAssignmentManager:
@@ -54,7 +55,7 @@ class DiscoveredDisplayAssignmentManager:
             try:
                 old_scene = self._assignments.get(display_id)
                 self._assignments[display_id] = scene_id
-                self._assignment_timestamps[display_id] = datetime.now()
+                self._assignment_timestamps[display_id] = now_utc()
 
                 if old_scene != scene_id:
                     self.logger.info(f"Assigned scene '{scene_id}' to discovered display '{display_id}' (was: {old_scene})")
@@ -112,7 +113,7 @@ class DiscoveredDisplayAssignmentManager:
                 return {
                     "display_id": display_id,
                     "scene_id": scene_id,
-                    "assigned_at": self._assignment_timestamps.get(display_id, datetime.now()).isoformat()
+                    "assigned_at": self._assignment_timestamps.get(display_id, now_utc()).isoformat()
                 }
             return None
 
@@ -145,7 +146,7 @@ class DiscoveredDisplayAssignmentManager:
             for display_id, scene_id in self._assignments.items():
                 result[display_id] = {
                     "scene_id": scene_id,
-                    "assigned_at": self._assignment_timestamps.get(display_id, datetime.now()).isoformat()
+                    "assigned_at": self._assignment_timestamps.get(display_id, now_utc()).isoformat()
                 }
             return result
 

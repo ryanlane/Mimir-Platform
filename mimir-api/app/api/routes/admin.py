@@ -29,13 +29,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import requests
+import httpx
 from fastapi import (
     APIRouter,
     Depends,
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     Response,
     UploadFile,
@@ -54,6 +55,7 @@ from app.services.display_image_persistence import DisplayImagePersistenceServic
 from app.services.image_swap import list_scene_swap, prune_swap, swap_summary
 from app.services.mqtt.presence import mqtt_presence_service
 from app.services.plugin_manager import plugin_manager_service
+from app.utils.files import make_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -114,11 +116,14 @@ async def test_mqtt_broker(req: MqttTestRequest):
     if not host or not port:
         raise HTTPException(status_code=400, detail="MQTT host/port could not be resolved")
 
-    timeout = max(0.5, float(req.timeout_ms or 3000) / 1000.0)
+    timeout = min(30.0, max(0.5, float(req.timeout_ms or 3000) / 1000.0))
     start = time.monotonic()
     try:
-        conn = socket.create_connection((host, int(port)), timeout=timeout)
-        conn.close()
+        loop = __import__("asyncio").get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: socket.create_connection((host, int(port)), timeout=timeout).close(),
+        )
     except Exception as exc:  # noqa: BLE001
         return {
             "success": False,
@@ -1048,35 +1053,36 @@ async def backfill_display_image_thumbnails(body: BackfillThumbnailsRequest, db:
             "read_only_mode": svc.read_only_mode,
         }
 
-    for r in rows:
-        try:
-            # Skip if already has thumb and not forcing
-            if r.thumbnail_path and not body.force:
-                continue
-            # Download original image
-            resp = requests.get(r.image_url, timeout=15)
-            if resp.status_code != 200:
-                skipped_download += 1
-                continue
-            binary = resp.content
+    async with httpx.AsyncClient(timeout=15) as client:
+        for r in rows:
             try:
-                with Image.open(io.BytesIO(binary)) as im:
-                    im.thumbnail((svc.thumb_max_width, svc.thumb_max_height))
-                    rel_dir = Path(r.scene_id) / r.display_id
-                    abs_dir = svc.media_root / rel_dir
-                    abs_dir.mkdir(parents=True, exist_ok=True)
-                    thumb_filename = f"{r.id}.thumb.jpg"
-                    thumb_path = abs_dir / thumb_filename
-                    im.convert("RGB").save(thumb_path, "JPEG", quality=75, optimize=True)
-                    r.thumbnail_path = str(thumb_path)
-                    generated += 1
-                    results.append({"id": r.id, "thumbnail_path": r.thumbnail_path})
-            except Exception as pil_err:  # noqa: BLE001
+                # Skip if already has thumb and not forcing
+                if r.thumbnail_path and not body.force:
+                    continue
+                # Download original image
+                resp = await client.get(r.image_url)
+                if resp.status_code != 200:
+                    skipped_download += 1
+                    continue
+                binary = resp.content
+                try:
+                    with Image.open(io.BytesIO(binary)) as im:
+                        im.thumbnail((svc.thumb_max_width, svc.thumb_max_height))
+                        rel_dir = Path(r.scene_id) / r.display_id
+                        abs_dir = svc.media_root / rel_dir
+                        abs_dir.mkdir(parents=True, exist_ok=True)
+                        thumb_filename = f"{r.id}.thumb.jpg"
+                        thumb_path = abs_dir / thumb_filename
+                        make_thumbnail(im, thumb_path)
+                        r.thumbnail_path = str(thumb_path)
+                        generated += 1
+                        results.append({"id": r.id, "thumbnail_path": r.thumbnail_path})
+                except Exception as pil_err:  # noqa: BLE001
+                    failures += 1
+                    logger.debug("backfill.thumbnail PIL failure id=%s err=%s", r.id, pil_err)
+            except Exception as e:  # noqa: BLE001
                 failures += 1
-                logger.debug("backfill.thumbnail PIL failure id=%s err=%s", r.id, pil_err)
-        except Exception as e:  # noqa: BLE001
-            failures += 1
-            logger.debug("backfill.thumbnail failure id=%s err=%s", r.id, e)
+                logger.debug("backfill.thumbnail failure id=%s err=%s", r.id, e)
 
     try:
         db.commit()
@@ -1157,21 +1163,23 @@ async def get_mqtt_devices():
 
 
 @admin_router.post("/mqtt/publish/{device_id}")
-async def publish_device_status(device_id: str, status: str, metadata: dict[str, Any] | None = None):
+async def publish_device_status(
+    device_id: str, device_status: str = Query(..., alias="status"), metadata: dict[str, Any] | None = None
+):
     """Manually publish status for a device (for testing)"""
     try:
-        if status not in ["online", "offline"]:
+        if device_status not in ["online", "offline"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Status must be 'online' or 'offline'"
             )
 
-        success = await mqtt_presence_service.publish_device_status(device_id, status, metadata or {})
+        success = await mqtt_presence_service.publish_device_status(device_id, device_status, metadata or {})
 
         if success:
             return {
                 "success": True,
-                "message": f"Status '{status}' published for device {device_id}"
+                "message": f"Status '{device_status}' published for device {device_id}"
             }
         else:
             raise HTTPException(

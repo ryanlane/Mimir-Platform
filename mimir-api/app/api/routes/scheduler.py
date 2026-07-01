@@ -85,11 +85,11 @@ async def list_scheduler_jobs(
     total = query.count()
     jobs = query.offset(offset).limit(limit).all()
 
-    # Populate scene assignments for each job
+    # Populate scene assignments for each job (single batched query to avoid N+1)
     service = SchedulerService(db)
+    assignments_by_job = await service.get_job_assignments_batch([job.id for job in jobs])
     for job in jobs:
-        assignments = await service.get_job_assignments(job.id)
-        job.scene_assignments = assignments
+        job.scene_assignments = assignments_by_job.get(job.id, [])
 
     return SchedulerJobListResponse(
         jobs=jobs,

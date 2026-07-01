@@ -81,46 +81,9 @@ def get_current_user_id(
     return "default_user"
 
 
-class PaginationParams:
-    """Pagination parameters for list endpoints"""
-
-    def __init__(
-        self,
-        page: int = 1,
-        size: int = 20,
-        max_size: int = 100
-    ):
-        # Validate pagination parameters
-        if page < 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Page must be >= 1"
-            )
-
-        if size < 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Size must be >= 1"
-            )
-
-        if size > max_size:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Size must be <= {max_size}"
-            )
-
-        self.page = page
-        self.size = size
-        self.offset = (page - 1) * size
-        self.limit = size
-
-
-def get_pagination_params(
-    page: int = 1,
-    size: int = 20
-) -> PaginationParams:
-    """Dependency to get pagination parameters"""
-    return PaginationParams(page=page, size=size)
+# NOTE: Pagination is handled via inline `limit`/`offset` FastAPI Query params
+# on individual routes (see app.schemas.common.PaginationParams for the shared
+# limit/offset model), matching the convention used across app/api/routes/.
 
 
 def get_channels_directory() -> str:

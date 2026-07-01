@@ -19,6 +19,7 @@ Provides session creation and dependency injection utilities
 """
 from collections.abc import Generator
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -61,7 +62,7 @@ class DatabaseManager:
         try:
             session = SessionLocal()
             # Simple query to test connection
-            session.execute("SELECT 1")
+            session.execute(text("SELECT 1"))
             session.close()
             return True
         except Exception as e:

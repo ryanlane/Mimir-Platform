@@ -18,6 +18,8 @@ Overlay API Routes
 FastAPI router for overlay-related endpoints
 """
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -84,10 +86,11 @@ async def create_overlay(
 ):
     """Create a new overlay"""
     overlay = Overlay(
-        id=overlay_data.id,
+        id=overlay_data.id or str(uuid.uuid4()),
         name=overlay_data.name,
-        overlay_type=overlay_data.overlay_type,
-        config=overlay_data.config
+        description=overlay_data.description,
+        channel=overlay_data.channel,
+        path_root=overlay_data.path_root,
     )
 
     db.add(overlay)

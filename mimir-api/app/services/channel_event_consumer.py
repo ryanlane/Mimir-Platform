@@ -52,6 +52,25 @@ class ChannelEventConsumerService:
         # Track last processed event hash per (channel_id, scene_id) so we don't re-generate
         # an identical image when only the playback progress advanced but track + play state unchanged.
         self._scene_last_hash: dict[tuple[str, str], str] = {}
+        # In-flight fire-and-forget tasks, kept alive (and their exceptions logged) so they
+        # aren't eligible for premature GC and failures don't disappear silently.
+        self._tasks: set[asyncio.Task] = set()
+
+    def _track_task(self, coro) -> asyncio.Task:
+        """Schedule *coro* as a task, keeping a reference so it isn't GC'd and
+        logging any exception it raises instead of letting it vanish silently."""
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._on_task_done)
+        return task
+
+    def _on_task_done(self, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("channel_event_consumer.task_failed: %s", exc, exc_info=exc)
 
     async def ensure_subscription(self) -> None:
         if self._subscribed:
@@ -71,7 +90,7 @@ class ChannelEventConsumerService:
                 "channel.push evt channel=%s type=%s hash=%s", evt.channel_id, evt.event_type, evt.hash
             )
             # Ensure caches are fresh before both routing paths
-            self._maybe_reload_cache()
+            await self._maybe_reload_cache()
 
             # ── Path 1: base-channel push (scene uses this as primary content) ──
             scenes = self._channel_scene_cache.get(evt.channel_id, set())
@@ -94,7 +113,7 @@ class ChannelEventConsumerService:
                     )
                     continue
                 self._scene_last_refresh[scene_id] = now
-                asyncio.create_task(self._invoke_refresh(scene_id, reason="push"))
+                self._track_task(self._invoke_refresh(scene_id, reason="push"))
 
             # ── Path 2: interrupt-source push (this channel may pre-empt base content) ──
             interrupt_scenes = self._interrupt_channel_cache.get(evt.channel_id)
@@ -104,7 +123,7 @@ class ChannelEventConsumerService:
                     evt.channel_id,
                     list(interrupt_scenes.keys()),
                 )
-                asyncio.create_task(
+                self._track_task(
                     now_playing_interrupt_service.on_push_event(evt, interrupt_scenes)
                 )
 
@@ -112,13 +131,17 @@ class ChannelEventConsumerService:
         self._channels_bound.add(channel_id)
         logger.info("channel_event_consumer.channel_registered channel=%s", channel_id)
 
-    def _maybe_reload_cache(self) -> None:
+    async def _maybe_reload_cache(self) -> None:
+        now = time.monotonic()
+        if (now - self._cache_last_load) > self._cache_ttl_seconds:
+            # Offload the synchronous DB query so it doesn't block the event loop;
+            # _reload_cache opens its own short-lived session inside the thread.
+            await asyncio.to_thread(self._reload_cache)
+
+    def _get_scenes_for_channel(self, channel_id: str) -> set[str]:
         now = time.monotonic()
         if (now - self._cache_last_load) > self._cache_ttl_seconds:
             self._reload_cache()
-
-    def _get_scenes_for_channel(self, channel_id: str) -> set[str]:
-        self._maybe_reload_cache()
         return self._channel_scene_cache.get(channel_id, set())
 
     def _reload_cache(self) -> None:
@@ -203,7 +226,7 @@ class ChannelEventConsumerService:
                             threshold,
                         )
                         self._scene_last_refresh[s.id] = now
-                        asyncio.create_task(
+                        self._track_task(
                             self._invoke_refresh(s.id, reason="fallback")
                         )
         # Allow CancelledError to bubble for graceful shutdown

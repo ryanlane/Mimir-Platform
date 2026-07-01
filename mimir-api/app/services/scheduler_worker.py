@@ -860,24 +860,25 @@ class SchedulerWorker:
             last_hash = _last_scene_content_hash.get(scene_key)
             content_unchanged = bool(candidate_hash and last_hash and candidate_hash == last_hash)
 
-            if distribution_mode == "new":
-                if content_unchanged:
-                    logger.info(
-                        "distribution.skipped unchanged hash for scene %s (mode=new, displays=%d)",
-                        scene.id,
-                        len(assigned_displays),
-                    )
-                    # Defer to 'existing' path logic: only distribute if scene assignment mismatches
-                    distribution_mode = "existing"
-                else:
-                    # New content available - distribute
-                    should_distribute = True
-                    logger.info(
-                        "New content available for scene %s distributing to %d displays",
-                        scene.id,
-                        len(assigned_displays),
-                    )
-            elif distribution_mode in ["existing", "cached"]:
+            effective_mode = distribution_mode
+            if distribution_mode == "new" and content_unchanged:
+                logger.info(
+                    "distribution.skipped unchanged hash for scene %s (mode=new, displays=%d)",
+                    scene.id,
+                    len(assigned_displays),
+                )
+                # Defer to 'existing' path logic: only distribute if scene assignment mismatches
+                effective_mode = "existing"
+
+            if effective_mode == "new":
+                # New content available - distribute
+                should_distribute = True
+                logger.info(
+                    "New content available for scene %s distributing to %d displays",
+                    scene.id,
+                    len(assigned_displays),
+                )
+            elif effective_mode in ["existing", "cached"]:
                 # No new content, check if any displays need scene assignment updates
                 for display in assigned_displays:
                     current_scene = display.get("current_scene_id")

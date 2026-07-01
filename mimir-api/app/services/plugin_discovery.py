@@ -538,7 +538,7 @@ class PluginDiscoveryService:
         try:
             # Try to call image request method on plugin instance
             if hasattr(plugin.instance, 'request_image'):
-                return plugin.instance.request_image(request_data)
+                return await plugin.instance.request_image(request_data)
 
             logger.error(f"Plugin {plugin_id} does not support image requests")
             return None

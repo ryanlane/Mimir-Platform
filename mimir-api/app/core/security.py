@@ -143,8 +143,11 @@ def validate_file_path(file_path: str, allowed_root: str) -> bool:
         allowed_root_abs = os.path.abspath(allowed_root)
         file_path_abs = os.path.abspath(os.path.join(allowed_root, file_path))
 
-        # Check if file path is within allowed root
-        return file_path_abs.startswith(allowed_root_abs)
+        # Check if file path is within allowed root (boundary-aware to avoid
+        # matching sibling directories with a shared prefix, e.g. "/data/photos_evil")
+        return file_path_abs == allowed_root_abs or file_path_abs.startswith(
+            allowed_root_abs + os.sep
+        )
     except (OSError, ValueError):
         return False
 

@@ -16,7 +16,7 @@
 """
 Common schemas used across the API
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -59,7 +59,7 @@ class ErrorResponse(BaseModel):
     error: str
     message: str
     details: dict[str, Any] | None = None
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class SuccessResponse(BaseModel):
@@ -67,14 +67,14 @@ class SuccessResponse(BaseModel):
     success: bool = True
     message: str
     data: dict[str, Any] | None = None
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class HealthCheckResponse(BaseModel):
     """Health check response"""
     status: str  # "healthy", "degraded", "unhealthy"
     checks: dict[str, dict[str, Any]]
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     uptime_seconds: float | None = None
 
 
@@ -85,7 +85,7 @@ class ApiResponse(BaseModel):
     error: str | None = None
     message: str | None = None
     meta: dict[str, Any] | None = None
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class PaginatedResponse(BaseModel):

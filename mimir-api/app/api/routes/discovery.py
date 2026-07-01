@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -120,7 +120,7 @@ async def approve_device(device_id: str, body: ApproveBody):
             auto_discovered=True,
             display_type="registered",
             is_online=True,
-            last_seen=datetime.utcnow(),
+            last_seen=datetime.now(timezone.utc),
         )
         # Optional capability enrichment
         caps = rec.get("capabilities") or {}

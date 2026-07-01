@@ -80,6 +80,7 @@ class DevWatcherService:
         self._watches: dict[str, Any] = {}  # plugin_id -> ObservedWatch
         self._handlers: dict[str, _ChangeHandler] = {}
         self._pending_timers: dict[str, threading.Timer] = {}
+        self._timers_lock = threading.Lock()
         self._app = None  # FastAPI app reference for reload operations
         self._loop: asyncio.AbstractEventLoop | None = None
         self._started = False
@@ -132,9 +133,11 @@ class DevWatcherService:
     def stop(self) -> None:
         """Stop the file watcher observer thread and cancel pending timers."""
         # Cancel all pending reload timers
-        for timer in self._pending_timers.values():
+        with self._timers_lock:
+            timers = list(self._pending_timers.values())
+            self._pending_timers.clear()
+        for timer in timers:
             timer.cancel()
-        self._pending_timers.clear()
 
         if self._observer and self._started:
             self._observer.stop()
@@ -177,7 +180,8 @@ class DevWatcherService:
     def unwatch(self, plugin_id: str) -> None:
         """Stop watching a dev channel directory."""
         # Cancel any pending reload
-        timer = self._pending_timers.pop(plugin_id, None)
+        with self._timers_lock:
+            timer = self._pending_timers.pop(plugin_id, None)
         if timer:
             timer.cancel()
 
@@ -199,12 +203,14 @@ class DevWatcherService:
         (e.g., saving multiple files at once, or editor atomic writes).
         """
         # Cancel existing timer
-        existing = self._pending_timers.pop(plugin_id, None)
+        with self._timers_lock:
+            existing = self._pending_timers.pop(plugin_id, None)
         if existing:
             existing.cancel()
 
         def _fire():
-            self._pending_timers.pop(plugin_id, None)
+            with self._timers_lock:
+                self._pending_timers.pop(plugin_id, None)
             logger.info("[dev-watcher] Auto-reloading dev channel: %s", plugin_id)
             if self._loop and self._loop.is_running():
                 asyncio.run_coroutine_threadsafe(self._do_reload(plugin_id), self._loop)
@@ -213,7 +219,8 @@ class DevWatcherService:
 
         timer = threading.Timer(_DEBOUNCE_SECONDS, _fire)
         timer.daemon = True
-        self._pending_timers[plugin_id] = timer
+        with self._timers_lock:
+            self._pending_timers[plugin_id] = timer
         timer.start()
 
     async def _do_reload(self, plugin_id: str) -> None:

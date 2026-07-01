@@ -45,6 +45,14 @@ db = get_db()
 
 logger = get_logger(__name__)
 
+# TODO: This class is currently unused/dead code. It is never instantiated
+# with .start() anywhere in the app (not even in main.py), and as of the
+# pairing/provisioning finalize-command fix it has no remaining callers at
+# all -- routes now send finalize_registration via the already-running
+# MQTTSceneAssignmentPublisher singleton instead. Either wire this listener
+# up properly (start() + its mimir/+/evt / mimir/+/registration/reply
+# subscriptions) or remove it; revisit before relying on auto-registration
+# beyond the pairing-code/provisioning-bundle flows.
 class AutoRegistrationService:
     def __init__(self):
         self.mqtt_client = None

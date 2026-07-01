@@ -85,6 +85,9 @@ class NowPlayingInterruptService:
         self._active_interrupt: dict[str, str | None] = {}
         # {scene_id: asyncio.Task} — pending resume-to-base timers
         self._resume_tasks: dict[str, asyncio.Task] = {}  # type: ignore[type-arg]
+        # Strong references to fire-and-forget background tasks, so they aren't
+        # garbage-collected mid-execution (asyncio only holds a weak ref).
+        self._background_tasks: set[asyncio.Task] = set()  # type: ignore[type-arg]
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -205,7 +208,7 @@ class NowPlayingInterruptService:
     async def _trigger_interrupt_refresh(self, scene_id: str, channel_id: str) -> None:
         from app.services.scene_refresh_service import scene_refresh_service  # avoid circular
         logger.info("interrupt.trigger_refresh scene=%s override_channel=%s", scene_id, channel_id)
-        asyncio.create_task(
+        self._spawn(
             scene_refresh_service.refresh_scene(
                 scene_id,
                 trigger_reason="interrupt",
@@ -238,13 +241,32 @@ class NowPlayingInterruptService:
         logger.info("interrupt.resume_base scene=%s", scene_id)
         self._active_interrupt[scene_id] = None
         from app.services.scene_refresh_service import scene_refresh_service
-        asyncio.create_task(
+        self._spawn(
             scene_refresh_service.refresh_scene(
                 scene_id,
                 trigger_reason="interrupt_cleared",
                 force=True,
             )
         )
+
+    def _spawn(self, coro: Any) -> asyncio.Task:  # type: ignore[type-arg]
+        """Create a task and hold a strong reference until it completes.
+
+        Without this, the event loop's weak reference to the task is the only
+        thing keeping it alive, risking GC-cancellation mid-execution.
+        """
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+
+        def _on_done(t: asyncio.Task) -> None:  # type: ignore[type-arg]
+            self._background_tasks.discard(t)
+            if not t.cancelled():
+                exc = t.exception()
+                if exc:
+                    logger.error("interrupt.background_task_failed error=%s", exc, exc_info=exc)
+
+        task.add_done_callback(_on_done)
+        return task
 
     def _cancel_resume(self, scene_id: str) -> None:
         task = self._resume_tasks.pop(scene_id, None)

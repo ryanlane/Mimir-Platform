@@ -103,6 +103,7 @@ class TestDisplayUnpair:
         from app.db.models import ContentLease
 
         lease = ContentLease(
+            id=1,
             lease_id="lease-1",
             display_id=seeded_display.id,
             scene_id="some-scene",

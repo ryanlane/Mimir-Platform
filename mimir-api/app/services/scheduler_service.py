@@ -234,7 +234,13 @@ class SchedulerService:
         ).limit(limit).all()
 
     async def lock_job(self, job_id: str) -> bool:
-        """Lock a job for execution"""
+        """Atomically lock a job for execution.
+
+        Uses a conditional UPDATE so concurrent callers (multiple worker
+        replicas, or a worker racing a manual trigger) can't both believe
+        they acquired the lock - only the caller whose UPDATE actually
+        matched a row (still unlocked or expired) gets True back.
+        """
         job = self.db.query(SchedulerJob).filter(SchedulerJob.id == job_id).first()
         if not job:
             return False
@@ -242,9 +248,17 @@ class SchedulerService:
         now = now_utc()
         lock_until = now + timedelta(seconds=job.run_timeout_seconds)
 
-        job.locked_until = lock_until
+        rows_updated = self.db.query(SchedulerJob).filter(
+            and_(
+                SchedulerJob.id == job_id,
+                or_(
+                    SchedulerJob.locked_until.is_(None),
+                    SchedulerJob.locked_until < now,
+                ),
+            )
+        ).update({SchedulerJob.locked_until: lock_until}, synchronize_session=False)
         self.db.commit()
-        return True
+        return rows_updated > 0
 
     async def unlock_job(self, job_id: str) -> bool:
         """Unlock a job after execution"""
@@ -331,6 +345,22 @@ class SchedulerService:
         return self.db.query(SchedulerJobSceneAssignment).filter(
             SchedulerJobSceneAssignment.job_id == job_id
         ).order_by(SchedulerJobSceneAssignment.priority).all()
+
+    async def get_job_assignments_batch(
+        self, job_ids: list[str]
+    ) -> dict[str, list[SchedulerJobSceneAssignment]]:
+        """Get scene assignments for multiple jobs in a single query, grouped by job_id"""
+        if not job_ids:
+            return {}
+
+        assignments = self.db.query(SchedulerJobSceneAssignment).filter(
+            SchedulerJobSceneAssignment.job_id.in_(job_ids)
+        ).order_by(SchedulerJobSceneAssignment.priority).all()
+
+        grouped: dict[str, list[SchedulerJobSceneAssignment]] = {job_id: [] for job_id in job_ids}
+        for assignment in assignments:
+            grouped.setdefault(assignment.job_id, []).append(assignment)
+        return grouped
 
     async def get_scene_assignments(self, scene_id: str) -> list[SchedulerJobSceneAssignment]:
         """Get all jobs assigned to a scene"""

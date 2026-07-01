@@ -64,6 +64,8 @@ async def get_scene_with_displays(
         return scene_data
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -106,7 +108,7 @@ async def get_assignment_dashboard(
                 "total_online_displays": total_online_displays,
                 "total_unassigned_displays": total_unassigned,
                 "total_locations": len(location_groups),
-                "last_updated": datetime.datetime.now()
+                "last_updated": datetime.datetime.now(datetime.timezone.utc)
             },
             "scenes_with_displays": scenes_with_stats[:10],  # Top 10 scenes
             "unassigned_displays": unassigned_displays,
@@ -156,6 +158,8 @@ async def get_assignment_status(
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 

@@ -26,8 +26,9 @@ from app.schemas.common import TimestampMixin
 class OverlayBase(BaseModel):
     """Base overlay schema"""
     name: str
-    overlay_type: str | None = Field(None, alias="overlayType")
-    config: dict[str, Any] | None = None
+    description: str | None = None
+    channel: Any | None = None
+    path_root: str | None = Field(None, alias="pathRoot")
 
     class Config:
         populate_by_name = True
@@ -41,8 +42,9 @@ class OverlayCreate(OverlayBase):
 class OverlayUpdate(BaseModel):
     """Schema for updating overlays"""
     name: str | None = None
-    overlay_type: str | None = Field(None, alias="overlayType")
-    config: dict[str, Any] | None = None
+    description: str | None = None
+    channel: Any | None = None
+    path_root: str | None = Field(None, alias="pathRoot")
 
     class Config:
         populate_by_name = True
@@ -54,19 +56,6 @@ class OverlayResponse(OverlayBase, TimestampMixin):
 
     class Config:
         from_attributes = True
-        populate_by_name = True
-
-
-# Legacy response format for backward compatibility
-class LegacyOverlayResponse(BaseModel):
-    """Legacy overlay response format"""
-    id: str
-    name: str
-    description: str | None = None
-    channel: str | None = None
-    path_root: str | None = Field(None, alias="pathRoot")
-
-    class Config:
         populate_by_name = True
 
 

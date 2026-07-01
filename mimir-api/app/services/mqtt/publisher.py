@@ -696,11 +696,16 @@ class MQTTSceneAssignmentPublisher:
         registration_key: str,
         *,
         sequence: int = 1,
+        source: str = "pairing_code",
+        client_config: dict | None = None,
     ) -> bool:
         """Send finalize_registration command to device.
 
         Device is expected to persist the registration_key and begin including
         registration_state=finalized + display_id in heartbeat frames.
+
+        client_config is an optional dict that the display client persists to
+        device_config.json so it survives reboots without manual .env editing.
         """
         payload = {
             "type": "finalize_registration",
@@ -708,7 +713,11 @@ class MQTTSceneAssignmentPublisher:
             "display_id": display_id,
             "registration_key": registration_key,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": 1,
+            "source": source,
         }
+        if client_config:
+            payload["config"] = client_config
         return await self.publish_command(device_id, payload, qos=1, retain=False)
 
     # ---------- Worker / connection loop ----------
@@ -810,7 +819,6 @@ class MQTTSceneAssignmentPublisher:
 
 # Global service instance
 mqtt_scene_service = MqttSceneAssignmentService()
-mqtt_scene_assignment = MQTTSceneAssignmentPublisher()
 
 
 async def setup_mqtt_scene_assignment():

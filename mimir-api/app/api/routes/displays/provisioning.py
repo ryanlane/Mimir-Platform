@@ -223,7 +223,7 @@ async def bootstrap_display_config(display_id: str, body: MqttBootstrapRequest, 
 @router.post("/provision-register", response_model=DisplayClientResponse, tags=["pairing"])
 async def provision_register(body: ProvisionRegisterRequest, db: Session = Depends(get_db)):
     """Register a display after webhook/bootstrap provisioning."""
-    from app.services.mqtt.registration import AutoRegistrationService
+    from app.services.mqtt.publisher import MQTTSceneAssignmentPublisher
 
     if not _consume_provision_token(body.reg_token):
         raise HTTPException(status_code=401, detail="Invalid or expired provision token")
@@ -283,13 +283,17 @@ async def provision_register(body: ProvisionRegisterRequest, db: Session = Depen
         display_orientation=display.orientation,
     )
 
-    reg_service = AutoRegistrationService()
     reg_key = _secrets.token_hex(16)
-    await reg_service._send_finalize_command(
-        device_id=device_id,
-        display_id=str(display.id),
-        registration_key=reg_key,
-        client_config=client_config,
-    )
+    try:
+        publisher = MQTTSceneAssignmentPublisher.get()
+        await publisher.finalize_registration(
+            device_id=device_id,
+            display_id=str(display.id),
+            registration_key=reg_key,
+            source="provision_bundle",
+            client_config=client_config,
+        )
+    except Exception as e:  # pragma: no cover - publish failure shouldn't fail the response
+        logger.warning("Finalize registration publish failed device_id=%s err=%s", device_id, e)
 
     return DisplayClientResponse.model_validate(_build_registered_display_response(display))

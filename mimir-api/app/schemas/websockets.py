@@ -16,7 +16,7 @@
 """
 WebSocket and real-time communication schemas
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -26,7 +26,7 @@ class WebSocketEvent(BaseModel):
     """Base WebSocket event schema"""
     event: str
     data: dict[str, Any]
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     sequence_id: int | None = Field(None, alias="sequenceId")
 
     class Config:
@@ -43,8 +43,8 @@ class WebSocketMessage(BaseModel):
 class HeartbeatEvent(BaseModel):
     """WebSocket heartbeat event"""
     event: str = "ping"
-    data: dict[str, str] = Field(default_factory=lambda: {"timestamp": datetime.now().isoformat()})
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    data: dict[str, str] = Field(default_factory=lambda: {"timestamp": datetime.now(timezone.utc).isoformat()})
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class StateSync(BaseModel):
@@ -52,21 +52,21 @@ class StateSync(BaseModel):
     event: str = "state_sync"
     data: dict[str, Any]
     full_state: bool = True
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class SubscriptionRequest(BaseModel):
     """WebSocket subscription request"""
     event: str = "subscribe"
     data: dict[str, list[str]]  # {"events": ["scene_changed", "display_status"]}
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class SubscriptionResponse(BaseModel):
     """WebSocket subscription confirmation"""
     event: str = "subscription_confirmed"
     data: dict[str, list[str]]
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class DisplayStatusUpdate(BaseModel):
@@ -74,14 +74,14 @@ class DisplayStatusUpdate(BaseModel):
     event: str = "display_status_update"
     data: dict[str, Any]
     display_id: str
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class SceneChangeRequest(BaseModel):
     """Scene change request event"""
     event: str = "scene_change_request"
     data: dict[str, str]  # {"scene_id": "...", "display_id": "..."}
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class ContentRenderedEvent(BaseModel):
@@ -89,7 +89,7 @@ class ContentRenderedEvent(BaseModel):
     event: str = "content_rendered"
     data: dict[str, Any]
     display_id: str
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class DisplayErrorEvent(BaseModel):
@@ -98,7 +98,7 @@ class DisplayErrorEvent(BaseModel):
     data: dict[str, Any]
     display_id: str
     error_type: str | None = None
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class BroadcastEventData(BaseModel):
@@ -124,4 +124,4 @@ class WebSocketError(BaseModel):
     event: str = "error"
     data: dict[str, str]
     error_code: str | None = None
-    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

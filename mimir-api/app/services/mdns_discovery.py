@@ -186,6 +186,7 @@ class MdnsDiscoveryService:
         self.discovery_callbacks: list[Callable[[DiscoveredDisplay, str], None]] = []
         self._lock = threading.Lock()
         self._monitoring_task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
         # Settings
         self.update_interval = settings.mdns_update_interval  # seconds
@@ -230,6 +231,10 @@ class MdnsDiscoveryService:
         try:
             logger.info("Starting mDNS discovery service for Mimir displays")
 
+            # Capture the running event loop so callbacks fired from Zeroconf's
+            # native worker thread can schedule coroutines safely.
+            self._loop = asyncio.get_running_loop()
+
             # Initialize Zeroconf
             self.zeroconf = Zeroconf()
             self.listener = DisplayDiscoveryListener(self)
@@ -265,6 +270,7 @@ class MdnsDiscoveryService:
             return True
 
         logger.info("Starting external mDNS discovery feed mode")
+        self._loop = asyncio.get_running_loop()
         self.is_running = True
         self._monitoring_task = asyncio.create_task(self._monitoring_loop())
         return True
@@ -447,13 +453,21 @@ class MdnsDiscoveryService:
                 self._notify_callbacks(display, "lost")
 
     def _notify_callbacks(self, display: DiscoveredDisplay, event: str):
-        """Notify registered callbacks"""
-        import asyncio
+        """Notify registered callbacks.
+
+        This may be invoked from Zeroconf's native callback thread (via
+        add_service/remove_service/update_service), not the asyncio event-loop
+        thread, so coroutine callbacks must be scheduled thread-safely.
+        """
         for callback in self.discovery_callbacks:
             try:
                 if asyncio.iscoroutinefunction(callback):
-                    # Schedule the coroutine in the event loop
-                    asyncio.create_task(callback(display, event))
+                    # Schedule the coroutine on the event loop from whichever
+                    # thread we're called on.
+                    if self._loop is not None:
+                        asyncio.run_coroutine_threadsafe(callback(display, event), self._loop)
+                    else:
+                        logger.error("Cannot schedule discovery callback: no event loop captured")
                 else:
                     callback(display, event)
             except Exception as e:

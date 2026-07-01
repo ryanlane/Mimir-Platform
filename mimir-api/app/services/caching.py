@@ -19,7 +19,7 @@ Handles in-memory caching, rate limiting, and temporary data storage
 """
 import time
 from collections import OrderedDict, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from app.core.logging import get_logger
@@ -184,7 +184,7 @@ class CacheService:
     def cache_performance_metrics(self, metrics: dict[str, Any], ttl_seconds: int = 30):
         """Cache performance metrics"""
         self.metrics_cache = metrics
-        self.metrics_last_updated = datetime.now()
+        self.metrics_last_updated = datetime.now(timezone.utc)
         self.set_cache("performance_metrics", metrics, ttl_seconds)
 
     def get_performance_metrics(self) -> dict[str, Any] | None:

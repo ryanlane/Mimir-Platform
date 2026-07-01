@@ -47,6 +47,17 @@ _ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0,1,I,L,O
 PAIR_TTL_SECONDS = 600  # 10 minutes
 REDIS_KEY_PREFIX = "mimir:pair"
 
+# Atomically fetch-and-delete a pending pair hash so concurrent claims of the
+# same code cannot both succeed.
+_CLAIM_SCRIPT = """
+local data = redis.call('HGETALL', KEYS[1])
+if next(data) == nil then
+    return nil
+end
+redis.call('DEL', KEYS[1])
+return data
+"""
+
 try:
     import aiomqtt
 except ImportError:
@@ -229,6 +240,25 @@ class PairingService:
                 logger.error("Redis delete failed for pair %s: %s", code, e)
         self._in_memory.pop(code, None)
 
+    async def _claim_entry(self, code: str) -> dict[str, Any] | None:
+        """Atomically fetch-and-delete a pending pair entry.
+
+        Ensures concurrent callers can't both observe the entry before either
+        deletes it (which would let a single-use code be claimed twice).
+        """
+        key = _redis_key(code)
+        if self._redis:
+            try:
+                result = await self._redis.eval(_CLAIM_SCRIPT, 1, key)
+                if not result:
+                    return None
+                # EVAL returns a flat [field, value, field, value, ...] array
+                return dict(zip(result[0::2], result[1::2]))
+            except Exception as e:
+                logger.error("Redis atomic claim failed for pair %s: %s", code, e)
+        async with self._lock:
+            return self._in_memory.pop(code, None)
+
     # ---------------------------------------------------------------- public API
 
     async def claim_pair(self, code: str) -> dict[str, Any]:
@@ -241,7 +271,7 @@ class PairingService:
         Raises ValueError if the code is not found or has expired.
         """
         code = code.upper().strip()
-        entry = await self._get_entry(code)
+        entry = await self._claim_entry(code)
         if not entry:
             raise ValueError("Pairing code not found or expired")
 
@@ -255,8 +285,6 @@ class PairingService:
         except (json.JSONDecodeError, TypeError):
             entry["metadata"] = {}
 
-        # Consume the code — one claim per code
-        await self._delete_entry(code)
         return entry
 
     async def get_pair_status(self, code: str) -> dict[str, Any] | None:

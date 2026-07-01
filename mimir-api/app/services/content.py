@@ -18,7 +18,7 @@ Content Management Service
 Handles content processing, media serving, and file management
 """
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -270,7 +270,7 @@ class ContentService:
         try:
             manifest = {
                 "channel_id": channel_id,
-                "generated_at": datetime.now().isoformat(),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
                 "subchannels": {},
                 "total_content": 0,
                 "total_size": 0
@@ -310,7 +310,7 @@ class ContentService:
                 Path("/tmp") / "mimir"
             ]
 
-            cutoff_time = datetime.now().timestamp() - (max_age_hours * 3600)
+            cutoff_time = datetime.now(timezone.utc).timestamp() - (max_age_hours * 3600)
 
             for temp_dir in temp_dirs:
                 if not temp_dir.exists():

@@ -180,12 +180,7 @@ class PluginManagerService:
                     "(expected channel.py + plugin.json/config.json)"
                 )
 
-            # Stash the git_url so _finalize_install can persist it in meta
-            self._pending_git_url = git_url
-            result = await self._finalize_install(plugin_root, app, plugin_discovery_service)
-            # If _finalize_install didn't consume it (e.g. raised), clean up
-            self._pending_git_url = None
-            return result
+            return await self._finalize_install(plugin_root, app, plugin_discovery_service, git_url=git_url)
 
     def _find_plugin_root(self, search_dir: Path) -> Path | None:
         """Locate the plugin root directory inside an extracted archive or cloned repo.
@@ -216,7 +211,9 @@ class PluginManagerService:
             if child.is_dir():
                 yield from PluginManagerService._walk_max_depth(child, max_depth - 1)
 
-    async def _finalize_install(self, plugin_root: Path, app: FastAPI, discovery) -> dict[str, Any]:
+    async def _finalize_install(
+        self, plugin_root: Path, app: FastAPI, discovery, git_url: str | None = None
+    ) -> dict[str, Any]:
         """Validate, move to channels dir, install deps, and hot-load the plugin."""
         manifest = self._validate_plugin_dir(plugin_root)
         plugin_id = manifest["id"]
@@ -240,15 +237,15 @@ class PluginManagerService:
         logger.info("Installed plugin files to %s", dest_path)
 
         # Persist install metadata so updates can re-clone from the same source
-        if hasattr(self, "_pending_git_url") and self._pending_git_url:
-            self._save_install_meta(dest_path, manifest, self._pending_git_url)
-            self._pending_git_url = None
+        if git_url:
+            self._save_install_meta(dest_path, manifest, git_url)
 
         # Best-effort dependency installation
         req_file = dest_path / "requirements.txt"
         if req_file.exists():
             try:
-                proc = subprocess.run(
+                proc = await asyncio.to_thread(
+                    subprocess.run,
                     ["pip", "install", "-r", str(req_file)],
                     capture_output=True, text=True, timeout=120,
                 )
@@ -654,7 +651,8 @@ class PluginManagerService:
             req_file = existing_dir / "requirements.txt"
             if req_file.exists():
                 try:
-                    subprocess.run(
+                    await asyncio.to_thread(
+                        subprocess.run,
                         ["pip", "install", "-r", str(req_file)],
                         capture_output=True, text=True, timeout=120,
                     )

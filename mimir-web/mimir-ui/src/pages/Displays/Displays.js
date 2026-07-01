@@ -275,6 +275,7 @@ const Displays = () => {
     }
 
     try {
+      setError(null);
       // Check cache first
       const now = Date.now();
       if (displaysCache && displaysCacheTime && (now - displaysCacheTime) < DISPLAYS_CACHE_TIMEOUT) {
@@ -773,6 +774,14 @@ const Displays = () => {
     return () => window.removeEventListener('websocket-message', handleDisplayEvent);
   }, [refreshDisplays, triggerImageActivity]);
 
+
+  // Auto-retry when in error state — recovers from transient server restarts or network blips
+  // without requiring a manual browser refresh.
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => refreshDisplays(), 30_000);
+    return () => clearTimeout(timer);
+  }, [error, refreshDisplays]);
 
   const handleSceneAssigned = async (displayId, sceneId) => {
     setShowSceneAssignment(false);

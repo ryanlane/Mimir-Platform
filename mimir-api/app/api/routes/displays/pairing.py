@@ -59,7 +59,7 @@ async def claim_pair_code(body: PairClaimRequest, db: Session = Depends(get_db))
     a finalize_registration command back to the display via MQTT.
     """
     from app.services.mqtt.pairing import pairing_service
-    from app.services.mqtt.registration import AutoRegistrationService
+    from app.services.mqtt.publisher import MQTTSceneAssignmentPublisher
 
     try:
         entry = await pairing_service.claim_pair(body.code)
@@ -126,13 +126,17 @@ async def claim_pair_code(body: PairClaimRequest, db: Session = Depends(get_db))
         display_orientation=display.orientation,
     )
 
-    reg_service = AutoRegistrationService()
     reg_key = secrets.token_hex(16)
-    await reg_service._send_finalize_command(
-        device_id=device_id,
-        display_id=str(display.id),
-        registration_key=reg_key,
-        client_config=client_config,
-    )
+    try:
+        publisher = MQTTSceneAssignmentPublisher.get()
+        await publisher.finalize_registration(
+            device_id=device_id,
+            display_id=str(display.id),
+            registration_key=reg_key,
+            source="pairing_code",
+            client_config=client_config,
+        )
+    except Exception as e:  # pragma: no cover - publish failure shouldn't fail the response
+        logger.warning("Finalize registration publish failed device_id=%s err=%s", device_id, e)
 
     return DisplayClientResponse.model_validate(_build_registered_display_response(display))

@@ -32,7 +32,6 @@ continue to function until fully migrated.
 
 from __future__ import annotations
 
-import datetime
 import json
 from collections.abc import Iterable
 from typing import Any
@@ -42,6 +41,7 @@ from fastapi import WebSocket
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
 from app.db.models import Channel, DisplayClient, Scene
+from app.services.scheduler_math import now_utc
 
 try:  # optional metrics
     from app.core.metrics import metrics
@@ -69,7 +69,7 @@ class WebSocketManager:
         self.active_connections.append(websocket)
         self.connection_metadata[websocket] = {
             "type": "dashboard",
-            "connected_at": datetime.datetime.now(),
+            "connected_at": now_utc(),
         }
         if METRICS_AVAILABLE:
             metrics.websocket_connection_opened(f"dashboard_{id(websocket)}")
@@ -86,7 +86,7 @@ class WebSocketManager:
         self.connection_metadata[websocket] = {
             "type": "display",
             "display_id": display_id,
-            "connected_at": datetime.datetime.now(),
+            "connected_at": now_utc(),
         }
         if METRICS_AVAILABLE:
             metrics.websocket_connection_opened(display_id)
@@ -121,7 +121,7 @@ class WebSocketManager:
             client = db.query(DisplayClient).filter(DisplayClient.id == display_id).first()
             if client:
                 client.is_online = is_online
-                client.last_seen = datetime.datetime.now()
+                client.last_seen = now_utc()
                 client.websocket_connection_id = display_id if is_online else None
                 db.commit()
                 logger.debug("Updated display status: %s online=%s", display_id, is_online)
@@ -221,7 +221,7 @@ class WebSocketManager:
         payload: dict[str, Any] = {
             "event": event,
             "data": data,
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": now_utc().isoformat(),
         }
         if include_sequence:
             payload["sequence_id"] = self.next_sequence_id()
@@ -255,7 +255,7 @@ class WebSocketManager:
                     "displays": [{"id": d.id, "name": d.name, "location": d.location, "is_online": d.is_online, "assigned_scene_id": d.assigned_scene_id} for d in displays],
                     "connection_count": len(self.active_connections) + len(self.display_connections),
                 },
-                "timestamp": datetime.datetime.now().isoformat(),
+                "timestamp": now_utc().isoformat(),
             }
             await self.send_personal_message(json.dumps(state), websocket)
         except Exception as e:
@@ -275,27 +275,27 @@ class WebSocketManager:
 
     # Structured content distribution helpers (preserve prior shapes with `type` key)
     async def broadcast_scene_activation(self, scene_id: str, scene_data: dict):
-        payload = {"type": "scene_activation", "sequence_id": self.next_sequence_id(), "timestamp": datetime.datetime.now().isoformat(), "scene_id": scene_id, "scene_data": scene_data}
+        payload = {"type": "scene_activation", "sequence_id": self.next_sequence_id(), "timestamp": now_utc().isoformat(), "scene_id": scene_id, "scene_data": scene_data}
         await self.broadcast_displays(payload)
 
     async def broadcast_content_update(self, content_data: dict, target_displays: list[str] | None = None):
-        payload = {"type": "content_update", "sequence_id": self.next_sequence_id(), "timestamp": datetime.datetime.now().isoformat(), "content": content_data}
+        payload = {"type": "content_update", "sequence_id": self.next_sequence_id(), "timestamp": now_utc().isoformat(), "content": content_data}
         await self.broadcast_displays(payload, target_displays)
 
     async def broadcast_epoch_started(self, scene_id: str, epoch_number: int, distribution_stats: dict):
-        payload = {"type": "epoch_started", "sequence_id": self.next_sequence_id(), "timestamp": datetime.datetime.now().isoformat(), "scene_id": scene_id, "epoch_number": epoch_number, "distribution_stats": distribution_stats}
+        payload = {"type": "epoch_started", "sequence_id": self.next_sequence_id(), "timestamp": now_utc().isoformat(), "scene_id": scene_id, "epoch_number": epoch_number, "distribution_stats": distribution_stats}
         await self.broadcast_dashboards(payload)
 
     async def broadcast_display_assignment(self, display_id: str, assignment_data: dict):
-        payload = {"type": "display_assignment", "sequence_id": self.next_sequence_id(), "timestamp": datetime.datetime.now().isoformat(), "assignment": assignment_data}
+        payload = {"type": "display_assignment", "sequence_id": self.next_sequence_id(), "timestamp": now_utc().isoformat(), "assignment": assignment_data}
         await self.send_to_display(json.dumps(payload), display_id)
 
     async def broadcast_heartbeat(self):
-        payload = {"type": "heartbeat", "sequence_id": self.next_sequence_id(), "timestamp": datetime.datetime.now().isoformat(), "server_status": "online"}
+        payload = {"type": "heartbeat", "sequence_id": self.next_sequence_id(), "timestamp": now_utc().isoformat(), "server_status": "online"}
         await self.broadcast_all(payload)
 
     async def broadcast_distribution_performance(self, scene_id: str, performance_metrics: dict):
-        payload = {"type": "distribution_performance", "sequence_id": self.next_sequence_id(), "timestamp": datetime.datetime.now().isoformat(), "scene_id": scene_id, "metrics": performance_metrics}
+        payload = {"type": "distribution_performance", "sequence_id": self.next_sequence_id(), "timestamp": now_utc().isoformat(), "scene_id": scene_id, "metrics": performance_metrics}
         await self.broadcast_dashboards(payload)
 
     # Stats APIs

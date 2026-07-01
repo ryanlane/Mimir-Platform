@@ -224,8 +224,16 @@ class ContentLease(Base):
     """Audit table for tracking content assignments and leases"""
     __tablename__ = "content_leases"
 
-    id = Column(Integer, primary_key=True, index=True)
-    lease_id = Column(String, unique=True, index=True, nullable=False)  # Redis lease key
+    # NOTE: `lease_id` is the real primary key in the database (see the initial
+    # migration, 9f3f58276f60_initial_complete_schema.py). `id` was added later
+    # via a plain add_column with no sequence/identity/server_default (see
+    # 3c8b4f7ffefc_add_scheduler_tables.py), so it is NOT an autoincrementing
+    # column at the DB level despite the column name. Declaring it as
+    # primary_key here would mislead the ORM into assuming the DB will
+    # populate it automatically, which it will not (callers must supply `id`
+    # explicitly).
+    id = Column(Integer, nullable=False, index=True)
+    lease_id = Column(String, primary_key=True, index=True, nullable=False)  # Redis lease key
     scene_id = Column(String, index=True, nullable=False)  # Will be ForeignKey('scenes.id')
     display_id = Column(String, index=True, nullable=False)  # Will be ForeignKey('display_clients.id')
     content_id = Column(String, nullable=False, index=True)

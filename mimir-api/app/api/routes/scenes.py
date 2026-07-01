@@ -17,7 +17,7 @@
 Scene API Routes
 FastAPI router for scene-related endpoints
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -267,7 +267,7 @@ async def refresh_scene_content(
                 "message": f"Content refresh triggered for scene {scene_id}",
                 "scene_name": scene.name,
                 "refresh_result": result,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
         finally:

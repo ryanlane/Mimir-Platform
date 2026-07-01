@@ -42,6 +42,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db.models import DisplaySceneImage
+from app.utils.files import make_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +171,7 @@ class DisplayImagePersistenceService:
                         im.thumbnail((self.thumb_max_width, self.thumb_max_height))
                         thumb_filename = f"{local_path.stem}.thumb.jpg"
                         thumb_path = local_path.parent / thumb_filename
-                        im.convert("RGB").save(thumb_path, "JPEG", quality=75, optimize=True)
+                        make_thumbnail(im, thumb_path)
                 except Exception as e:  # noqa: BLE001
                     logger.debug("persist.image thumb generation failed: %s", e)
 
@@ -229,7 +230,7 @@ class DisplayImagePersistenceService:
                         im.thumbnail((self.thumb_max_width, self.thumb_max_height))
                         thumb_filename = f"{local_path.stem}.thumb.jpg"
                         thumb_path = local_path.parent / thumb_filename
-                        im.convert("RGB").save(thumb_path, "JPEG", quality=75, optimize=True)
+                        make_thumbnail(im, thumb_path)
                 except Exception as e:  # noqa: BLE001
                     logger.debug("persist.image thumb generation failed: %s", e)
             elif binary is None and needs_download and self.read_only_mode:
