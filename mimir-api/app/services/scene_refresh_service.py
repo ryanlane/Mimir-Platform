@@ -308,6 +308,10 @@ class SceneRefreshService:
                                     try:
                                         raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
                                     except RuntimeError as e:
+                                        logger.warning(
+                                            "scene.refresh.channel_request_failed scene=%s channel=%s device=%s err=%s",
+                                            scene_id, ch_id, disp.get("device_id"), e,
+                                        )
                                         errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
                                         continue
 
@@ -461,6 +465,10 @@ class SceneRefreshService:
                                 try:
                                     raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
                                 except RuntimeError as e:
+                                    logger.warning(
+                                        "scene.refresh.channel_request_failed scene=%s channel=%s devices=%s err=%s",
+                                        scene_id, ch_id, [d.get("device_id") for d in display_group], e,
+                                    )
                                     errors.append(f"channel_request_failed:{ch_id}:{type(e).__name__}")
                                     continue
 

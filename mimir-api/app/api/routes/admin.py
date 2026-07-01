@@ -47,6 +47,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.logging import log_buffer
 from app.core.metrics import get_metrics_content
 from app.core.scheduler import scheduler_service
 from app.db.base import SessionLocal
@@ -1266,4 +1267,38 @@ async def get_swap_config():
         "prune_on_cleanup": getattr(settings, "display_swap_prune_on_cleanup", True),
         "media_mount": "/media",
         "notes": "Swap files live under /media/swap/<scene>/<display>/.",
+    }
+
+
+@admin_router.get("/logs", summary="Recent server logs")
+async def get_logs(
+    limit: int = Query(200, ge=1, le=5000, description="Max number of entries to return"),
+    level: str | None = Query(None, description="Minimum level, e.g. WARNING returns WARNING+ERROR+CRITICAL"),
+    logger: str | None = Query(None, description="Substring match against logger name, e.g. 'media_player'"),
+    q: str | None = Query(None, description="Substring match against the log message"),
+    since_seconds: float | None = Query(None, ge=0, description="Only return entries from the last N seconds"),
+):
+    """Query the in-memory log ring buffer.
+
+    Captures everything the server has logged since it started (root logger
+    plus uvicorn/sqlalchemy/scheduler/app namespaces), bounded to the most
+    recent entries. Meant to make server behavior inspectable over HTTP
+    without needing `docker logs`/host shell access.
+    """
+    if level and level.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        raise HTTPException(status_code=400, detail=f"Unknown level: {level!r}")
+
+    since_ts = (time.time() - since_seconds) if since_seconds is not None else None
+    entries = log_buffer.query(
+        limit=limit,
+        level=level,
+        logger_contains=logger,
+        text_contains=q,
+        since_ts=since_ts,
+    )
+    return {
+        "count": len(entries),
+        "buffered": len(log_buffer),
+        "buffer_capacity": log_buffer.maxlen,
+        "logs": entries,
     }

@@ -22,7 +22,9 @@ from __future__ import annotations
 import json
 import logging
 import logging.config
+import threading
 import time
+from collections import deque
 from typing import Any
 
 from app.config import settings
@@ -64,6 +66,91 @@ class JSONFormatter(logging.Formatter):
                 data[k] = v
 
         return json.dumps(data, default=str)
+
+
+class LogBuffer:
+    """Thread-safe in-memory ring buffer of recent log records.
+
+    Lets /api/admin/logs answer "what's actually going on" over HTTP —
+    without this, diagnosing a running server means shelling in for
+    `docker logs`, which isn't an option for remote/cloud agents or anyone
+    without host access.
+    """
+
+    def __init__(self, maxlen: int = 5000) -> None:
+        self._buf: deque[dict[str, Any]] = deque(maxlen=maxlen)
+        self._lock = threading.Lock()
+        self.maxlen = maxlen
+
+    def append(self, entry: dict[str, Any]) -> None:
+        with self._lock:
+            self._buf.append(entry)
+
+    def query(
+        self,
+        limit: int = 200,
+        level: str | None = None,
+        logger_contains: str | None = None,
+        text_contains: str | None = None,
+        since_ts: float | None = None,
+    ) -> list[dict[str, Any]]:
+        min_level = logging.getLevelName(level.upper()) if level else 0
+        logger_contains = logger_contains.lower() if logger_contains else None
+        text_contains = text_contains.lower() if text_contains else None
+
+        with self._lock:
+            snapshot = list(self._buf)
+
+        results = []
+        for entry in snapshot:
+            if isinstance(min_level, int) and entry.get("levelno", 0) < min_level:
+                continue
+            if logger_contains and logger_contains not in entry.get("logger", "").lower():
+                continue
+            if text_contains and text_contains not in entry.get("msg", "").lower():
+                continue
+            if since_ts is not None and entry.get("created", 0) < since_ts:
+                continue
+            results.append(entry)
+
+        if limit:
+            results = results[-limit:]
+        return results
+
+    def __len__(self) -> int:
+        return len(self._buf)
+
+
+log_buffer = LogBuffer()
+
+
+_exc_formatter = logging.Formatter()
+
+
+class LogBufferHandler(logging.Handler):
+    """Feeds every emitted log record into the shared in-memory ring buffer."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        entry: dict[str, Any] = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(record.created)),
+            "created": record.created,
+            "level": record.levelname,
+            "levelno": record.levelno,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if hasattr(record, "request_id"):
+            entry["request_id"] = record.request_id
+        for k, v in record.__dict__.items():
+            if k not in _STANDARD_ATTRS and k not in ("message", "asctime"):
+                try:
+                    json.dumps(v, default=str)
+                except (TypeError, ValueError):
+                    v = str(v)
+                entry[k] = v
+        if record.exc_info:
+            entry["exc_info"] = _exc_formatter.formatException(record.exc_info)
+        log_buffer.append(entry)
 
 
 class ColoredFormatter(logging.Formatter):
@@ -127,10 +214,15 @@ def setup_logging() -> None:
                 "filters": ["request_id"],
                 "stream": "ext://sys.stdout",
             },
+            "buffer": {
+                "()": "app.core.logging.LogBufferHandler",
+                "level": "DEBUG",
+                "filters": ["request_id"],
+            },
         },
         "root": {
             "level": level,
-            "handlers": ["default"],
+            "handlers": ["default", "buffer"],
         },
         "loggers": {
             # Keep uvicorn logs for endpoint access monitoring
@@ -149,6 +241,13 @@ def setup_logging() -> None:
             "app": {"level": level, "handlers": ["default"], "propagate": False},
         },
     }
+
+    # Named loggers above all set propagate=False, so they never reach root's
+    # handlers — attach "buffer" to each directly so the ring buffer sees
+    # everything, not just what happens to bubble up to root.
+    for logger_cfg in config["loggers"].values():
+        if "buffer" not in logger_cfg["handlers"]:
+            logger_cfg["handlers"].append("buffer")
 
     logging.config.dictConfig(config)
 
