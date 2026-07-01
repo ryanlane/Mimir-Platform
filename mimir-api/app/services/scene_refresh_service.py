@@ -789,6 +789,18 @@ class SceneRefreshService:
                     raise ValueError("empty_response")
                 ctype = resp.headers.get("Content-Type")
                 fp = resp.headers.get("X-Content-Fingerprint") or resp.headers.get("X-Image-Fingerprint")
+                # Channels report failure (not_configured, no_session, render
+                # errors, etc.) as a 200 JSONResponse with success=False —
+                # only a raw Response carries actual image bytes. Without
+                # this check, the JSON error body gets persisted to disk and
+                # served to displays as if it were a valid image.
+                if ctype and ctype.split(";")[0].strip().lower() == "application/json":
+                    try:
+                        body = _json.loads(raw)
+                        err = body.get("error", "unknown") if isinstance(body, dict) else "unknown"
+                    except (ValueError, TypeError):
+                        err = "unparseable_json_response"
+                    raise RuntimeError(f"channel_error:{err}")
                 return raw, ctype, fp
         except _urlerr.HTTPError as he:  # rethrow with compact message
             raise RuntimeError(f"http_{he.code}") from he
