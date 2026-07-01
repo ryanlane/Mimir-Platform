@@ -302,7 +302,7 @@ def create_app() -> FastAPI:
     base64_chars_pattern = re.compile(r"^[A-Za-z0-9+/=%]{40,}$")  # long run of base64-ish chars
 
     @app.middleware("http")
-    async def base64_path_guard(request: Request, call_next):  # type: ignore[override]
+    async def base64_path_guard(request: Request, call_next):
         path = request.url.path
         # Allow known prefixes fast
         if path == "/" or path.startswith(allowed_route_prefixes):

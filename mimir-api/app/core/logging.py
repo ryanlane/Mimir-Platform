@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import logging
 import logging.config
-import sys
 import time
 from typing import Any
 

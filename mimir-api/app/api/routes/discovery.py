@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.core.logging import get_logger
 from app.db.base import SessionLocal
-from app.db.models import DisplayClient  # type: ignore
+from app.db.models import DisplayClient
 from app.services.mqtt.discovery_registry import mqtt_discovery_registry
 
 logger = get_logger(__name__)
@@ -104,7 +104,7 @@ async def approve_device(device_id: str, body: ApproveBody):
         # Basic duplicate check by hardware fingerprint if present
         hwfp = rec.get("hardware_fingerprint")
         if hwfp:
-            existing = db.query(DisplayClient).filter(DisplayClient.hardware_fingerprint == hwfp).first()  # type: ignore[attr-defined]
+            existing = db.query(DisplayClient).filter(DisplayClient.hardware_fingerprint == hwfp).first()
             if existing:
                 # Promote registry entry to registered mapping existing
                 await mqtt_discovery_registry.promote_to_registered(device_id, existing.id)
@@ -139,7 +139,7 @@ async def approve_device(device_id: str, body: ApproveBody):
                 display.content_claiming = bool(caps.get("content_claiming"))
         # Hardware fingerprint field (if model supports it; ignore if not present)
         if hasattr(display, 'hardware_fingerprint') and rec.get("hardware_fingerprint"):
-            display.hardware_fingerprint = rec.get("hardware_fingerprint")  # type: ignore[attr-defined]
+            display.hardware_fingerprint = rec.get("hardware_fingerprint")
 
         db.add(display)
         db.commit()
@@ -178,7 +178,7 @@ async def reject_device(device_id: str, body: RejectBody):
     # (Direct internal call; no public delete yet in registry—simulate via sweep by forcing expired TTL logic)
     # Simpler for now: treat as expired by removing from in-memory or Redis
     try:
-        deleted = await mqtt_discovery_registry.delete(device_id)  # type: ignore[attr-defined]
+        deleted = await mqtt_discovery_registry.delete(device_id)
         if not deleted:
             logger.info("Reject device requested but already absent device_id=%s", device_id)
     except Exception as e:  # pragma: no cover

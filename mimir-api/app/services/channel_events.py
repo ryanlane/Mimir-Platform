@@ -29,7 +29,7 @@ from typing import Any
 from app.core.logging import get_logger
 
 try:  # metrics optional
-    from app.core.metrics import metrics  # type: ignore
+    from app.core.metrics import metrics
     METRICS_AVAILABLE = True
 except Exception:  # pragma: no cover
     METRICS_AVAILABLE = False
@@ -116,8 +116,8 @@ class ChannelEventDispatcher:
     async def _safe_invoke(self, callback: Callback, event: ChannelUpdateEvent) -> None:
         try:
             res = callback(event)
-            if asyncio.iscoroutine(res):  # type: ignore
-                await res  # type: ignore
+            if asyncio.iscoroutine(res):
+                await res
         except Exception as exc:  # pragma: no cover
             logger.warning(f"Channel event listener raised: {exc}")
 

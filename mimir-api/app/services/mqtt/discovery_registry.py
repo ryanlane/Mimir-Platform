@@ -76,13 +76,13 @@ class DiscoveryRegistry:
         try:
             # Lazy import; project uses a custom redis_manager that may not yet exist
             try:
-                from redis_manager import get_redis_manager, init_redis  # type: ignore
+                from redis_manager import get_redis_manager, init_redis
                 init_redis()
                 self._redis = get_redis_manager()
                 logger.info("Discovery registry using redis_manager backend")
             except ImportError:
                 # Fallback to direct redis library if installed
-                import redis.asyncio as redis  # type: ignore
+                import redis.asyncio as redis
                 dsn = settings.redis_dsn or f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}"
                 self._redis = redis.from_url(dsn, decode_responses=True)
                 logger.info("Discovery registry using direct redis client")
@@ -248,7 +248,7 @@ class DiscoveryRegistry:
             cursor = 0
             keys: list[str] = []
             while True:
-                cursor, batch = await self._redis.scan(cursor=cursor, match=f"{REDIS_KEY_PREFIX}:*")  # type: ignore
+                cursor, batch = await self._redis.scan(cursor=cursor, match=f"{REDIS_KEY_PREFIX}:*")
                 keys.extend(batch)
                 if cursor == 0:
                     break
@@ -256,7 +256,7 @@ class DiscoveryRegistry:
                     break
             results = []
             for k in keys:
-                h = await self._redis.hgetall(k)  # type: ignore
+                h = await self._redis.hgetall(k)
                 if not h:
                     continue
                 rec = self._hydrate(h)
@@ -278,7 +278,7 @@ class DiscoveryRegistry:
     # -------- Internal Helpers --------
     async def _get(self, device_id: str) -> dict | None:
         if self._redis:
-            h = await self._redis.hgetall(f"{REDIS_KEY_PREFIX}:{device_id}")  # type: ignore
+            h = await self._redis.hgetall(f"{REDIS_KEY_PREFIX}:{device_id}")
             if not h:
                 return None
             return self._hydrate(h)
@@ -293,12 +293,12 @@ class DiscoveryRegistry:
                 if v is None:
                     continue
                 flat[k] = v if isinstance(v, str) else json.dumps(v) if not isinstance(v, (int, float)) else str(v)
-            await self._redis.hset(key, mapping=flat)  # type: ignore
+            await self._redis.hset(key, mapping=flat)
             # TTL logic
             if record["state"] in ("discovered", "pre_registered", "offline"):
                 ttl = self._expiry_discovered if record["state"] == "discovered" else self._expiry_prereg
                 try:
-                    await self._redis.expire(key, ttl)  # type: ignore
+                    await self._redis.expire(key, ttl)
                 except Exception:  # pragma: no cover
                     # Ignore TTL failures (non-critical)
                     pass
@@ -308,7 +308,7 @@ class DiscoveryRegistry:
     async def _delete(self, device_id: str):
         if self._redis:
             try:
-                await self._redis.delete(f"{REDIS_KEY_PREFIX}:{device_id}")  # type: ignore
+                await self._redis.delete(f"{REDIS_KEY_PREFIX}:{device_id}")
             except Exception:  # pragma: no cover - defensive delete
                 pass
         else:
@@ -319,12 +319,12 @@ class DiscoveryRegistry:
         # Attempt JSON decode for capabilities/meta
         if isinstance(rec.get("capabilities"), str):
             try:
-                rec["capabilities"] = json.loads(rec["capabilities"])  # type: ignore
+                rec["capabilities"] = json.loads(rec["capabilities"])
             except (json.JSONDecodeError, TypeError):
                 pass
         if isinstance(rec.get("meta"), str):
             try:
-                rec["meta"] = json.loads(rec["meta"])  # type: ignore
+                rec["meta"] = json.loads(rec["meta"])
             except (json.JSONDecodeError, TypeError):
                 pass
         return rec

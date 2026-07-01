@@ -76,7 +76,7 @@ class DiscoveredDisplay:
 class DisplayDiscoveryListener(ServiceListener):
     """Service listener for mDNS display discovery"""
 
-    def __init__(self, discovery_service: MdnsDiscoveryService):  # type: ignore[name-defined]
+    def __init__(self, discovery_service: MdnsDiscoveryService):
         self.discovery_service = discovery_service
         self.logger = get_logger(f"{__name__}.DisplayDiscoveryListener")
 

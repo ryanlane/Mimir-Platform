@@ -82,7 +82,7 @@ async def get_mqtt_config(request: Request):
     if settings.mqtt_expose_credentials:
         payload["username"] = settings.mqtt_username
         payload["password"] = settings.mqtt_password
-    return payload  # type: ignore[return-value]
+    return payload
 
 
 @router.get("/discovery/status")

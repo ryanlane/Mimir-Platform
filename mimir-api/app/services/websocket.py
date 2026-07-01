@@ -25,7 +25,7 @@ Deprecation: Remove this shim after downstream code switches to
 from __future__ import annotations
 
 from app.services.websocket_manager import (
-    WebSocketManager as WebSocketService,  # type: ignore
+    WebSocketManager as WebSocketService,
 )
 from app.services.websocket_manager import (
     websocket_manager as websocket_service,

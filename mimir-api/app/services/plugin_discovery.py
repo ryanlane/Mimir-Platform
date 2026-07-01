@@ -320,7 +320,7 @@ class PluginDiscoveryService:
                         main_loop = asyncio.get_running_loop()
                     except RuntimeError:
                         # Fallback for environments where get_running_loop isn't available here; best-effort
-                        main_loop = None  # type: ignore[assignment]
+                        main_loop = None
 
                     def _on_channel_event(raw_evt: dict):  # raw dict from plugin (thread context allowed)
                         # Build event and publish it into the API's dispatcher from any thread.
@@ -407,7 +407,7 @@ class PluginDiscoveryService:
                     return None
                 pkg_mod = importlib.util.module_from_spec(pkg_spec)
                 sys.modules[pkg_name] = pkg_mod
-                pkg_spec.loader.exec_module(pkg_mod)  # type: ignore[union-attr]
+                pkg_spec.loader.exec_module(pkg_mod)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"[plugins] ({plugin.id}) Package __init__ failed: {e}")
                 if logger.isEnabledFor(10):
@@ -428,7 +428,7 @@ class PluginDiscoveryService:
                 module = importlib.util.module_from_spec(spec)
                 module.__package__ = pkg_name  # enable relative imports
                 sys.modules[channel_mod_name] = module
-                spec.loader.exec_module(module)  # type: ignore[union-attr]
+                spec.loader.exec_module(module)
                 logger.debug(f"[plugins] ({plugin.id}) Loaded as package: {pkg_name}")
                 return module
             except Exception as e:  # noqa: BLE001
@@ -448,7 +448,7 @@ class PluginDiscoveryService:
             sys.modules[spec_name] = module
             logger.debug(f"[plugins] ({plugin.id}) Executing module spec")
             try:
-                spec.loader.exec_module(module)  # type: ignore[union-attr]
+                spec.loader.exec_module(module)
             except Exception as e:  # noqa: BLE001
                 logger.error(f"[plugins] ({plugin.id}) Module execution failed: {e}")
                 if logger.isEnabledFor(10):

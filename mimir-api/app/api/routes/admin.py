@@ -249,7 +249,7 @@ async def _check_redis() -> dict:
         return {"status": "disabled"}
     t0 = time.monotonic()
     try:
-        import redis.asyncio as aioredis  # type: ignore
+        import redis.asyncio as aioredis
         dsn = settings.redis_dsn or f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}"
         r = aioredis.from_url(dsn, socket_connect_timeout=2, socket_timeout=2)
         await r.ping()

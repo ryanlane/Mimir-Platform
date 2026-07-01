@@ -65,7 +65,7 @@ class HtmlRendererService:
     async def start(self) -> None:
         """Launch the browser.  Called once at server startup."""
         try:
-            from playwright.async_api import async_playwright  # type: ignore[import]
+            from playwright.async_api import async_playwright
         except ImportError:
             logger.warning(
                 "[html-renderer] playwright not installed — HTML rendering unavailable. "

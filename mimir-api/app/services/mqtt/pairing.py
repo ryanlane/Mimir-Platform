@@ -91,7 +91,7 @@ class PairingService:
             logger.info("Pairing service using in-memory backend (Redis disabled)")
             return
         try:
-            import redis.asyncio as redis  # type: ignore
+            import redis.asyncio as redis
 
             dsn = f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db}"
             self._redis = redis.from_url(dsn, decode_responses=True)
@@ -253,7 +253,7 @@ class PairingService:
                 if not result:
                     return None
                 # EVAL returns a flat [field, value, field, value, ...] array
-                return dict(zip(result[0::2], result[1::2]))
+                return dict(zip(result[0::2], result[1::2], strict=True))
             except Exception as e:
                 logger.error("Redis atomic claim failed for pair %s: %s", code, e)
         async with self._lock:

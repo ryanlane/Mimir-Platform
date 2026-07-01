@@ -98,10 +98,6 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
 
-[tool.pytest.ini_options]
-minversion = "7.0"
-addopts = "-ra -q --strict-markers"
-testpaths = [
-    "tests",
-]
-asyncio_mode = "auto"
+# Pytest config lives in pytest.ini (pytest.ini takes precedence over this
+# section anyway, and having both was producing a "ignoring pytest config in
+# pyproject.toml" warning on every run).

@@ -197,12 +197,12 @@ async def request_channel_image_unified(channel_id: str, payload: dict[str, Any]
         # Common plugin shape: may include success flag
         extra = {k: v for k, v in raw_result.items() if k not in {"image", "image_base64", "bytes", "content_type"}}
         if isinstance(raw_result.get("bytes"), (bytes, bytearray)):
-            content_bytes = bytes(raw_result["bytes"])  # type: ignore[index]
+            content_bytes = bytes(raw_result["bytes"])
         elif isinstance(raw_result.get("image"), str):
-            b64_payload = raw_result["image"]  # type: ignore[index]
+            b64_payload = raw_result["image"]
         elif isinstance(raw_result.get("image_base64"), str):
-            b64_payload = raw_result["image_base64"]  # type: ignore[index]
-        content_type = raw_result.get("content_type", content_type)  # type: ignore[arg-type]
+            b64_payload = raw_result["image_base64"]
+        content_type = raw_result.get("content_type", content_type)
     elif isinstance(raw_result, (bytes, bytearray)):
         content_bytes = bytes(raw_result)
     elif isinstance(raw_result, str):

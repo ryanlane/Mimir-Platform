@@ -46,7 +46,7 @@ from urllib import request as _urlreq
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 try:
-    from PIL import Image  # type: ignore
+    from PIL import Image
 except ImportError:  # pragma: no cover
     Image = None  # type: ignore
 
@@ -67,10 +67,10 @@ logger = logging.getLogger(__name__)
 _last_scene_fingerprint: dict[str, str] = {}
 
 _METRICS = False
-refresh_counter = None  # type: ignore[assignment]
-refresh_duration_counter = None  # type: ignore[assignment]
+refresh_counter = None
+refresh_duration_counter = None
 try:  # metrics optional; keep minimal to avoid circulars
-    from app.core.metrics import metrics  # type: ignore
+    from app.core.metrics import metrics
     refresh_counter = getattr(metrics, 'scene_refresh_total', None)  # pre-defined elsewhere ideally
     refresh_duration_counter = getattr(metrics, 'scene_refresh_duration_ms', None)
     _METRICS = any([refresh_counter, refresh_duration_counter])
@@ -358,7 +358,7 @@ class SceneRefreshService:
                                     device_id = disp["device_id"]
                                     try:
                                         pub = MQTTSceneAssignmentPublisher.get()
-                                        if not pub.is_connected():  # type: ignore[attr-defined]
+                                        if not pub.is_connected():
                                             await pub.start()
                                     except (RuntimeError, OSError):
                                         pass
@@ -512,7 +512,7 @@ class SceneRefreshService:
                                     device_id = disp["device_id"]
                                     try:
                                         pub = MQTTSceneAssignmentPublisher.get()
-                                        if not pub.is_connected():  # type: ignore[attr-defined]
+                                        if not pub.is_connected():
                                             await pub.start()
                                     except (RuntimeError, OSError):
                                         pass
@@ -622,7 +622,7 @@ class SceneRefreshService:
             finally:
                 if _METRICS:
                     # Attempt counter increments only if objects exist; ignore failures
-                    if refresh_counter:  # type: ignore[truthy-function]
+                    if refresh_counter:
                         try:  # pragma: no cover
                             refresh_counter.add(1)
                         except (RuntimeError, ValueError):  # pragma: no cover
@@ -714,7 +714,7 @@ class SceneRefreshService:
         return list(collected.values())
 
     @staticmethod
-    def _parse_resolution_string(res_str: str | None):  # type: ignore
+    def _parse_resolution_string(res_str: str | None):
         if not res_str or "x" not in res_str:
             return 800, 480
         try:

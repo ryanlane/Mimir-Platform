@@ -873,7 +873,7 @@ def _extract_refresh_interval(scene: Scene, session) -> int | None:
         job = (
             session.query(SchedulerJob)
             .filter(SchedulerJob.action_type == "refresh_scene")
-            .filter(SchedulerJob.action_config["scene_id"].as_string() == scene.id)  # type: ignore
+            .filter(SchedulerJob.action_config["scene_id"].as_string() == scene.id)
             .order_by(SchedulerJob.approx_interval_seconds.asc())
             .first()
         )
