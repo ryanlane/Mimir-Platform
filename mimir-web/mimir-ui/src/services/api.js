@@ -553,8 +553,11 @@ export const api = {
 
   // Distribution System Operations
   getDistributionOverview: () => apiClient.get('/admin/distribution/overview'),
-  refreshSceneContent: (sceneId) => apiClient.post(`/scenes/${sceneId}/refresh_content`),
-  refreshSceneTargeted: (sceneId, body = {}) => apiClient.post(`/scenes/${sceneId}/refresh`, body),
+  // Scene refreshes run the full render + distribution chain synchronously —
+  // animated content (genart WebP loops) can take well beyond the default
+  // 10s: multi-second render, large file transfer to the display, device ack.
+  refreshSceneContent: (sceneId) => apiClient.post(`/scenes/${sceneId}/refresh_content`, null, { timeout: 60000 }),
+  refreshSceneTargeted: (sceneId, body = {}) => apiClient.post(`/scenes/${sceneId}/refresh`, body, { timeout: 60000 }),
   resetSceneDistribution: (sceneId) => apiClient.post(`/scenes/${sceneId}/reset_distribution`),
   getSceneContentInfo: (sceneId) => apiClient.get(`/scenes/${sceneId}/content_info`),
   updateSceneDistributionMode: async (sceneId, distributionMode) => {

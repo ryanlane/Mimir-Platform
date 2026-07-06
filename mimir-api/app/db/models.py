@@ -170,6 +170,10 @@ class DisplayClient(Base):
     height = Column(Integer, nullable=True)  # Display height
     orientation = Column(String, default="landscape", index=True)  # "landscape", "portrait"
     client_version = Column(String, nullable=True, index=True)  # Client software version
+    # Whether the panel can play animated content (WebP/GIF loops).
+    # NULL = unknown (client predates the capability); channels treat
+    # unknown as "don't downgrade".
+    supports_animation = Column(Boolean, nullable=True)
 
     # Connection status
     is_online = Column(Boolean, default=False, index=True)

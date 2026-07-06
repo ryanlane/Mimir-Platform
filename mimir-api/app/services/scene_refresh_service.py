@@ -233,13 +233,18 @@ class SceneRefreshService:
                             duration_ms=int((time.perf_counter()-start)*1000),
                         )
 
-                    # Group by resolution/orientation/variant (infer orientation from aspect to avoid mismatches)
-                    groups: dict[tuple[int, int, str, str | None], list[dict[str, Any]]] = {}
+                    # Group by resolution/orientation/variant/animation-capability
+                    # (infer orientation from aspect to avoid mismatches; animation
+                    # capability splits groups so a static-only panel never shares a
+                    # render with an animation-capable one)
+                    groups: dict[tuple[int, int, str, str | None, bool | None], list[dict[str, Any]]] = {}
                     for d in displays:
                         w, h = d["width"], d["height"]
                         inferred_orient = "square" if w == h else ("portrait" if h > w else "landscape")
                         variant = d.get("content_variant") or None
-                        key = (w, h, inferred_orient, variant)
+                        anim = d.get("supports_animation")
+                        anim = bool(anim) if anim is not None else None
+                        key = (w, h, inferred_orient, variant, anim)
                         groups.setdefault(key, []).append({**d, "orientation": inferred_orient})
 
                     # Primary/image variants must be processed before supplementary variants
@@ -280,7 +285,7 @@ class SceneRefreshService:
 
                         if distribution_mode == "sequential":
                             # Per-device HTTP requests
-                            for (w, h, orientation, variant), display_group in ordered_groups:
+                            for (w, h, orientation, variant, supports_anim), display_group in ordered_groups:
                                 for disp in display_group:
                                     logger.info(
                                         "scene.refresh.device_request scene=%s channel=%s sub=%s device=%s w=%s h=%s orient=%s distribution=%s",
@@ -300,6 +305,8 @@ class SceneRefreshService:
                                             "distribution": "new",
                                         }
                                     }
+                                    if supports_anim is not None:
+                                        request_payload["settings"]["supports_animation"] = supports_anim
                                     if sc_id:
                                         request_payload["gallery_id"] = sc_id
                                         request_payload["settings"]["subChannelId"] = sc_id
@@ -438,7 +445,7 @@ class SceneRefreshService:
                             # End sequential loop
                         else:
                             # Mirror mode: one HTTP request per group, fan-out to displays
-                            for (w, h, orientation, variant), display_group in ordered_groups:
+                            for (w, h, orientation, variant, supports_anim), display_group in ordered_groups:
                                 logger.info(
                                     "scene.refresh.group_request scene=%s channel=%s sub=%s w=%s h=%s orient=%s distribution=%s count=%s",
                                     scene_id,
@@ -457,6 +464,8 @@ class SceneRefreshService:
                                         "distribution": "new",
                                     }
                                 }
+                                if supports_anim is not None:
+                                    request_payload["settings"]["supports_animation"] = supports_anim
                                 if sc_id:
                                     request_payload["gallery_id"] = sc_id
                                     request_payload["settings"]["subChannelId"] = sc_id
@@ -686,12 +695,17 @@ class SceneRefreshService:
                                 w, h = 600, 600
                             else:
                                 w, h = 800, 480
+                        sa_prop = props.get("supports_animation")
+                        supports_anim = None
+                        if isinstance(sa_prop, str) and sa_prop.strip():
+                            supports_anim = sa_prop.strip().lower() in ("1", "true", "yes")
                         collected[d.display_id] = {
                             "device_id": d.hostname or d.display_id,
                             "width": w,
                             "height": h,
                             "orientation": orientation,
                             "content_variant": None,
+                            "supports_animation": supports_anim,
                         }
             except (RuntimeError, ValueError, OSError) as e:  # discovery iteration resilience
                 logger.debug("collect_discovered.error scene=%s err=%s", scene.id, type(e).__name__)
@@ -718,6 +732,7 @@ class SceneRefreshService:
                     "height": h,
                     "orientation": orientation,
                     "content_variant": display.content_variant or None,
+                    "supports_animation": display.supports_animation,
                 }
         return list(collected.values())
 

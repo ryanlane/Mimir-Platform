@@ -20,6 +20,7 @@ Handles device registration requests via MQTT
 import asyncio
 import json
 import secrets
+import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -258,21 +259,34 @@ class AutoRegistrationService:
         created = False
         display_obj: DisplayClient | None = None
         try:
+            res_pair = (
+                [int(resolution[0]), int(resolution[1])]
+                if isinstance(resolution, (list, tuple)) and len(resolution) >= 2
+                else None
+            )
+            supports_animation = (
+                bool(capabilities["supports_animation"])
+                if "supports_animation" in capabilities else None
+            )
             display_obj = db.query(DisplayClient).filter(DisplayClient.hostname == hostname).first()
             if not display_obj:
                 display_obj = DisplayClient(
+                    id=str(uuid.uuid4()),
                     name=metadata.get("name", hostname),
-                    description=metadata.get("description", "Proactive registered display"),
                     location=metadata.get("location", "Unknown"),
                     hostname=hostname,
+                    display_type="registered",
+                    discovery_method="mqtt_registration",
                     is_online=True,
                     last_seen=datetime.now(timezone.utc),
                     client_version=client_version,
-                    resolution=resolution,
                     orientation=orientation,
-                    refresh_rate_hz=capabilities.get("refresh_rate_hz", 1),
-                    tags=tags,
+                    redis_distribution=bool(capabilities.get("redis_distribution", False)),
+                    content_claiming=bool(capabilities.get("content_claiming", False)),
+                    supports_animation=supports_animation,
                 )
+                if res_pair:
+                    display_obj.width, display_obj.height = res_pair
                 db.add(display_obj)
                 db.commit()
                 db.refresh(display_obj)
@@ -283,11 +297,14 @@ class AutoRegistrationService:
                 if display_obj.client_version != client_version:
                     display_obj.client_version = client_version
                     changed = True
-                if display_obj.resolution != resolution:
-                    display_obj.resolution = resolution
+                if res_pair and [display_obj.width, display_obj.height] != res_pair:
+                    display_obj.width, display_obj.height = res_pair
                     changed = True
                 if display_obj.orientation != orientation:
                     display_obj.orientation = orientation
+                    changed = True
+                if supports_animation is not None and display_obj.supports_animation != supports_animation:
+                    display_obj.supports_animation = supports_animation
                     changed = True
                 if changed:
                     display_obj.last_seen = datetime.now(timezone.utc)
@@ -389,18 +406,27 @@ class AutoRegistrationService:
             db = SessionLocal()
             try:
                 new_display = DisplayClient(
+                    id=str(uuid.uuid4()),
                     name=metadata.get("name", f"Display {hostname}"),
-                    description=metadata.get("description", "Auto-registered display"),
                     location=metadata.get("location", "Unknown"),
                     hostname=hostname,
+                    display_type="registered",
+                    discovery_method="mqtt_registration",
                     is_online=True,
                     last_seen=datetime.now(timezone.utc),
                     client_version=metadata.get("client_version", "unknown"),
-                    resolution=capabilities.get("resolution", [800, 480]),
                     orientation=capabilities.get("orientation", "landscape"),
-                    refresh_rate_hz=capabilities.get("refresh_rate_hz", 1),
-                    tags=metadata.get("tags", [])
+                    redis_distribution=bool(capabilities.get("redis_distribution", False)),
+                    content_claiming=bool(capabilities.get("content_claiming", False)),
+                    supports_animation=(
+                        bool(capabilities["supports_animation"])
+                        if "supports_animation" in capabilities else None
+                    ),
                 )
+                res = (capabilities.get("resolution")
+                       or capabilities.get("native_resolution") or [800, 480])
+                if isinstance(res, (list, tuple)) and len(res) >= 2:
+                    new_display.width, new_display.height = int(res[0]), int(res[1])
 
                 db.add(new_display)
                 db.commit()

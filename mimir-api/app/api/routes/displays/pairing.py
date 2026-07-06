@@ -92,6 +92,8 @@ async def claim_pair_code(body: PairClaimRequest, db: Session = Depends(get_db))
         existing.discovery_method = "pairing_code"
         existing.redis_distribution = bool(capabilities.get("redis_distribution", False))
         existing.content_claiming = bool(capabilities.get("content_claiming", False))
+        if "supports_animation" in capabilities:
+            existing.supports_animation = bool(capabilities.get("supports_animation"))
         if isinstance(resolution, (list, tuple)) and len(resolution) >= 2:
             existing.width = int(resolution[0])
             existing.height = int(resolution[1])
@@ -112,6 +114,10 @@ async def claim_pair_code(body: PairClaimRequest, db: Session = Depends(get_db))
             orientation=orientation,
             redis_distribution=bool(capabilities.get("redis_distribution", False)),
             content_claiming=bool(capabilities.get("content_claiming", False)),
+            supports_animation=(
+                bool(capabilities["supports_animation"])
+                if "supports_animation" in capabilities else None
+            ),
         )
         if isinstance(resolution, (list, tuple)) and len(resolution) >= 2:
             display.width = int(resolution[0])
