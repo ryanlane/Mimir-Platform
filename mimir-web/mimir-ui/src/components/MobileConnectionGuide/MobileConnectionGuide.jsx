@@ -15,6 +15,7 @@
 
 import React, { useState } from 'react';
 import { Smartphone, Wifi, AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import { getServerBaseUrl, getWebSocketBaseUrl } from '../../services/runtimeUrls';
 import './MobileConnectionGuide.css';
 
 const MobileConnectionGuide = () => {
@@ -27,40 +28,11 @@ const MobileConnectionGuide = () => {
   };
 
   const getRecommendedApiUrl = () => {
-    if (typeof window === 'undefined') return '';
-    const { hostname, origin, port } = window.location;
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const devPorts = new Set(['3000', '5173', '8080']);
-
-    // Prefer same-origin for HTTPS; on HTTP prefer backend :5000
-    if (!isLocalhost && !devPorts.has(port)) {
-      if (window.location.protocol === 'https:') {
-        return origin.replace(/\/$/, '');
-      }
-      return `http://${hostname}:5000`;
-    }
-
-    // Localhost/dev: explicit backend port
-    return 'http://localhost:5000';
+    return getServerBaseUrl();
   };
 
   const getRecommendedWsUrl = () => {
-    if (typeof window === 'undefined') return '';
-    const { hostname, protocol, origin, port } = window.location;
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const devPorts = new Set(['3000', '5173', '8080']);
-    const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-
-    if (!isLocalhost && !devPorts.has(port)) {
-      if (protocol === 'https:') {
-        const url = new URL(origin);
-        url.protocol = wsProtocol;
-        return url.toString().replace(/\/$/, '');
-      }
-      return `ws://${hostname}:5000`;
-    }
-
-    return 'ws://localhost:5000';
+    return getWebSocketBaseUrl();
   };
 
   return (

@@ -13,6 +13,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import { getWebSocketBaseUrl } from './runtimeUrls';
+
 class WebSocketService {
   constructor() {
     this.ws = null;
@@ -34,41 +36,7 @@ class WebSocketService {
 
   // Generate smart WebSocket URL based on current environment
   getWebSocketUrl() {
-    // 1. Check for explicit configuration
-    const storedUrl = localStorage.getItem('mimir-websocket-url');
-    if (storedUrl) {
-      return storedUrl;
-    }
-
-    // 2. Generate based on current page location
-    if (typeof window !== 'undefined' && window.location) {
-      const { hostname, protocol, origin, port } = window.location;
-      const isSecure = protocol === 'https:';
-      const wsProtocol = isSecure ? 'wss:' : 'ws:';
-      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-      const devPorts = new Set(['3000', '5173', '8080']);
-
-      // Prefer same-origin host ONLY when on HTTPS (use wss). On HTTP use backend :5000 to match API.
-      if (!isLocalhost && !devPorts.has(port)) {
-        if (isSecure) {
-          const url = new URL(origin);
-          url.protocol = wsProtocol;
-          return url.toString().replace(/\/$/, '');
-        }
-        return `ws://${hostname}:5000`;
-      }
-
-      // If on dev ports but non-localhost (e.g., http://<LAN-IP>:3000), point to ws://<LAN-IP>:5000
-      if (!isLocalhost && devPorts.has(port)) {
-        return `ws://${hostname}:5000`;
-      }
-
-      // Localhost/dev: default to backend port 5000
-      return 'ws://localhost:5000';
-    }
-
-    // 3. Final fallback for specific deployment
-    return 'ws://172.31.79.107:5000';
+    return getWebSocketBaseUrl();
   }
 
   // Connect to the enhanced WebSocket API with dynamic URL

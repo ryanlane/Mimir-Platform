@@ -15,70 +15,7 @@
 
 import axios from 'axios';
 import { apiCache, CACHE_CONFIGS, invalidateCache } from './apiCache';
-
-// API base URL with intelligent defaults
-function getApiBaseUrl() {
-  // 1) Build-time env var — set REACT_APP_API_URL at build or in .env for fixed deployments
-  if (process.env.REACT_APP_API_URL) {
-    return ensureApiSuffix(process.env.REACT_APP_API_URL);
-  }
-
-  // 2) Runtime override via Settings UI (persisted to localStorage) or window global
-  const raw =
-    (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
-    (typeof localStorage !== 'undefined' && localStorage.getItem('mimir-api-base-url'));
-
-  if (raw) {
-    return ensureApiSuffix(raw);
-  }
-
-  // 3) Smart fallback based on current environment
-  if (typeof window !== 'undefined' && window.location) {
-    const { hostname, origin, port, protocol } = window.location;
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const devPorts = new Set(['3000', '5173', '8080']); // common dev servers
-
-    // Prefer same-origin /api ONLY when we're on HTTPS (avoids mixed-content and supports reverse proxy)
-    if (!isLocalhost && !devPorts.has(port)) {
-      if (protocol === 'https:') {
-        return ensureApiSuffix(origin);
-      }
-      // On plain HTTP with no explicit dev port, default to backend :5000
-      return `http://${hostname}:5000/api`;
-    }
-
-    // If on dev ports but not localhost (e.g., phone hitting http://<LAN-IP>:3000), use that host on :5000 (http)
-    if (!isLocalhost && devPorts.has(port)) {
-      return 'http://' + hostname + ':5000/api';
-    }
-
-    // Localhost dev
-    return 'http://localhost:5000/api';
-  }
-
-  // 4) Last-resort static fallback
-  return 'http://localhost:5000/api';
-}
-
-function ensureApiSuffix(base) {
-  try {
-    // Handle absolute or relative bases
-    const u = new URL(base, window.location.origin);
-
-    // Normalize trailing slashes
-    u.pathname = u.pathname.replace(/\/+$/, '') || '/';
-
-    // If path doesn't already start with /api, append it
-    if (!/^\/api(\/|$)/i.test(u.pathname)) {
-      u.pathname = (u.pathname === '/' ? '' : u.pathname) + '/api';
-    }
-    return u.toString();
-  } catch {
-    // Fallback for unusual inputs
-    const t = String(base).replace(/\/+$/, '');
-    return /\/api(\/|$)/i.test(t) ? t : `${t}/api`;
-  }
-}
+import { getApiBaseUrl } from './runtimeUrls';
 
 // Create axios instance with default config
 let apiClient = axios.create({

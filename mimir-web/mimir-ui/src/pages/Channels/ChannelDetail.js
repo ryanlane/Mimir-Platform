@@ -21,58 +21,11 @@ import {
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import featureDetection from '../../services/featureDetection';
+import { getApiBaseUrl, getServerBaseUrl } from '../../services/runtimeUrls';
 import Button from '../../components/Button/Button';
 import './ChannelDetail.css';
 
 // ── URL helpers (same logic as ChannelSettings) ───────────────────────────────
-
-const getApiBaseUrl = () => {
-  const raw =
-    (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
-    localStorage.getItem('mimir-api-base-url');
-  if (raw) {
-    try {
-      const u = new URL(raw, window.location.origin);
-      u.pathname = u.pathname.replace(/\/+$/, '') || '/';
-      if (!/^\/api(\/|$)/i.test(u.pathname)) {
-        u.pathname = (u.pathname === '/' ? '' : u.pathname) + '/api';
-      }
-      return u.toString();
-    } catch {
-      const t = String(raw).replace(/\/+$/, '');
-      return /\/api(\/|$)/i.test(t) ? t : `${t}/api`;
-    }
-  }
-  if (typeof window !== 'undefined') {
-    const h = window.location.hostname;
-    const p = window.location.protocol;
-    if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:5000/api';
-    if (h) return `${p}//${h}:5000/api`;
-  }
-  return 'http://localhost:5000/api';
-};
-
-const getServerBaseUrl = () => {
-  const raw =
-    (typeof window !== 'undefined' && window.mimirApiBaseUrl) ||
-    localStorage.getItem('mimir-api-base-url');
-  if (raw) {
-    try {
-      const u = new URL(raw, window.location.origin);
-      u.pathname = u.pathname.replace(/\/+$/, '').replace(/\/api$/, '') || '/';
-      return u.toString().replace(/\/$/, '');
-    } catch {
-      return String(raw).replace(/\/+$/, '').replace(/\/api$/, '');
-    }
-  }
-  if (typeof window !== 'undefined') {
-    const h = window.location.hostname;
-    const p = window.location.protocol;
-    if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:5000';
-    if (h) return `${p}//${h}:5000`;
-  }
-  return 'http://localhost:5000';
-};
 
 // ── Web Component loader (extracted from ChannelSettings) ────────────────────
 
