@@ -362,7 +362,9 @@ export const api = {
 
   // v2.3: Display Management API endpoints
   registerDisplay: (displayData) => apiClient.post('/displays/register', displayData),
-  getDisplays: (params = {}) => apiClient.get('/displays', { params }),
+  // Trailing slash avoids FastAPI's 307 redirect, which breaks behind
+  // port-forwarded proxies when the Location header loses the port.
+  getDisplays: (params = {}) => apiClient.get('/displays/', { params }),
   unassignSceneFromDisplay: (displayId) => apiClient.delete(`/displays/${encodeURIComponent(displayId)}/scene`),
   getUnassignedDisplays: (includeDiscovered = true) => apiClient.get('/displays/unassigned', { params: { include_discovered: includeDiscovered } }),
   bootstrapDisplay: (displayId, payload = {}) => apiClient.post(`/displays/bootstrap/${displayId}`, payload),
