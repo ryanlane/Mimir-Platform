@@ -393,6 +393,14 @@ def create_app() -> FastAPI:
     except Exception as e:
         logger.warning(f"Failed to mount metrics endpoint: {e}")
 
+    # Python < 3.13 mimetypes doesn't know these formats, so StaticFiles
+    # would serve them as text/plain — display clients pick their decoder
+    # (and cache-file extension) from Content-Type, which breaks animated
+    # WebP playback on the Windows client among others.
+    import mimetypes
+    mimetypes.add_type("image/webp", ".webp")
+    mimetypes.add_type("image/avif", ".avif")
+
     # Mount static files for channels
     # TODO: This should be handled by the channel manager service
     try:

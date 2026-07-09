@@ -393,21 +393,23 @@ class MqttPresenceService:
         caps = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
         orientation = payload.get("orientation") or (caps or {}).get("orientation")
 
-        def _update() -> bool:
+        def _update() -> tuple[bool, bool, str | None]:
+            """Returns (row_found, resolution_changed, assigned_scene_id)."""
             from app.db.base import SessionLocal
             from app.db.models import DisplayClient
             with SessionLocal() as db:
                 display = db.query(DisplayClient).filter(DisplayClient.hostname == device_id).first()
                 if not display:
-                    return False
+                    return (False, False, None)
                 changed = False
+                res_changed = False
                 if (display.width, display.height) != res:
                     logger.info(
                         "Display %s resolution changed: %sx%s -> %sx%s",
                         device_id, display.width, display.height, res[0], res[1],
                     )
                     display.width, display.height = res
-                    changed = True
+                    changed = res_changed = True
                 if orientation and display.orientation != orientation:
                     display.orientation = orientation
                     changed = True
@@ -419,13 +421,40 @@ class MqttPresenceService:
                             changed = True
                 if changed:
                     db.commit()
-                return True
+                return (True, res_changed, display.assigned_scene_id)
         try:
-            found = await asyncio.to_thread(_update)
+            found, res_changed, scene_id = await asyncio.to_thread(_update)
             if found:
                 self._last_synced_resolution[device_id] = res
+            if res_changed and scene_id:
+                # Re-render promptly at the new size — dynamic displays
+                # (resized windows, fullscreen toggles) shouldn't show
+                # stale-resolution content until the next scheduled refresh.
+                self._trigger_resolution_refresh(str(scene_id), device_id)
         except Exception as e:  # pragma: no cover - sync must never break presence
             logger.warning("Capability sync failed for %s: %s", device_id, e)
+
+    def _trigger_resolution_refresh(self, scene_id: str, device_id: str) -> None:
+        """Fire-and-forget targeted scene refresh after a resolution change."""
+        async def _refresh() -> None:
+            try:
+                from app.services.scene_refresh_service import scene_refresh_service
+                result = await scene_refresh_service.refresh_scene(
+                    scene_id,
+                    trigger_reason="resolution_change",
+                    force=True,
+                    target_devices=[device_id],
+                )
+                logger.info(
+                    "Resolution-change refresh for %s scene=%s -> %s",
+                    device_id, scene_id, getattr(result, "status", "done"),
+                )
+            except Exception as e:  # noqa: BLE001 — refresh failure must not break presence
+                logger.warning("Resolution-change refresh failed for %s: %s", device_id, e)
+        try:
+            asyncio.get_running_loop().create_task(_refresh())
+        except RuntimeError:  # pragma: no cover - no running loop (tests)
+            pass
 
     async def _handle_event_message(self, device_id: str, payload: dict):
         """Handle device event messages for immediate scene assignment updates"""

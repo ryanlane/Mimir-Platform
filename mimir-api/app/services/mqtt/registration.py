@@ -252,7 +252,6 @@ class AutoRegistrationService:
         orientation = capabilities.get("orientation", "landscape")
         client_version = metadata.get("client_version", "unknown")
         hostname = metadata.get("hostname") or device_id
-        tags = metadata.get("tags") or []
 
         # Upsert DB row idempotently (match on hostname OR device_id stored in hostname field for now)
         db = SessionLocal()
