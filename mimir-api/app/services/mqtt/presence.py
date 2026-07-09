@@ -63,6 +63,9 @@ class MqttPresenceService:
         # Presence tracking
         self.online_devices: set[str] = set()
         self.device_metadata: dict[str, dict] = {}
+        # Last resolution written to the DB per device — gates capability
+        # sync so steady-state heartbeats don't touch the database.
+        self._last_synced_resolution: dict[str, tuple[int, int]] = {}
 
         # Callbacks for presence events
         self.presence_callbacks: set[Callable] = set()
@@ -221,10 +224,14 @@ class MqttPresenceService:
 
             if payload and message_type == "status":
                 await self._handle_status_message(device_id, payload)
+                await self._sync_display_capabilities(device_id, payload)
             elif payload and message_type == "heartbeat":
                 await self._handle_heartbeat_message(device_id, payload)
+                await self._sync_display_capabilities(device_id, payload)
             elif payload and message_type == "evt":
                 await self._handle_event_message(device_id, payload)
+                if payload.get("type") == "presence":
+                    await self._sync_display_capabilities(device_id, payload)
 
         except Exception as e:  # pragma: no cover - top-level guard
             logger.error("Error handling MQTT message: %s", e)
@@ -337,6 +344,88 @@ class MqttPresenceService:
             self.online_devices.add(device_id)
             logger.info("Device marked online via heartbeat: %s", device_id)
             self._notify_presence_callbacks(device_id, "heartbeat_online", {"timestamp": timestamp.isoformat()})
+
+    @staticmethod
+    def _extract_reported_resolution(payload: dict) -> tuple[int, int] | None:
+        """Pull a resolution out of a status/heartbeat/presence payload.
+
+        Accepts the conventions used across clients:
+          capabilities.resolution: [w, h]   (pairing/registration canon)
+          resolution: [w, h]                (flat variant)
+          resolution: "1920x1080"           (mDNS-style string)
+        """
+        caps = payload.get("capabilities")
+        res = (caps or {}).get("resolution") if isinstance(caps, dict) else None
+        if res is None:
+            res = payload.get("resolution")
+        if isinstance(res, str) and "x" in res:
+            parts = res.lower().split("x", 1)
+            try:
+                res = [int(parts[0]), int(parts[1])]
+            except ValueError:
+                return None
+        if isinstance(res, (list, tuple)) and len(res) >= 2:
+            try:
+                w, h = int(res[0]), int(res[1])
+            except (TypeError, ValueError):
+                return None
+            if w > 0 and h > 0:
+                return (w, h)
+        return None
+
+    async def _sync_display_capabilities(self, device_id: str, payload: dict) -> None:
+        """Persist capability changes reported at runtime to the display's DB row.
+
+        Dynamic displays (resizable Electron windows, the native Windows
+        client) report their *current* resolution in status/presence
+        messages. Scene refresh renders from display_clients.width/height,
+        so those columns must track the live value or resized displays keep
+        receiving stale-resolution content.
+        """
+        res = self._extract_reported_resolution(payload)
+        if res is None:
+            return
+        # Cheap in-memory gate: heartbeats arrive continuously, the DB only
+        # needs touching when the reported value actually changes.
+        if self._last_synced_resolution.get(device_id) == res:
+            return
+
+        caps = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
+        orientation = payload.get("orientation") or (caps or {}).get("orientation")
+
+        def _update() -> bool:
+            from app.db.base import SessionLocal
+            from app.db.models import DisplayClient
+            with SessionLocal() as db:
+                display = db.query(DisplayClient).filter(DisplayClient.hostname == device_id).first()
+                if not display:
+                    return False
+                changed = False
+                if (display.width, display.height) != res:
+                    logger.info(
+                        "Display %s resolution changed: %sx%s -> %sx%s",
+                        device_id, display.width, display.height, res[0], res[1],
+                    )
+                    display.width, display.height = res
+                    changed = True
+                if orientation and display.orientation != orientation:
+                    display.orientation = orientation
+                    changed = True
+                for flag in ("supports_animation",):
+                    if isinstance(caps, dict) and flag in caps:
+                        val = bool(caps[flag])
+                        if getattr(display, flag, None) != val:
+                            setattr(display, flag, val)
+                            changed = True
+                if changed:
+                    db.commit()
+                return True
+        try:
+            found = await asyncio.to_thread(_update)
+            if found:
+                self._last_synced_resolution[device_id] = res
+        except Exception as e:  # pragma: no cover - sync must never break presence
+            logger.warning("Capability sync failed for %s: %s", device_id, e)
 
     async def _handle_event_message(self, device_id: str, payload: dict):
         """Handle device event messages for immediate scene assignment updates"""

@@ -154,11 +154,21 @@ class PairingService:
             return
 
         device_id = data.get("device_id")
-        code = str(data.get("code", "")).upper().strip()
+        # "code" is canonical; "pair_code" is a compatibility alias for the
+        # Windows client (see MQTT_API_DISPLAY_MESSAGE_COMPATIBILITY_SPEC §7.1).
+        code = str(data.get("code") or data.get("pair_code") or "").upper().strip()
         reply_to = data.get("reply_to") or pair_ack_topic(device_id or "unknown")
 
         if not device_id or not code:
             logger.warning("Pairing request missing device_id or code")
+            if device_id:
+                # Tell the display instead of failing silently — it's showing
+                # this code to a user right now.
+                await self._publish_ack(client, reply_to, {
+                    "status": "error",
+                    "error": "missing_code",
+                    "message": "Pair request must include 'code'",
+                })
             return
 
         if len(code) != 6 or not all(c in _ALPHABET for c in code):
