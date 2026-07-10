@@ -15,7 +15,7 @@
 
 // Multi-Display Management page for v2.3 API
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers, Link2 } from 'lucide-react';
+import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers, Link2, Plus, Globe } from 'lucide-react';
 import { api } from '../../services/api';
 import { getApiBaseUrl, getServerBaseUrlFromApiBase } from '../../services/runtimeUrls';
 
@@ -1302,6 +1302,24 @@ const Displays = () => {
               : 'Try adjusting your filters to see more screens.'
             }
           </p>
+          {displays.length === 0 && (
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button
+                variant="primary"
+                icon={<Plus size={18} aria-hidden="true" />}
+                onClick={() => { setShowPairing(true); }}
+              >
+                Add Screen
+              </Button>
+              <Button
+                variant="secondary"
+                icon={<Globe size={18} aria-hidden="true" />}
+                onClick={() => { setShowAddWeb(true); setWebError(null); }}
+              >
+                Web Screen
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="displays-grid">
