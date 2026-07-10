@@ -400,6 +400,7 @@ export const api = {
   
   // Virtual display endpoints (dev mode only)
   createVirtualDisplay: (data) => apiClient.post('/displays/virtual', data),
+  createWebDisplay: (data) => apiClient.post('/displays/web', data),
   deleteVirtualDisplay: (displayId) => apiClient.delete(`/displays/virtual/${encodeURIComponent(displayId)}`),
   getVirtualPresets: () => apiClient.get('/displays/virtual/presets'),
 

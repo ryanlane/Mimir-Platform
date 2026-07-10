@@ -16,12 +16,17 @@
 // Display Card component for individual display clients
 import React, { useState, useEffect } from 'react';
 import './DisplayCard.css';
-import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe, Package, Settings as SettingsIcon } from 'lucide-react';
+import { Monitor, Wifi, WifiOff, MapPin, Tag, Calendar, RotateCcw, Play, Globe, Globe2, Copy, Package, Settings as SettingsIcon } from 'lucide-react';
 import { api, normalizeMediaUrl } from '../../services/api';
+import { getApiBaseUrl, getServerBaseUrlFromApiBase } from '../../services/runtimeUrls';
 import Button from '../../components/Button/Button';
 import Icon from '../../components/Icon/Icon';
 import Modal from '../../components/Modal/Modal';
 import { formatOrientationLabel } from './orientationOptions';
+
+// Web Screen pages are served by the API origin (proxied by nginx in prod),
+// never by the React dev server.
+const webScreenUrl = (webPath) => `${getServerBaseUrlFromApiBase(getApiBaseUrl())}${webPath}`;
 
 // Desired client version from the server's release cache — fetched once and
 // shared across all cards (module-level cache; 404 = no release cached yet).
@@ -576,6 +581,31 @@ const DisplayCard = ({ display, paired = false, onAssignScene, onEdit, onDelete,
               } • {formatOrientationLabel(display.orientation)}
             </span>
           </div>
+
+          {display.webPath && (
+            <div className="detail-item">
+              <Globe2 size={14} />
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                <a
+                  href={webScreenUrl(display.webPath)}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  title="Open this Web Screen"
+                >
+                  {webScreenUrl(display.webPath)}
+                </a>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(webScreenUrl(display.webPath)); }}
+                  title="Copy display URL"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-icon)', padding: 0, display: 'flex' }}
+                >
+                  <Copy size={13} />
+                </button>
+              </span>
+            </div>
+          )}
 
           {display.refresh_rate_hz && (
             <div className="detail-item">

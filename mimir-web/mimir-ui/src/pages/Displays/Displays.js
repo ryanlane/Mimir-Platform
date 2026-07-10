@@ -17,6 +17,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers, Link2 } from 'lucide-react';
 import { api } from '../../services/api';
+import { getApiBaseUrl, getServerBaseUrlFromApiBase } from '../../services/runtimeUrls';
+
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import featureDetection from '../../services/featureDetection';
@@ -31,6 +33,11 @@ import Header from '../../components/Header/Header';
 import { SkeletonScreenCard } from '../../components/Skeleton/Skeleton';
 import Button from '../../components/Button/Button';
 import { formatOrientationLabel, getOrientationOptionsForDisplay, normalizeOrientationValue } from './orientationOptions';
+
+// Web Screen pages are served by the API (and proxied by nginx in prod) —
+// never by the React dev server, so the URL must use the server origin,
+// not window.location.origin.
+const webScreenUrl = (webPath) => `${getServerBaseUrlFromApiBase(getApiBaseUrl())}${webPath}`;
 
 // Global cache for displays data to prevent excessive API requests
 let displaysCache = null;
@@ -190,6 +197,14 @@ const Displays = () => {
   const [displaySettingsError, setDisplaySettingsError] = useState(null);
   const [configStatus, setConfigStatus] = useState({});
   const [showPairing, setShowPairing] = useState(false);
+  // Web Screen creation (browser-only displays)
+  const [showAddWeb, setShowAddWeb] = useState(false);
+  const [webName, setWebName] = useState('');
+  const [webLocation, setWebLocation] = useState('');
+  const [addingWeb, setAddingWeb] = useState(false);
+  const [webError, setWebError] = useState(null);
+  const [createdWebPath, setCreatedWebPath] = useState(null);
+
   // Developer mode — virtual display creation
   const [devMode, setDevMode] = useState(false);
   const [showAddVirtual, setShowAddVirtual] = useState(false);
@@ -462,6 +477,38 @@ const Displays = () => {
       setLoading(false);
     }
   }, [supportsDisplayManagement, onlineFilter, locationFilter, tagFilter, includeDiscovered, isLoading]);
+
+  const handleAddWebDisplay = useCallback(async () => {
+    if (!webName.trim()) {
+      setWebError('Name is required');
+      return;
+    }
+    setAddingWeb(true);
+    setWebError(null);
+    try {
+      const resp = await api.createWebDisplay({
+        name: webName.trim(),
+        location: webLocation.trim() || null,
+      });
+      // Keep the modal open showing the URL — the user needs it for the device.
+      setCreatedWebPath(resp.data.web_path);
+      displaysCache = null;
+      displaysCacheTime = null;
+      await loadDisplays();
+    } catch (err) {
+      setWebError(err?.response?.data?.detail || err.message || 'Failed to create web screen');
+    } finally {
+      setAddingWeb(false);
+    }
+  }, [webName, webLocation, loadDisplays]);
+
+  const closeWebModal = useCallback(() => {
+    setShowAddWeb(false);
+    setWebError(null);
+    setCreatedWebPath(null);
+    setWebName('');
+    setWebLocation('');
+  }, []);
 
   const handleAddVirtualDisplay = useCallback(async () => {
     if (!virtualName.trim()) {
@@ -1056,6 +1103,13 @@ const Displays = () => {
               </Button>
             ),
             <Button
+              key="web"
+              variant="secondary"
+              onClick={() => { setShowAddWeb(true); setWebError(null); }}
+            >
+              + Web Screen
+            </Button>,
+            <Button
               key="pair"
               variant="primary"
               onClick={() => setShowPairing(true)}
@@ -1360,6 +1414,91 @@ const Displays = () => {
         )}
       </Modal>
       
+      {/* Web Screen creation modal */}
+      <Modal
+        isOpen={showAddWeb}
+        onClose={closeWebModal}
+        title="Add Web Screen"
+        size="small"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {!createdWebPath ? (
+            <>
+              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                A Web Screen is a display that lives at a unique URL — open it in any
+                browser (old tablets, spare monitors, TVs) and that device becomes a
+                Mimir screen. No app install needed.
+              </div>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <span style={{ fontWeight: 600 }}>Screen Name</span>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="e.g. Kitchen Tablet"
+                  value={webName}
+                  onChange={(e) => setWebName(e.target.value)}
+                  disabled={addingWeb}
+                  autoFocus
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <span style={{ fontWeight: 600 }}>Location</span>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="e.g. Kitchen"
+                  value={webLocation}
+                  onChange={(e) => setWebLocation(e.target.value)}
+                  disabled={addingWeb}
+                />
+              </label>
+              {webError && (
+                <div style={{ color: 'var(--color-error)', fontSize: '0.9rem' }}>{webError}</div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <Button variant="secondary" onClick={closeWebModal} disabled={addingWeb}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={handleAddWebDisplay} loading={addingWeb}>
+                  Create
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: '0.9rem' }}>
+                <strong>{webName}</strong> is ready. Open this URL on the device and
+                tap the screen for fullscreen:
+              </div>
+              <div style={{
+                fontFamily: 'var(--font-family-mono, monospace)', fontSize: '0.85rem',
+                background: 'var(--color-background-alt)', border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-sm)', padding: '0.6rem 0.8rem',
+                wordBreak: 'break-all', userSelect: 'all',
+              }}>
+                {webScreenUrl(createdWebPath)}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>
+                The URL is this screen's key — anyone with it can view the content.
+                Deleting the screen revokes the URL. Assign a program to it from the
+                Screens list like any other display.
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <Button
+                  variant="secondary"
+                  onClick={() => navigator.clipboard?.writeText(webScreenUrl(createdWebPath))}
+                >
+                  Copy URL
+                </Button>
+                <Button variant="primary" onClick={closeWebModal}>
+                  Done
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
       {/* Virtual display creation modal — dev mode only */}
       <Modal
         isOpen={showAddVirtual}
