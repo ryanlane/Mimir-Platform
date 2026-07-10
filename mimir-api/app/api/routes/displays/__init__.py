@@ -34,6 +34,7 @@ from .pairing import router as pairing_router
 from .provisioning import router as provisioning_router
 from .scenes import router as scenes_router
 from .virtual import router as virtual_router
+from .web import router as web_router
 
 router = APIRouter(prefix="/displays", tags=["displays"])
 
@@ -47,4 +48,6 @@ router.include_router(scenes_router)
 # Virtual display routes before crud so /virtual/presets and /virtual/{id}
 # don't get swallowed by the /{display_id} wildcard.
 router.include_router(virtual_router)
+# Web Screen routes before crud for the same reason (/web, /web/{token}/current).
+router.include_router(web_router)
 router.include_router(crud_router)

@@ -174,6 +174,9 @@ class DisplayClient(Base):
     # NULL = unknown (client predates the capability); channels treat
     # unknown as "don't downgrade".
     supports_animation = Column(Boolean, nullable=True)
+    # Web Screens: secret URL token for browser-only displays (/d/<token>).
+    # NULL for every other display type.
+    web_token = Column(String, nullable=True, unique=True, index=True)
 
     # Connection status
     is_online = Column(Boolean, default=False, index=True)

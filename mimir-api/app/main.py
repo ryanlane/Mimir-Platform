@@ -374,6 +374,10 @@ def create_app() -> FastAPI:
     app.include_router(channels_router, prefix=settings.api_prefix, tags=["channels"])
     app.include_router(scenes_router, prefix=settings.api_prefix, tags=["scenes"])
     app.include_router(displays_router, prefix=settings.api_prefix, tags=["displays"])
+    # Web Screen display pages live at /d/{token} — outside /api so the URL a
+    # user types on an old tablet stays short.
+    from app.api.routes.displays.web import page_router as web_display_page_router
+    app.include_router(web_display_page_router)
     # Discovery (new) under same /displays namespace
     app.include_router(discovery_router, prefix=settings.api_prefix, tags=["discovery"])
     app.include_router(display_scene_router, prefix=settings.api_prefix, tags=["display-scene"])

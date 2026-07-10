@@ -557,6 +557,7 @@ def _build_registered_display_response(client: DisplayClient) -> dict[str, objec
         'created_at': getattr(client, 'created_at', None),
         'updated_at': getattr(client, 'updated_at', None),
         'tags': getattr(client, 'tags', None),
+        'web_path': (f"/d/{client.web_token}" if getattr(client, 'web_token', None) else None),
     }
 
 

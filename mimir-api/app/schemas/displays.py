@@ -84,6 +84,7 @@ class DisplayClientResponse(DisplayClientBase, TimestampMixin):
     id: str
     device_type: str | None = Field(None, alias="deviceType")
     display_type: str | None = Field(None, alias="displayType")
+    web_path: str | None = Field(None, alias="webPath", description="Web Screen page path (/d/<token>) for browser-only displays")
     discovery_method: str | None = Field(None, alias="discoveryMethod")
     auto_discovered: bool | None = Field(None, alias="autoDiscovered")
     # Networking
