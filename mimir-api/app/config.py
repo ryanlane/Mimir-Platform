@@ -316,6 +316,13 @@ class Settings(BaseSettings):
         base_host = normalized[:-6] if normalized.endswith(".local") else normalized
         if re.fullmatch(r"[0-9a-f]{12,64}", base_host):
             return True
+        # Inside a bridge-networked container, the primary-IPv4 probe returns
+        # the container's own 172.16/12 bridge address — unreachable by any
+        # display client. (Host-networked deployments see the real LAN IP.)
+        if re.fullmatch(r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}", base_host):
+            import os
+            if os.path.exists("/.dockerenv"):
+                return True
         if "." in normalized and not normalized.endswith(".local"):
             return False
         internal_names = {
@@ -440,10 +447,20 @@ class Settings(BaseSettings):
         """
         scheme = self.public_scheme or "http"
 
+        # An explicit PUBLIC_HOST is an operator override — trust it verbatim,
+        # including loopback (local dev deliberately uses localhost; the
+        # reachability filter below would otherwise silently discard it and
+        # fall through to an auto-discovered — possibly container — address).
+        explicit = self._normalize_optional_host(self.public_host)
+        if explicit:
+            port = self.public_port if self.public_port is not None else self.api_port
+            if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+                return f"{scheme}://{explicit}"
+            return f"{scheme}://{explicit}:{port}"
+
         # Candidate hostnames in priority order (deduplicated later)
         hostname = socket.gethostname()
         candidates: list[str | None] = [
-            self.public_host,
             self.public_mdns_host,
             self._discover_primary_ipv4(),
             "mimir.local",       # default mDNS name advertised by the discovery service
