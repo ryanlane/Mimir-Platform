@@ -26,7 +26,8 @@ import Icon from '../Icon/Icon';
  *  - description (string, optional)
  *  - icon (string | ReactElement) icon name (lucide) or custom element
  *  - iconSize (number) size of icon (default 32)
- *  - actions (ReactElement | ReactElement[] | function): optional single element, array (max 2) or render fn returning element(s)
+ *  - actions (ReactElement | ReactElement[] | function): optional single element, array or render fn returning element(s).
+ *      Falsy entries (e.g. from conditional rendering) are filtered out automatically.
  *  - rightSlot (ReactElement): optional arbitrary content rendered on the far right (e.g., DebugPanel or status widgets)
  *      Example: actions={[<Button key="add" />, <Button key="refresh" variant="ghost" />]}
  *  - className (string)
@@ -52,7 +53,7 @@ export function Header({ title, description, icon, iconSize = 32, actions, right
       actionNodes = undefined;
     }
   } else if (Array.isArray(actions)) {
-    actionNodes = actions.slice(0, 2); // enforce max 2
+    actionNodes = actions.filter(Boolean).slice(0, 4); // filter conditional falsy entries; allow up to 4
   } else if (actions) {
     actionNodes = [actions];
   }
