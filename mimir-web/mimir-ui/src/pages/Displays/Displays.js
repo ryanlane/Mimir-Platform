@@ -192,6 +192,7 @@ const Displays = () => {
   const [showDisplaySettings, setShowDisplaySettings] = useState(false);
   const [settingsDisplay, setSettingsDisplay] = useState(null);
   const [settingsOrientation, setSettingsOrientation] = useState('landscape');
+  const [settingsName, setSettingsName] = useState('');
   const [savingDisplaySettings, setSavingDisplaySettings] = useState(false);
   const [removingDisplay, setRemovingDisplay] = useState(false);
   const [displaySettingsError, setDisplaySettingsError] = useState(null);
@@ -874,6 +875,7 @@ const Displays = () => {
   const openDisplaySettings = useCallback((display) => {
     setSettingsDisplay(display);
     setSettingsOrientation(normalizeOrientationValue(display.orientation));
+    setSettingsName(display.name || '');
     setDisplaySettingsError(null);
     setShowDisplaySettings(true);
   }, []);
@@ -887,9 +889,13 @@ const Displays = () => {
 
   const handleUnpairDisplay = useCallback(async () => {
     if (!settingsDisplay) return;
-    const isVirtual = settingsDisplay.discovery_method === 'virtual';
+    const method = settingsDisplay.discovery_method || settingsDisplay.discoveryMethod;
+    const isVirtual = method === 'virtual';
+    const isWeb = method === 'web';
     const confirmed = window.confirm(
-      isVirtual
+      isWeb
+        ? `Delete web screen "${settingsDisplay.name}"? Its URL is permanently revoked — any device showing it will stop working immediately.`
+        : isVirtual
         ? `Remove virtual display "${settingsDisplay.name}"?`
         : `Unpair "${settingsDisplay.name}"? The display will be removed from Mimir and must be paired again before it can show scenes.`
     );
@@ -919,9 +925,10 @@ const Displays = () => {
     setSavingDisplaySettings(true);
     setDisplaySettingsError(null);
     try {
-      const response = await api.updateDisplay(settingsDisplay.id, {
-        orientation: settingsOrientation,
-      });
+      const updates = { orientation: settingsOrientation };
+      const trimmedName = settingsName.trim();
+      if (trimmedName && trimmedName !== settingsDisplay.name) updates.name = trimmedName;
+      const response = await api.updateDisplay(settingsDisplay.id, updates);
 
       setDisplays((prev) => prev.map((display) => {
         if (display.id !== settingsDisplay.id) return display;
@@ -938,7 +945,7 @@ const Displays = () => {
     } finally {
       setSavingDisplaySettings(false);
     }
-  }, [closeDisplaySettings, refreshDisplays, settingsDisplay, settingsOrientation]);
+  }, [closeDisplaySettings, refreshDisplays, settingsDisplay, settingsOrientation, settingsName]);
 
   // Filter displays based on search and filters
   const filteredDisplays = (Array.isArray(displays) ? displays : []).filter(display => {
@@ -1384,6 +1391,32 @@ const Displays = () => {
             </div>
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <span style={{ fontWeight: 600 }}>Screen Name</span>
+              <input
+                className="form-input"
+                type="text"
+                value={settingsName}
+                onChange={(e) => setSettingsName(e.target.value)}
+                disabled={savingDisplaySettings || removingDisplay}
+                placeholder="e.g. Kitchen Tablet"
+              />
+            </label>
+
+            {(settingsDisplay.discovery_method === 'web' || settingsDisplay.discoveryMethod === 'web') && settingsDisplay.webPath && (
+              <div style={{ fontSize: '0.85rem' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.3rem' }}>Display URL</div>
+                <div style={{
+                  fontFamily: 'var(--font-family-mono, monospace)', fontSize: '0.8rem',
+                  background: 'var(--color-background-alt)', border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.7rem',
+                  wordBreak: 'break-all', userSelect: 'all',
+                }}>
+                  {webScreenUrl(settingsDisplay.webPath)}
+                </div>
+              </div>
+            )}
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
               <span style={{ fontWeight: 600 }}>Orientation</span>
               <select
                 className="form-select"
@@ -1408,7 +1441,9 @@ const Displays = () => {
 
             <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
               <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
-                Unpairing removes this display from Mimir. If it is still on the network it will reappear as an unpaired discovered display.
+                {(settingsDisplay.discovery_method === 'web' || settingsDisplay.discoveryMethod === 'web')
+                  ? 'Deleting a web screen permanently revokes its URL — any device showing it goes dark immediately. Create a new web screen to get a fresh URL.'
+                  : 'Unpairing removes this display from Mimir. If it is still on the network it will reappear as an unpaired discovered display.'}
               </div>
               <Button
                 variant="danger"
@@ -1416,7 +1451,9 @@ const Displays = () => {
                 loading={removingDisplay}
                 disabled={savingDisplaySettings}
               >
-                {settingsDisplay?.discovery_method === 'virtual' ? 'Remove Virtual Display' : 'Unpair Display'}
+                {(settingsDisplay?.discovery_method === 'web' || settingsDisplay?.discoveryMethod === 'web')
+                  ? 'Delete Web Screen'
+                  : settingsDisplay?.discovery_method === 'virtual' ? 'Remove Virtual Display' : 'Unpair Display'}
               </Button>
             </div>
 
