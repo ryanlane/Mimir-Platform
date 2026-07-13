@@ -3,7 +3,7 @@ name: mimir
 # Dev compose is for local UI/API iteration.
 # It is not the reference environment for real display onboarding.
 # For LAN hardware validation, use the hybrid Ubuntu deployment documented in
-# HYBRID_LINUX_DEPLOYMENT.md.
+# docs/HYBRID_LINUX_DEPLOYMENT.md.
 
 services:
   db:

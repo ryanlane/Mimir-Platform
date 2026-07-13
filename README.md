@@ -132,7 +132,7 @@ bash scripts/phase0_harden.sh   # secrets, mosquitto passwd, hardened restart
 task up:build
 ```
 
-Details and the discovery-service setup: [HYBRID_LINUX_DEPLOYMENT.md](HYBRID_LINUX_DEPLOYMENT.md).
+Details and the discovery-service setup: [HYBRID_LINUX_DEPLOYMENT.md](docs/HYBRID_LINUX_DEPLOYMENT.md).
 
 ## MQTT broker & auth
 
@@ -215,8 +215,8 @@ Native engine: `sudo systemctl start docker` (or `sudo service docker start`).
 **Discovery finds 0 devices on Windows/WSL**
 Expected — multicast doesn't traverse WSL/bridge networking. Validate
 onboarding on a native Linux server. For Windows-host discovery experiments
-see [WINDOWS_MDNS_FIREWALL.md](WINDOWS_MDNS_FIREWALL.md) and
-[MDNS_EDGE_DISCOVERY.md](MDNS_EDGE_DISCOVERY.md).
+see [WINDOWS_MDNS_FIREWALL.md](docs/WINDOWS_MDNS_FIREWALL.md) and
+[MDNS_EDGE_DISCOVERY.md](docs/MDNS_EDGE_DISCOVERY.md).
 
 ## Notes & limitations
 
@@ -241,7 +241,7 @@ See [`LICENSE`](LICENSE) for the full text.
 
 **Commercial license:** If you want to use Mimir in a proprietary product or service
 without the AGPL's source-sharing obligations, a commercial license is available.
-See [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md) or contact futile@gmail.com.
+See [`COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md) or contact contact@mimirframe.com.
 
 **Contributing:** By submitting a pull request you agree to the terms in [`CLA.md`](CLA.md),
 which allows Mimir to be offered under both open source and commercial licenses.

@@ -27,6 +27,6 @@ A commercial license is available if you:
 To inquire about a commercial license, support contracts, or hosted services, contact:
 
 **Ryan Lane**
-futile@gmail.com
+contact@mimirframe.com
 
 Commercial licenses are negotiated individually based on use case and scale.

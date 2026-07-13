@@ -36,4 +36,4 @@ organization, ensure you have authority to bind that organization before contrib
 
 ---
 
-*This CLA is intentionally minimal. Questions? Contact futile@gmail.com.*
+*This CLA is intentionally minimal. Questions? Contact contact@mimirframe.com.*
