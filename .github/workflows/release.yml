@@ -1,7 +1,9 @@
 name: Release images
 
 # Tagging vX.Y.Z builds and pushes all three server images to GHCR under
-# that tag (one tag covers api/web/discovery — see mimir-release versions.yml).
+# that tag (one tag covers api/web/discovery — see mimir-release versions.yml),
+# then publishes a GitHub Release with auto-generated notes so the repo's
+# Releases page tracks the actual release history.
 #
 # After this completes: bump `server:` in mimir-release/versions.yml to roll
 # it out to the production server.
@@ -46,3 +48,24 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    # Only publish the release once all three images exist under this tag —
+    # a release pointing at unpushed images would break the update timer.
+    needs: images
+    permissions:
+      contents: write
+    steps:
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            Server images for this release (multi-arch, amd64 + arm64):
+
+            - `ghcr.io/${{ github.repository_owner }}/mimir-api:${{ github.ref_name }}`
+            - `ghcr.io/${{ github.repository_owner }}/mimir-web:${{ github.ref_name }}`
+            - `ghcr.io/${{ github.repository_owner }}/mimir-discovery:${{ github.ref_name }}`
+
+            To deploy: bump `server:` in [mimir-release](https://github.com/${{ github.repository_owner }}/mimir-release) `versions.yml` to `${{ github.ref_name }}`.
