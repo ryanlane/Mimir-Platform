@@ -16,7 +16,6 @@ import pytest
 import app.services.scene_refresh_service as srs_module
 from app.services.scene_refresh_service import SceneRefreshResult, SceneRefreshService
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -228,7 +227,7 @@ class TestFingerprintGating:
     (from X-Content-Fingerprint header or computed sha256) with the last-seen value.
     """
 
-    def _setup(self, monkeypatch, service, fp="deadbeef"):
+    def _setup(self, monkeypatch, service, fp="deadbeef", metadata=None):
         """Patch all side-effecting dependencies to reach the fingerprint comparison."""
         scene = _scene("s1", channels=[{"channel_id": "photo-frame"}], distribution_mode="MIRROR")
         db = MagicMock()
@@ -248,7 +247,7 @@ class TestFingerprintGating:
         monkeypatch.setattr(
             service,
             "_request_channel_image_http",
-            AsyncMock(return_value=(b"img-bytes", "image/png", fp)),
+            AsyncMock(return_value=(b"img-bytes", "image/png", fp, metadata)),
         )
         monkeypatch.setattr(
             srs_module, "save_swap_image",
@@ -376,3 +375,143 @@ class TestHairpinFix:
 
         with pytest.raises(RuntimeError, match="url_error"):
             service._request_channel_image_http_blocking("photo-frame", {})
+
+
+# ---------------------------------------------------------------------------
+# Optional X-Artwork-Metadata header (metart's client-rendered-overlay path)
+# ---------------------------------------------------------------------------
+
+class _FakeResponse:
+    """Minimal stand-in for the object urlopen() returns, used as a context manager."""
+
+    def __init__(self, body: bytes, headers: dict[str, str]):
+        self._body = body
+        self.headers = SimpleNamespace(get=lambda k, default=None: headers.get(k, default))
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _b64_metadata(payload: dict) -> str:
+    import base64
+    import json
+    return base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
+
+
+class TestDecodeMetadataHeader:
+    def test_none_returns_none(self, service):
+        assert service._decode_metadata_header(None) is None
+
+    def test_empty_string_returns_none(self, service):
+        assert service._decode_metadata_header("") is None
+
+    def test_valid_base64_json_dict_decodes(self, service):
+        encoded = _b64_metadata({"title": "Wheat Field", "artist": "van Gogh"})
+        assert service._decode_metadata_header(encoded) == {"title": "Wheat Field", "artist": "van Gogh"}
+
+    def test_malformed_base64_returns_none_not_raise(self, service):
+        assert service._decode_metadata_header("not-valid-base64!!!") is None
+
+    def test_valid_base64_but_not_json_returns_none(self, service):
+        import base64
+        garbage = base64.urlsafe_b64encode(b"not json at all").decode("ascii")
+        assert service._decode_metadata_header(garbage) is None
+
+    def test_json_array_instead_of_object_returns_none(self, service):
+        import base64
+        import json
+        encoded = base64.urlsafe_b64encode(json.dumps(["not", "a", "dict"]).encode()).decode("ascii")
+        assert service._decode_metadata_header(encoded) is None
+
+
+class TestMetadataThroughHttpFetch:
+    def test_metadata_header_decoded_alongside_bytes(self, service, monkeypatch):
+        payload = {"title": "Starry Night", "artist": "van Gogh", "medium": "Oil on canvas"}
+        response = _FakeResponse(
+            body=b"\xff\xd8\xff\xe0fake-jpeg-bytes",
+            headers={
+                "Content-Type": "image/jpeg",
+                "X-Content-Fingerprint": "abc123",
+                "X-Artwork-Metadata": _b64_metadata(payload),
+            },
+        )
+        monkeypatch.setattr(srs_module, "settings", SimpleNamespace(
+            internal_api_base_url="http://localhost:5000", channel_http_timeout_seconds=15,
+        ))
+        monkeypatch.setattr(srs_module._urlreq, "urlopen", lambda req, timeout=None: response)
+
+        raw, ctype, fp, metadata = service._request_channel_image_http_blocking("com.metmuseum.art", {})
+
+        assert ctype == "image/jpeg"
+        assert fp == "abc123"
+        assert metadata == payload
+
+    def test_no_metadata_header_yields_none_not_error(self, service, monkeypatch):
+        response = _FakeResponse(
+            body=b"\xff\xd8\xff\xe0fake-jpeg-bytes",
+            headers={"Content-Type": "image/jpeg"},
+        )
+        monkeypatch.setattr(srs_module, "settings", SimpleNamespace(
+            internal_api_base_url="http://localhost:5000", channel_http_timeout_seconds=15,
+        ))
+        monkeypatch.setattr(srs_module._urlreq, "urlopen", lambda req, timeout=None: response)
+
+        _raw, _ctype, _fp, metadata = service._request_channel_image_http_blocking("photo-frame", {})
+
+        assert metadata is None
+
+
+class TestMetadataForwardedToDisplays:
+    """End-to-end within refresh_scene: metadata returned by the channel must
+    reach mqtt_scene_service.send_display_image, which is what puts it on the
+    wire for Electron/Windows clients to render as an overlay."""
+
+    def _setup(self, monkeypatch, service, metadata):
+        scene = _scene("s1", channels=[{"channel_id": "com.metmuseum.art"}], distribution_mode="MIRROR")
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = scene
+        monkeypatch.setattr(srs_module, "SessionLocal", MagicMock(return_value=_cm(db)))
+        monkeypatch.setattr(service, "_collect_assigned_displays", lambda s: [
+            {"device_id": "disp-a", "width": 800, "height": 480, "orientation": "landscape"}
+        ])
+        fake_plugin = SimpleNamespace(instance=MagicMock())
+        monkeypatch.setattr(
+            "app.services.plugin_discovery.plugin_discovery_service",
+            SimpleNamespace(get_plugin=lambda _: fake_plugin),
+        )
+        monkeypatch.setattr(
+            service, "_request_channel_image_http",
+            AsyncMock(return_value=(b"img-bytes", "image/jpeg", "fp-1", metadata)),
+        )
+        monkeypatch.setattr(
+            srs_module, "save_swap_image",
+            MagicMock(return_value=(None, "http://mimir.local:5000/swap/s1/img.jpg", True)),
+        )
+        send_mock = AsyncMock(return_value=True)
+        monkeypatch.setattr(srs_module.mqtt_scene_service, "send_display_image", send_mock)
+        monkeypatch.setattr(srs_module, "DisplayImagePersistenceService", MagicMock())
+        return send_mock
+
+    async def test_metadata_passed_to_send_display_image(self, service, monkeypatch):
+        metadata = {"title": "Wheat Field with Cypresses", "artist": "van Gogh"}
+        send_mock = self._setup(monkeypatch, service, metadata)
+
+        result = await service.refresh_scene("s1", trigger_reason="push")
+
+        assert result.status == "ok"
+        send_mock.assert_awaited_once()
+        assert send_mock.await_args.kwargs["metadata"] == metadata
+
+    async def test_none_metadata_passed_through_as_none(self, service, monkeypatch):
+        send_mock = self._setup(monkeypatch, service, None)
+
+        await service.refresh_scene("s1", trigger_reason="push")
+
+        send_mock.assert_awaited_once()
+        assert send_mock.await_args.kwargs["metadata"] is None

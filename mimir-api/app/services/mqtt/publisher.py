@@ -393,6 +393,7 @@ class MqttSceneAssignmentService:
         image_width: int | None = None,
         image_height: int | None = None,
         image_format: str | None = None,
+        metadata: dict | None = None,
     ) -> bool:
         """
         Send a display_image command to a device with the actual image URL.
@@ -404,6 +405,11 @@ class MqttSceneAssignmentService:
             assignment_id: Optional assignment tracking ID, auto-generated if not provided
             image_width: Optional image width hint
             image_height: Optional image height hint
+            metadata: Optional content details (title/artist/etc — see
+                mimir-source-metart's X-Artwork-Metadata header). Any channel
+                can supply this; capable clients (Electron, Windows native)
+                render it as an on-screen overlay. Omitted entirely from the
+                payload when not provided, so older clients see no change.
 
         Returns:
             bool: True if message was published successfully
@@ -447,6 +453,8 @@ class MqttSceneAssignmentService:
             payload["image_height"] = image_height
         if fmt:
             payload["image_format"] = fmt
+        if metadata:
+            payload["metadata"] = metadata
 
         logger.debug(f"Sending display_image command to {device_id}")
         return await self.publish_command(device_id, payload, qos=1, retain=False)

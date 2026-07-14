@@ -32,6 +32,7 @@ until a full extraction/refactor can safely consolidate duplication.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json as _json
 import logging
@@ -313,7 +314,7 @@ class SceneRefreshService:
                                     if variant:
                                         request_payload["settings"]["content_variant"] = variant
                                     try:
-                                        raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
+                                        raw_bytes, content_type, fp, content_metadata = await self._request_channel_image_http(ch_id, request_payload)
                                     except RuntimeError as e:
                                         logger.warning(
                                             "scene.refresh.channel_request_failed scene=%s channel=%s device=%s err=%s",
@@ -403,6 +404,7 @@ class SceneRefreshService:
                                             device_id=device_id,
                                             image_url=per_display_url,
                                             assignment_id=assignment_id,
+                                            metadata=content_metadata,
                                         )
                                         if success:
                                             total_updated += 1
@@ -472,7 +474,7 @@ class SceneRefreshService:
                                 if variant:
                                     request_payload["settings"]["content_variant"] = variant
                                 try:
-                                    raw_bytes, content_type, fp = await self._request_channel_image_http(ch_id, request_payload)
+                                    raw_bytes, content_type, fp, content_metadata = await self._request_channel_image_http(ch_id, request_payload)
                                 except RuntimeError as e:
                                     logger.warning(
                                         "scene.refresh.channel_request_failed scene=%s channel=%s devices=%s err=%s",
@@ -563,6 +565,7 @@ class SceneRefreshService:
                                             device_id=device_id,
                                             image_url=per_display_url,
                                             assignment_id=assignment_id,
+                                            metadata=content_metadata,
                                         )
                                         if success:
                                             total_updated += 1
@@ -791,9 +794,30 @@ class SceneRefreshService:
             sep = '&' if ('?' in url) else '?'
             return f"{url}{sep}{param}={value}"
 
+    @staticmethod
+    def _decode_metadata_header(raw_header: str | None) -> dict[str, Any] | None:
+        """Decode the optional X-Artwork-Metadata header (base64 JSON).
+
+        Any channel can set this on its /request-image response (see
+        mimir-source-metart) to surface content details — title/artist/etc —
+        without the caller needing to parse the image. Malformed headers are
+        swallowed: metadata is a nice-to-have, never worth failing a render over.
+        """
+        if not raw_header:
+            return None
+        try:
+            decoded = base64.urlsafe_b64decode(raw_header.encode("ascii"))
+            data = _json.loads(decoded)
+            return data if isinstance(data, dict) else None
+        except Exception:  # noqa: BLE001
+            return None
+
     # --- HTTP fetch helper ---
-    def _request_channel_image_http_blocking(self, channel_id: str, payload: dict[str, Any]) -> tuple[bytes, str | None, str | None]:
-        """Blocking variant: POST to the channel's /request-image endpoint and return raw bytes, content-type, and fingerprint."""
+    def _request_channel_image_http_blocking(
+        self, channel_id: str, payload: dict[str, Any]
+    ) -> tuple[bytes, str | None, str | None, dict[str, Any] | None]:
+        """Blocking variant: POST to the channel's /request-image endpoint and return
+        raw bytes, content-type, fingerprint, and optional content metadata."""
         # Self-call: use the loopback/internal base URL, NOT public_base_url —
         # hairpinning through the public LAN address times out from inside
         # bridge-networked containers (15s per channel request).
@@ -812,6 +836,7 @@ class SceneRefreshService:
                     raise ValueError("empty_response")
                 ctype = resp.headers.get("Content-Type")
                 fp = resp.headers.get("X-Content-Fingerprint") or resp.headers.get("X-Image-Fingerprint")
+                metadata = self._decode_metadata_header(resp.headers.get("X-Artwork-Metadata"))
                 # Channels report failure (not_configured, no_session, render
                 # errors, etc.) as a 200 JSONResponse with success=False —
                 # only a raw Response carries actual image bytes. Without
@@ -824,13 +849,15 @@ class SceneRefreshService:
                     except (ValueError, TypeError):
                         err = "unparseable_json_response"
                     raise RuntimeError(f"channel_error:{err}")
-                return raw, ctype, fp
+                return raw, ctype, fp, metadata
         except _urlerr.HTTPError as he:  # rethrow with compact message
             raise RuntimeError(f"http_{he.code}") from he
         except _urlerr.URLError as ue:
             raise RuntimeError(f"url_error:{getattr(ue, 'reason', 'unknown')}") from ue
 
-    async def _request_channel_image_http(self, channel_id: str, payload: dict[str, Any]) -> tuple[bytes, str | None, str | None]:
+    async def _request_channel_image_http(
+        self, channel_id: str, payload: dict[str, Any]
+    ) -> tuple[bytes, str | None, str | None, dict[str, Any] | None]:
         """Async wrapper that runs the blocking HTTP request in a thread to avoid blocking the event loop."""
         return await asyncio.to_thread(self._request_channel_image_http_blocking, channel_id, payload)
 
