@@ -283,6 +283,41 @@ class MqttPresenceService:
                 if METRICS_AVAILABLE:
                     metrics.discovery_display_lost(device_id)
 
+        # Mirror the transition to the DB row regardless of the in-memory
+        # bookkeeping above: after a server restart the retained LWT/offline
+        # status replays before any "online" was ever seen, so the in-memory
+        # guards would skip it — but the row still needs the write.
+        if status in ("online", "offline"):
+            await self._sync_display_online_state(device_id, status == "online")
+
+    async def _sync_display_online_state(self, device_id: str, is_online: bool) -> None:
+        """Mirror MQTT online/offline status to the registered display's DB row.
+
+        The /screens page reads display_clients.is_online. Without this write,
+        a registered MQTT display stays "online" in the UI forever after the
+        client exits — both the broker's LWT (unexpected disconnect) and the
+        client's graceful offline publish land here.
+        """
+        def _update() -> bool:
+            from app.db.base import SessionLocal
+            from app.db.models import DisplayClient
+            with SessionLocal() as db:
+                display = db.query(DisplayClient).filter(DisplayClient.hostname == device_id).first()
+                if not display or bool(display.is_online) == is_online:
+                    return False
+                display.is_online = is_online
+                display.last_seen = datetime.now(timezone.utc)
+                db.commit()
+                return True
+
+        try:
+            if await asyncio.to_thread(_update):
+                logger.info(
+                    "Display %s marked %s in DB", device_id, "online" if is_online else "offline"
+                )
+        except Exception as e:  # pragma: no cover - sync must never break presence
+            logger.warning("Online-state sync failed for %s: %s", device_id, e)
+
     async def _maybe_forward(self, topic: str, payload_bytes: bytes, qos: int | None, retain: bool | None):
         """Forward to websocket dashboards respecting debounce window per topic."""
         try:
