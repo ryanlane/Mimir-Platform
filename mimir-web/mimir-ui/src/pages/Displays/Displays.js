@@ -15,7 +15,7 @@
 
 // Multi-Display Management page for v2.3 API
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers, Link2, Plus, Globe } from 'lucide-react';
+import { Monitor, Search, Filter, MapPin, Wifi, WifiOff, RotateCcw, X, Layers, Link2, Plus, Globe, ArrowDownUp } from 'lucide-react';
 import { api } from '../../services/api';
 import { getApiBaseUrl, getServerBaseUrlFromApiBase } from '../../services/runtimeUrls';
 
@@ -230,6 +230,15 @@ const Displays = () => {
   const [locationFilter, setLocationFilter] = useState('');
   const [onlineFilter, setOnlineFilter] = useState('all'); // 'all', 'online', 'offline'
   const [tagFilter, setTagFilter] = useState('');
+  // Sort order for the screens grid; persisted so the page stays predictable
+  // across visits. 'name' | 'location' | 'status' | 'last_seen'
+  const [sortBy, setSortBy] = useState(() => {
+    try { return localStorage.getItem('mimir.screens.sortBy') || 'name'; } catch { return 'name'; }
+  });
+  const changeSortBy = (value) => {
+    setSortBy(value);
+    try { localStorage.setItem('mimir.screens.sortBy', value); } catch { /* private mode */ }
+  };
   const [includeDiscovered, setIncludeDiscovered] = useState(true);
   // Mobile filters collapsed by default (decide after first render via effect to avoid hydration mismatch if SSR ever added)
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
@@ -976,10 +985,28 @@ const Displays = () => {
     return true;
   });
 
+  // Deterministic ordering on top of the filters. The API's order is stable
+  // (name asc) but discovered displays get appended and live updates can
+  // reshuffle — sorting here keeps the grid predictable regardless.
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+  const sortedDisplays = [...filteredDisplays].sort((a, b) => {
+    switch (sortBy) {
+      case 'location':
+        return (a.location || '').localeCompare(b.location || '', undefined, { sensitivity: 'base' }) || byName(a, b);
+      case 'status':
+        return (b.is_online === true) - (a.is_online === true) || byName(a, b);
+      case 'last_seen':
+        return new Date(b.last_seen || 0) - new Date(a.last_seen || 0) || byName(a, b);
+      case 'name':
+      default:
+        return byName(a, b);
+    }
+  });
+
   // Compute content-paired groups: displays sharing a scene where ≥1 has a content_variant
   const { pairedGroups, unpairedDisplays } = useMemo(() => {
     const byScene = {};
-    filteredDisplays.forEach(d => {
+    sortedDisplays.forEach(d => {
       const sid = d.assigned_scene_id;
       if (!sid) return;
       if (!byScene[sid]) byScene[sid] = [];
@@ -993,8 +1020,8 @@ const Displays = () => {
         group.forEach(d => pairedIds.add(d.id));
       }
     });
-    return { pairedGroups, unpairedDisplays: filteredDisplays.filter(d => !pairedIds.has(d.id)) };
-  }, [filteredDisplays]);
+    return { pairedGroups, unpairedDisplays: sortedDisplays.filter(d => !pairedIds.has(d.id)) };
+  }, [sortedDisplays]);
 
   // Get unique locations and tags for filter options
   const locations = [...new Set((Array.isArray(displays) ? displays : []).map(d => d.location).filter(Boolean))];
@@ -1208,13 +1235,27 @@ const Displays = () => {
         >
           <div className="filter-group">
             <Filter size={16} />
-            <select 
-              value={onlineFilter} 
+            <select
+              value={onlineFilter}
               onChange={(e) => setOnlineFilter(e.target.value)}
             >
               <option value="all">All Screens</option>
               <option value="online">Online Only</option>
               <option value="offline">Offline Only</option>
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <ArrowDownUp size={16} />
+            <select
+              value={sortBy}
+              onChange={(e) => changeSortBy(e.target.value)}
+              aria-label="Sort screens by"
+            >
+              <option value="name">Sort: Name</option>
+              <option value="location">Sort: Location</option>
+              <option value="status">Sort: Online first</option>
+              <option value="last_seen">Sort: Last seen</option>
             </select>
           </div>
 

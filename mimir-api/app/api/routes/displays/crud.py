@@ -106,7 +106,17 @@ async def list_display_clients(
     db: Session = Depends(get_db)
 ):
     """Get paginated list of display clients including discovered displays"""
-    db_clients = db.query(DisplayClient).offset(offset).limit(limit).all()
+    # Stable ordering: without it Postgres returns heap order, which reshuffles
+    # every time presence/heartbeat updates rewrite rows — the /screens page
+    # would visibly re-order itself between polls. Name first (human-predictable),
+    # id as tiebreak for duplicate names.
+    db_clients = (
+        db.query(DisplayClient)
+        .order_by(DisplayClient.name.asc(), DisplayClient.id.asc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     discovered_displays = []
     discovered_addr_map: dict[str, list[str]] = {}
