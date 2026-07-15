@@ -18,6 +18,8 @@ import { Plus, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import { useEnsureFreshState, useSceneEvents } from '../../hooks/useWebSocket';
+import { useSortPreference } from '../../hooks/useSortPreference';
+import SortToolbar from '../../components/SortToolbar/SortToolbar';
 import DistributionManager from '../../components/DistributionManager/DistributionManager';
 import './Scenes.css';
 import SceneLiveStatus from './components/SceneLiveStatus';
@@ -48,6 +50,7 @@ const Scenes = () => {
   const [showDistributionManager, setShowDistributionManager] = useState(false);
   const [selectedSceneForDistribution, setSelectedSceneForDistribution] = useState(null);
   const [sceneSchedules, setSceneSchedules] = useState({}); // Cache for scene schedules
+  const { sortBy, setSortBy, sortDir, toggleSortDir } = useSortPreference('mimir.programs');
 
   // Initialize WebSocket connection with automatic state sync on mount
   const { currentState, requestStateSync } = useEnsureFreshState();
@@ -646,6 +649,24 @@ const Scenes = () => {
     )
     : null;
 
+  // Deterministic ordering of the programs grid; persisted via useSortPreference.
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+  const sortedScenes = [...scenes].sort((a, b) => {
+    switch (sortBy) {
+      case 'sources':
+        return (b.channels?.length || 0) - (a.channels?.length || 0) || byName(a, b);
+      case 'schedule': {
+        const aHas = getSceneScheduleStatus(a.id)?.hasSchedule ? 1 : 0;
+        const bHas = getSceneScheduleStatus(b.id)?.hasSchedule ? 1 : 0;
+        return (bHas - aHas) || byName(a, b);
+      }
+      case 'name':
+      default:
+        return byName(a, b);
+    }
+  });
+  if (sortDir === 'desc') sortedScenes.reverse();
+
   return (
     <div className="scenes">
       <div className="scenes-header">
@@ -683,6 +704,23 @@ const Scenes = () => {
         />
       </div>
 
+      {scenes.length > 0 && (
+        <div className="programs-toolbar">
+          <SortToolbar
+            sortBy={sortBy}
+            sortDir={sortDir}
+            options={[
+              { value: 'name', label: 'Name' },
+              { value: 'sources', label: 'Most sources' },
+              { value: 'schedule', label: 'Scheduled first' },
+            ]}
+            onChangeSortBy={setSortBy}
+            onToggleSortDir={toggleSortDir}
+            selectAriaLabel="Sort programs by"
+          />
+        </div>
+      )}
+
       <div className="programs-split-layout">
         <div className="programs-list-pane">
           {loading ? (
@@ -691,7 +729,7 @@ const Scenes = () => {
             </div>
           ) : scenes.length > 0 ? (
             <div className="scenes-grid">
-              {scenes.map(scene => {
+              {sortedScenes.map(scene => {
                 const isSelected = panelScene?.id === scene.id && panelMode !== null;
                 return (
                   <div

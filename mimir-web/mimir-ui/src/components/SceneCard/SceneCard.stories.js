@@ -119,3 +119,15 @@ export const ManyChannels = {
   },
   parameters: { docs: { description: { story: 'Example with more channels to test wrapping and layout.' } } }
 };
+
+export const SchedulerStrategy = {
+  render: Template,
+  args: {
+    scene: { ...baseScene, id: 'scene-5', name: 'Hallway Display', update_strategy: 'scheduler' },
+    channels,
+    channelManifests,
+    scheduleStatus: { hasSchedule: true, status: 'Every 15 minutes', count: 1 },
+    loadingDisplay: false
+  },
+  parameters: { docs: { description: { story: 'Scheduler update strategy shows the neutral Scheduled badge.' } } }
+};

@@ -14,9 +14,16 @@
   margin-bottom: var(--spacing-xs);
 }
 
+.programs-toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
 .scenes-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-auto-rows: 1fr;
   gap: var(--spacing-lg);
 }
 

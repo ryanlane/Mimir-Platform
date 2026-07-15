@@ -17,7 +17,11 @@ import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { AlertCircle, Heart, Settings, Power, Trash2, RefreshCw, Unlink } from 'lucide-react';
 import Button from '../../components/Button/Button';
+import Icon from '../../components/Icon/Icon';
 import './ChannelCard.css';
+
+// API icon names that don't map 1:1 to a lucide icon
+const SOURCE_ICON_ALIASES = { photo: 'image' };
 
 /**
  * ChannelCard component
@@ -39,46 +43,48 @@ const ChannelCard = ({
   const [confirmRemove, setConfirmRemove] = useState(false);
   const isEnabled = channel.enabled !== false;
   const isDev = channel.dev === true;
+  const iconName = SOURCE_ICON_ALIASES[channel.icon] || channel.icon || 'database';
 
   return (
     <div className={`channel-card ${!isEnabled ? 'channel-card-disabled' : ''} ${isDev ? 'channel-card-dev' : ''}`}>
       <div className="channel-card-header">
+        <div className="channel-icon-tile" aria-hidden="true">
+          <Icon name={iconName} size={22} />
+        </div>
         <div className="channel-info">
           <h3>
             {channel.name}
-            {isDev && <span className="dev-badge">DEV</span>}
-            {!isEnabled && <span className="disabled-badge">Disabled</span>}
+            {isDev && <span className="channel-badge channel-badge--dev">Dev</span>}
             {v21Supported && manifestData?.schemaVersion === '2.1' && (
-              <span className="v21-badge">v2.1</span>
+              <span className="channel-badge">v2.1</span>
             )}
           </h3>
-            <div className="channel-id">ID: {channel.id}</div>
-            <p className="text-tertiary">{channel.description}</p>
-            {isDev && channel.dev_path && (
-              <div className="dev-path">{channel.dev_path}</div>
-            )}
+          <div className="channel-meta">
+            <span className="channel-id">{channel.id}</span>
+            {channel.version && <span className="version-chip">v{channel.version}</span>}
+          </div>
         </div>
         <div className="status-indicators">
-          <div className={`status-indicator status-${isEnabled ? statusInfo.type : 'disabled'}`}>
+          <div className={`status-pill status-pill--${isEnabled ? statusInfo.type : 'disabled'}`}>
+            <span className="status-dot" />
             {isEnabled ? statusInfo.text : 'Disabled'}
           </div>
-          {channelHealthSupported && health && isEnabled && (
-            <div className={`health-indicator ${health.healthy ? 'healthy' : 'unhealthy'}`}>
-              <Heart size={16} />
-              {health.healthy ? 'Healthy' : 'Issues'}
+          {channelHealthSupported && health && isEnabled && !health.healthy && (
+            <div className="health-indicator unhealthy">
+              <Heart size={14} />
+              Issues
             </div>
           )}
         </div>
       </div>
 
+      <p className="channel-description">{channel.description}</p>
+      {isDev && channel.dev_path && (
+        <div className="dev-path">{channel.dev_path}</div>
+      )}
+
       <div className="channel-card-body">
         <div className="channel-details">
-          {channel.version && (
-            <div className="detail-item">
-              <span>Version:</span>
-              <span>{channel.version || 'Unknown'}</span>
-            </div>
-          )}
           {v21Supported && manifestData && (
             <>
               {manifestData.hasUI && (
@@ -231,6 +237,7 @@ ChannelCard.propTypes = {
     id: PropTypes.string.isRequired,
     name: PropTypes.string.isRequired,
     description: PropTypes.string,
+    icon: PropTypes.string,
     version: PropTypes.string,
     enabled: PropTypes.bool,
     dev: PropTypes.bool,

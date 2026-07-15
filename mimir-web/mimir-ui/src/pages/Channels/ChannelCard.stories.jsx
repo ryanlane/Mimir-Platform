@@ -21,6 +21,7 @@ const baseChannel = (overrides = {}) => ({
   id: 'weather',
   name: 'Weather Channel',
   description: 'Provides daily and hourly forecast imagery.',
+  icon: 'cloud',
   version: '1.4.2',
   status: {
     lastUpdate: new Date().toISOString(),
@@ -142,4 +143,35 @@ export const NoHealthInfo = {
     channelHealthSupported: false,
   },
   parameters: { docs: { description: { story: 'Health section suppressed when health support disabled or unavailable.' } } },
+};
+
+export const Disabled = {
+  args: {
+    channel: baseChannel({ enabled: false }),
+    statusInfo: mkStatus('success', 'Active'),
+    health: healthy,
+    manifestData: manifestV21,
+    v21Supported: true,
+    channelHealthSupported: true,
+  },
+  parameters: { docs: { description: { story: 'Disabled source: dimmed card with a gray status dot.' } } },
+};
+
+export const DevChannel = {
+  args: {
+    channel: baseChannel({
+      id: 'com.example.dev-weather',
+      name: 'Weather (local)',
+      dev: true,
+      dev_path: '/home/dev/mimir-source-weather',
+    }),
+    statusInfo: mkStatus('success', 'Active'),
+    health: healthy,
+    manifestData: undefined,
+    v21Supported: false,
+    channelHealthSupported: true,
+    onReloadDev: () => {},
+    onUnlinkDev: () => {},
+  },
+  parameters: { docs: { description: { story: 'Dev-linked source with Dev badge, source path, and reload/unlink actions.' } } },
 };

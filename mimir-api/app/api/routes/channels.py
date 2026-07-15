@@ -109,6 +109,7 @@ async def get_channel_health(
 
     # For embedded plugins, check if instance is available and working
     healthy = plugin.instance is not None
+    await plugin_discovery.check_plugin_health(plugin)
 
     return {
         "channelId": channel_id,

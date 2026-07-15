@@ -127,23 +127,20 @@ export function SceneCard({
   return (
     <div className="scene-card">
       <div className="scene-card-header">
-        <h3>
-          {scene.name}{' '}
-          
-        </h3>
+        <h3>{scene.name}</h3>
         <span
-            className={badgeClass}
-            title={downgraded ? 'Originally configured for push but downgraded due to channel capability change' : (isPush ? 'Push update strategy (websocket events trigger refresh)' : 'Scheduler update strategy (periodic refresh)')}
-          >
-            {isPush ? 'Push' : 'Scheduled'}
-            {downgraded && <span className="downgrade-indicator" aria-label="Downgraded to scheduler">⚠</span>}
-          </span>
+          className={badgeClass}
+          title={downgraded ? 'Originally configured for push but downgraded due to channel capability change' : (isPush ? 'Push update strategy (websocket events trigger refresh)' : 'Scheduler update strategy (periodic refresh)')}
+        >
+          {isPush ? 'Push' : 'Scheduled'}
+          {downgraded && <span className="downgrade-indicator" aria-label="Downgraded to scheduler">⚠</span>}
+        </span>
       </div>
 
       <div className="scene-card-body">
         {scene.channels && scene.channels.length > 0 && (
           <div className="scene-channels">
-            <span className="channels-label">Channels:</span>
+            <span className="scene-section-label">Sources</span>
             <div className="channel-tags">
               {scene.channels.map(renderChannelTag)}
             </div>
@@ -151,7 +148,7 @@ export function SceneCard({
         )}
 
         <div className="scene-distribution-mode">
-          <span className="distribution-label">Distribution:</span>
+          <span className="scene-section-label">Distribution</span>
           <select
             value={distributionValue}
             onChange={(e) => onChangeDistribution && onChangeDistribution(scene.id, e.target.value)}
@@ -163,25 +160,24 @@ export function SceneCard({
           </select>
         </div>
 
-        <div className="scene-schedule">
-          <span className="schedule-label">Schedule:</span>
-          {scheduleStatus && (
-            <div className="schedule-info">
-              <span className={`schedule-status ${scheduleStatus.hasSchedule ? 'active' : 'inactive'}`}>
-                {scheduleStatus.hasSchedule ? (
-                  <>
-                    {scheduleStatus.status}
-                    {scheduleStatus.count > 1 && (
-                      <span className="schedule-count"> (+{scheduleStatus.count - 1} more)</span>
-                    )}
-                  </>
-                ) : (
-                  'No schedule'
-                )}
-              </span>
-            </div>
-          )}
-        </div>
+        {scheduleStatus && (
+          <div className="scene-schedule">
+            <span className="scene-section-label">Schedule</span>
+            <span className={`schedule-status ${scheduleStatus.hasSchedule ? 'active' : 'inactive'}`}>
+              <span className="schedule-dot" />
+              {scheduleStatus.hasSchedule ? (
+                <>
+                  {scheduleStatus.status}
+                  {scheduleStatus.count > 1 && (
+                    <span className="schedule-count"> (+{scheduleStatus.count - 1} more)</span>
+                  )}
+                </>
+              ) : (
+                'No schedule'
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="scene-card-footer">
