@@ -15,7 +15,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Plus, FolderOpen, Store } from 'lucide-react';
+import { RefreshCw, Plus, FolderOpen, Store, ArrowDownUp } from 'lucide-react';
 import { api } from '../../services/api';
 import { persistentCache } from '../../services/persistentCache';
 import { useFeatureDetection } from '../../hooks/useFeatureDetection';
@@ -39,6 +39,15 @@ const Channels = () => {
     const [showInstallModal, setShowInstallModal] = useState(false);
     const [showLinkDevModal, setShowLinkDevModal] = useState(false);
     const [storeUpdateCount, setStoreUpdateCount] = useState(0);
+    // Sort order for the sources grid; persisted so the page stays predictable
+    // across visits. 'name' | 'status' | 'last_update'
+    const [sortBy, setSortBy] = useState(() => {
+      try { return localStorage.getItem('mimir.sources.sortBy') || 'name'; } catch { return 'name'; }
+    });
+    const changeSortBy = (value) => {
+      setSortBy(value);
+      try { localStorage.setItem('mimir.sources.sortBy', value); } catch { /* private mode */ }
+    };
 
     const devModeEnabled = localStorage.getItem('mimir-developer-mode') === 'true';
 
@@ -249,6 +258,27 @@ const Channels = () => {
       return { type: 'success', text: 'Active' };
     };
 
+    // Deterministic ordering on top of whatever order the API returns —
+    // keeps the grid predictable regardless of install order or live updates.
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+    const sortedChannels = [...channels].sort((a, b) => {
+      switch (sortBy) {
+        case 'status': {
+          const aEnabled = a.enabled !== false;
+          const bEnabled = b.enabled !== false;
+          if (aEnabled !== bEnabled) return bEnabled - aEnabled;
+          const aHealthy = channelHealth[a.id]?.healthy !== false;
+          const bHealthy = channelHealth[b.id]?.healthy !== false;
+          return (bHealthy - aHealthy) || byName(a, b);
+        }
+        case 'last_update':
+          return new Date(b.status?.lastUpdate || 0) - new Date(a.status?.lastUpdate || 0) || byName(a, b);
+        case 'name':
+        default:
+          return byName(a, b);
+      }
+    });
+
     const panelChannelHealth = panelChannel ? channelHealth[panelChannel.id] : null;
     const panelManifest = panelChannel ? manifest.find(m => m.id === panelChannel.id) : null;
     const panelStatusInfo = panelChannel ? getStatusInfo(panelChannel) : null;
@@ -307,6 +337,23 @@ const Channels = () => {
           />
         </div>
 
+        {channels.length > 0 && (
+          <div className="sources-toolbar">
+            <div className="filter-group">
+              <ArrowDownUp size={16} />
+              <select
+                value={sortBy}
+                onChange={(e) => changeSortBy(e.target.value)}
+                aria-label="Sort sources by"
+              >
+                <option value="name">Sort: Name</option>
+                <option value="status">Sort: Active first</option>
+                <option value="last_update">Sort: Last updated</option>
+              </select>
+            </div>
+          </div>
+        )}
+
         <div className="sources-split-layout">
           <div className="sources-list-pane">
             {loading ? (
@@ -315,7 +362,7 @@ const Channels = () => {
               </div>
             ) : channels.length > 0 ? (
               <div className="channels-grid">
-                {channels.map(channel => {
+                {sortedChannels.map(channel => {
                   const statusInfo = getStatusInfo(channel);
                   const health = channelHealth[channel.id];
                   const manifestData = manifest.find(m => m.id === channel.id);
