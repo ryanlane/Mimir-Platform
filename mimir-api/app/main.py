@@ -434,13 +434,22 @@ def create_app() -> FastAPI:
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to mount media directory: {e}")
 
-    # Mount static files for general content (test images, etc.)
+    # Mount static files for general content (test images, shared plugin
+    # assets like the File Sources file-explorer web component, etc.)
+    #
+    # Mounted under the api_prefix (i.e. /api/static) rather than a bare
+    # /static so it rides through nginx's existing `location ^~ /api/` proxy
+    # in the production mimir-web deploy with no extra proxy rule needed —
+    # a top-level /static would collide with Create React App's own build
+    # output (build/static/js, build/static/css) once both are served from
+    # the same web origin.
     try:
         import os
         static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
         if os.path.exists(static_dir):
-            app.mount("/static", StaticFiles(directory=static_dir), name="static")
-            logger.info("📁 Static files mounted at /static")
+            static_mount_path = f"{settings.api_prefix}/static"
+            app.mount(static_mount_path, StaticFiles(directory=static_dir), name="static")
+            logger.info(f"📁 Static files mounted at {static_mount_path}")
         else:
             logger.warning(f"Static directory not found: {static_dir}")
     except Exception as e:
