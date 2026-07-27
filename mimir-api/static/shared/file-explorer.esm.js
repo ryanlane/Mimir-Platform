@@ -1,13 +1,17 @@
 // Shared File Explorer web component — <x-file-explorer>
 //
-// Served by mimir-api at /static/shared/file-explorer.esm.js so it can be
-// imported by BOTH the React admin UI (mimir-ui) and any channel plugin's
-// manager Web Component (e.g. slow_movie's manage.esm.js). One picker,
-// backed by the platform's /api/sources File Sources endpoints, instead of
-// every plugin building (and duplicating) its own server-path browser.
+// Served by mimir-api at /api/static/shared/file-explorer.esm.js (nested
+// under /api so it rides through the production nginx proxy's existing
+// `location ^~ /api/` rule with no extra config — a bare /static would
+// collide with Create React App's own build/static/js|css output once both
+// are served from the same web origin) so it can be imported by BOTH the
+// React admin UI (mimir-ui) and any channel plugin's manager Web Component
+// (e.g. slow_movie's manage.esm.js). One picker, backed by the platform's
+// /api/sources File Sources endpoints, instead of every plugin building
+// (and duplicating) its own server-path browser.
 //
 // Usage:
-//   <script type="module" src="{apiBase}/static/shared/file-explorer.esm.js"></script>
+//   <script type="module" src="{apiBase}/api/static/shared/file-explorer.esm.js"></script>
 //   <x-file-explorer extensions="mp4,avi,mov,mkv,webm"></x-file-explorer>
 //   el.addEventListener('mimir-file-select', (e) => {
 //     const { ref, sourceId, path, name, size } = e.detail;
