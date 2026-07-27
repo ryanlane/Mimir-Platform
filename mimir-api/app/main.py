@@ -32,6 +32,7 @@ from app.api.routes.debug_mqtt import router as debug_mqtt_router
 from app.api.routes.discovery import router as discovery_router
 from app.api.routes.display_scene import router as display_scene_router
 from app.api.routes.displays import router as displays_router
+from app.api.routes.file_sources import router as file_sources_router
 from app.api.routes.scenes import router as scenes_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.api.routes.store import router as store_router
@@ -385,6 +386,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router, prefix=settings.api_prefix, tags=["admin"])
     app.include_router(client_releases_router, prefix=settings.api_prefix, tags=["client-releases"])
     app.include_router(store_router, prefix=settings.api_prefix, tags=["store"])
+    app.include_router(file_sources_router, prefix=settings.api_prefix, tags=["file-sources"])
 
     # Include WebSocket routes (no prefix for WebSockets)
     app.include_router(websockets_router)

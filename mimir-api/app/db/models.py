@@ -115,6 +115,29 @@ class Scene(Base):
     )
 
 
+class FileSource(Base):
+    """User-configured file source for browsing media (local mount or SMB share).
+
+    ``type`` is "local" or "smb". ``config`` holds the type-specific settings:
+      local: {"path": "<subpath under the host media mount>"}
+      smb:   {"host", "share", "username", "password", "port", "root_path"}
+    Local sources are constrained to the single generic bind mount
+    (/mnt/host-media by default) so the container never exposes paths the
+    operator didn't deliberately mount.
+    """
+    __tablename__ = "file_sources"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    type = Column(String, nullable=False, index=True)  # "local" | "smb"
+    config = Column(JSON, nullable=False, default=dict)
+    enabled = Column(Boolean, default=True, nullable=False)
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.datetime.now, index=True)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
 class Overlay(Base):
     """Overlay configurations"""
     __tablename__ = "overlays"

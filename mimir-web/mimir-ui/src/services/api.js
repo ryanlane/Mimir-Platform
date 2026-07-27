@@ -521,6 +521,16 @@ export const api = {
   updateOverlay: (overlayId, data) => apiClient.put(`/overlays/${overlayId}`, data),
   deleteOverlay: (overlayId) => apiClient.delete(`/overlays/${overlayId}`),
 
+  // File Sources (shared media browsing across channel plugins)
+  listFileSources: () => apiClient.get('/sources'),
+  getFileSource: (sourceId) => apiClient.get(`/sources/${sourceId}`),
+  createFileSource: (source) => apiClient.post('/sources', source),
+  updateFileSource: (sourceId, data) => apiClient.put(`/sources/${sourceId}`, data),
+  deleteFileSource: (sourceId) => apiClient.delete(`/sources/${sourceId}`),
+  testFileSource: (sourceId) => apiClient.post(`/sources/${sourceId}/test`),
+  browseFileSource: (sourceId, path = '', extensions = '') =>
+    apiClient.get(`/sources/${sourceId}/browse`, { params: { path, extensions } }),
+
   // Display pairing (short-code / QR registration)
   claimPairCode: (code, name, location) =>
     apiClient.post('/displays/pair', { code, name, location }),

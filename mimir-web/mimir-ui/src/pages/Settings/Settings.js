@@ -24,6 +24,7 @@ import { persistentCache } from '../../services/persistentCache';
 import WebSocketStatus from '../../components/WebSocketStatus/WebSocketStatus';
 import MobileConnectionGuide from '../../components/MobileConnectionGuide/MobileConnectionGuide';
 import AdminOperations from '../../components/AdminOperations/AdminOperations';
+import FileSourcesSettings from '../../components/FileSourcesSettings/FileSourcesSettings';
 import { ThemeSelector } from '../../components/ThemeSelector/ThemeSelector';
 import Header from '../../components/Header/Header';
 import {
@@ -943,6 +944,9 @@ const Settings = () => {
             </div>
           )}
         </div>
+
+        {/* File Sources */}
+        <FileSourcesSettings />
 
         {/* Admin Operations */}
         <AdminOperations />

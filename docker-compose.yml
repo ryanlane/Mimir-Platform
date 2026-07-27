@@ -120,6 +120,11 @@ services:
       - ./data/uploads:/var/opt/mimir/mimir-api/uploads
       # Bind-mount channel plugins from repo (read-only)
       - ./mimir-api/channels:/var/opt/mimir/mimir-api/channels:ro
+      # Generic host media mount for File Sources (Settings → File Sources).
+      # Set MIMIR_HOST_MEDIA in the root .env to a parent directory that
+      # covers your media (e.g. /new-pool or /mnt); named sources beneath it
+      # are then configured entirely in the web UI. Unset = empty placeholder.
+      - ${MIMIR_HOST_MEDIA:-./data/media}:/mnt/host-media:ro
     depends_on:
       db:
         condition: service_healthy
