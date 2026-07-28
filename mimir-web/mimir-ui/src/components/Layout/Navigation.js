@@ -59,7 +59,7 @@ const Navigation = () => {
           }
         >
           <Settings size={16} />
-          <span>System</span>
+          <span>Settings</span>
         </NavLink>
       </div>
     </nav>

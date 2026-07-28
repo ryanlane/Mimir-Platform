@@ -23,7 +23,7 @@ const MobileNavigation = () => {
     { path: '/screens', label: 'Screens', icon: Monitor },
     { path: '/programs', label: 'Programs', icon: Layers },
     { path: '/sources', label: 'Sources', icon: Database },
-    { path: '/settings', label: 'System', icon: Settings },
+    { path: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (

@@ -521,7 +521,7 @@ export const api = {
   updateOverlay: (overlayId, data) => apiClient.put(`/overlays/${overlayId}`, data),
   deleteOverlay: (overlayId) => apiClient.delete(`/overlays/${overlayId}`),
 
-  // File Sources (shared media browsing across channel plugins)
+  // Media Sources (shared media browsing across channel plugins)
   listFileSources: () => apiClient.get('/sources'),
   getFileSource: (sourceId) => apiClient.get(`/sources/${sourceId}`),
   createFileSource: (source) => apiClient.post('/sources', source),

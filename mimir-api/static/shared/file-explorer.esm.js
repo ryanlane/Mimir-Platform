@@ -7,7 +7,7 @@
 // are served from the same web origin) so it can be imported by BOTH the
 // React admin UI (mimir-ui) and any channel plugin's manager Web Component
 // (e.g. slow_movie's manage.esm.js). One picker, backed by the platform's
-// /api/sources File Sources endpoints, instead of every plugin building
+// /api/sources Media Sources endpoints, instead of every plugin building
 // (and duplicating) its own server-path browser.
 //
 // Usage:
@@ -84,6 +84,12 @@ class XFileExplorer extends HTMLElement {
   }
 
   connectedCallback() {
+    // Guard against re-initializing when this same element instance is
+    // detached and reattached (e.g. a host component moving it to preserve
+    // state across its own re-renders) — without this, every reattachment
+    // would silently reset navigation back to the source root.
+    if (this._initialized) return;
+    this._initialized = true;
     const style = document.createElement('style');
     style.textContent = CSS;
     this.shadowRoot.appendChild(style);
@@ -176,7 +182,7 @@ class XFileExplorer extends HTMLElement {
       return `<div class="loading"><div class="spinner"></div></div>`;
     }
     if (sources.length === 0) {
-      return `<div class="empty">No file sources configured yet.<br/>Add one in Settings &rarr; File Sources.</div>`;
+      return `<div class="empty">No media sources configured yet.<br/>Add one in Settings &rarr; Media Sources.</div>`;
     }
 
     const sourceOptions = sources.map((s) =>

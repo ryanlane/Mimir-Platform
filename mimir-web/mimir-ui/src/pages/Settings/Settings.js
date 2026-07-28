@@ -945,7 +945,7 @@ const Settings = () => {
           )}
         </div>
 
-        {/* File Sources */}
+        {/* Media Sources */}
         <FileSourcesSettings />
 
         {/* Admin Operations */}

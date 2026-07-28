@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-// File Sources: operator-configured media roots (local mounts, SMB shares)
+// Media Sources: operator-configured media roots (local mounts, SMB shares)
 // that any channel plugin can browse through the shared <x-file-explorer>
 // picker instead of each plugin growing its own server-path input.
 import React, { useState, useEffect, useCallback } from 'react';
@@ -67,7 +67,7 @@ const FileSourcesSettings = () => {
   };
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Remove file source "${name}"? Plugins referencing it will stop finding those files.`)) return;
+    if (!window.confirm(`Remove media source "${name}"? Plugins referencing it will stop finding those files.`)) return;
     try {
       await api.deleteFileSource(id);
       await loadSources();
@@ -106,7 +106,7 @@ const FileSourcesSettings = () => {
       >
         <div className="flex items-center gap-sm">
           <HardDrive size={20} />
-          <h3 className="card-title">File Sources</h3>
+          <h3 className="card-title">Media Sources</h3>
         </div>
         <button type="button" className="expand-button" aria-label={isExpanded ? 'Collapse section' : 'Expand section'}>
           {isExpanded ? '−' : '+'}
@@ -127,7 +127,7 @@ const FileSourcesSettings = () => {
           {loading ? (
             <div className="fs-loading"><div className="fs-spinner" /></div>
           ) : sources.length === 0 ? (
-            <div className="fs-empty">No file sources configured yet.</div>
+            <div className="fs-empty">No media sources configured yet.</div>
           ) : (
             <div className="fs-list">
               {sources.map((s) => {
@@ -172,7 +172,7 @@ const FileSourcesSettings = () => {
 
           {!showAdd ? (
             <button type="button" className="btn btn-secondary" style={{ marginTop: '0.75rem' }} onClick={() => setShowAdd(true)}>
-              <Plus size={14} /> Add File Source
+              <Plus size={14} /> Add Media Source
             </button>
           ) : (
             <div className="fs-add-form">
