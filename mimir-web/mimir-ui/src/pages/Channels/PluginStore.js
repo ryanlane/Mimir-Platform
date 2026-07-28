@@ -47,6 +47,96 @@ const PluginTag = ({ tag }) => (
   <span className={`plugin-tag ${TAG_COLORS[tag.toLowerCase()] || 'tag-default'}`}>{tag}</span>
 );
 
+const StoreCard = ({ plugin, installed, hasUpdate, installedVersion, state, msg, onInstall, onUpdate }) => (
+  <div className={`store-card${installed ? ' store-card--installed' : ''}`}>
+    <div className="store-card-header">
+      <div className="store-card-icon">{iconFor(plugin.icon)}</div>
+      <div className="store-card-title-block">
+        <h3 className="store-card-name">{plugin.name}</h3>
+        <span className="store-card-author">{plugin.author}</span>
+      </div>
+      <div className="store-card-badges">
+        {installed && (
+          <span className="badge badge-installed">
+            <CheckCircle size={11} /> Installed
+          </span>
+        )}
+        {hasUpdate && (
+          <span className="badge badge-update">
+            <ArrowUpCircle size={11} /> Update
+          </span>
+        )}
+      </div>
+    </div>
+
+    <p className="store-card-desc">{plugin.description}</p>
+
+    {plugin.tags?.length > 0 && (
+      <div className="store-card-tags">
+        {plugin.tags.map(t => <PluginTag key={t} tag={t} />)}
+      </div>
+    )}
+
+    <div className="store-card-footer">
+      <div className="store-card-version">
+        {installed && installedVersion ? (
+          hasUpdate
+            ? <span className="version-outdated">v{installedVersion} → <strong>v{plugin.version}</strong></span>
+            : <span className="version-current">v{installedVersion}</span>
+        ) : (
+          <span className="version-latest">v{plugin.version}</span>
+        )}
+      </div>
+
+      <div className="store-card-actions">
+        {plugin.homepage && (
+          <a
+            href={plugin.homepage}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="store-link-btn"
+            title="View on GitHub"
+          >
+            <ExternalLink size={14} />
+          </a>
+        )}
+
+        {state === 'done' ? (
+          <span className="action-success"><CheckCircle size={14} /> {msg}</span>
+        ) : state === 'error' ? (
+          <span className="action-error" title={msg}><AlertCircle size={14} /> Failed</span>
+        ) : hasUpdate ? (
+          <Button
+            variant="accent"
+            size="sm"
+            onClick={() => onUpdate(plugin)}
+            disabled={state === 'updating'}
+            icon={<ArrowUpCircle size={14} />}
+          >
+            {state === 'updating' ? 'Updating…' : 'Update'}
+          </Button>
+        ) : installed ? (
+          <span className="action-installed"><CheckCircle size={14} /> Up to date</span>
+        ) : (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => onInstall(plugin)}
+            disabled={state === 'installing'}
+            icon={<Download size={14} />}
+          >
+            {state === 'installing' ? 'Installing…' : 'Install'}
+          </Button>
+        )}
+      </div>
+    </div>
+
+    {state === 'error' && msg && (
+      <p className="store-card-error">{msg}</p>
+    )}
+  </div>
+);
+
 const PluginStore = () => {
   const navigate = useNavigate();
   const [plugins, setPlugins] = useState([]);
@@ -145,6 +235,27 @@ const PluginStore = () => {
 
   const pendingUpdates = Object.values(updates).filter(u => u.update_available).length;
 
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+  const withUpdates = [];
+  const installedNoUpdate = [];
+  const available = [];
+  for (const plugin of filtered) {
+    if (installedIds.has(plugin.id)) {
+      (updates[plugin.id]?.update_available ? withUpdates : installedNoUpdate).push(plugin);
+    } else {
+      available.push(plugin);
+    }
+  }
+  withUpdates.sort(byName);
+  installedNoUpdate.sort(byName);
+  available.sort(byName);
+
+  const sections = [
+    { key: 'updates', title: 'Updates Available', items: withUpdates },
+    { key: 'installed', title: 'Installed', items: installedNoUpdate },
+    { key: 'available', title: 'Available', items: available },
+  ];
+
   return (
     <div className="plugin-store-page">
       <div className="store-page-header">
@@ -212,106 +323,26 @@ const PluginStore = () => {
             {search ? `No sources match "${search}"` : 'No sources in registry'}
           </div>
         ) : (
-          <div className="store-grid">
-            {filtered.map(plugin => {
-              const installed = installedIds.has(plugin.id);
-              const updateInfo = updates[plugin.id];
-              const hasUpdate = updateInfo?.update_available;
-              const state = actionState[plugin.id];
-              const msg = actionMsg[plugin.id];
-              const installedVersion = installedVersions[plugin.id];
-
-              return (
-                <div key={plugin.id} className={`store-card${installed ? ' store-card--installed' : ''}`}>
-                  <div className="store-card-header">
-                    <div className="store-card-icon">{iconFor(plugin.icon)}</div>
-                    <div className="store-card-title-block">
-                      <h3 className="store-card-name">{plugin.name}</h3>
-                      <span className="store-card-author">{plugin.author}</span>
-                    </div>
-                    <div className="store-card-badges">
-                      {installed && (
-                        <span className="badge badge-installed">
-                          <CheckCircle size={11} /> Installed
-                        </span>
-                      )}
-                      {hasUpdate && (
-                        <span className="badge badge-update">
-                          <ArrowUpCircle size={11} /> Update
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <p className="store-card-desc">{plugin.description}</p>
-
-                  {plugin.tags?.length > 0 && (
-                    <div className="store-card-tags">
-                      {plugin.tags.map(t => <PluginTag key={t} tag={t} />)}
-                    </div>
-                  )}
-
-                  <div className="store-card-footer">
-                    <div className="store-card-version">
-                      {installed && installedVersion ? (
-                        hasUpdate
-                          ? <span className="version-outdated">v{installedVersion} → <strong>v{plugin.version}</strong></span>
-                          : <span className="version-current">v{installedVersion}</span>
-                      ) : (
-                        <span className="version-latest">v{plugin.version}</span>
-                      )}
-                    </div>
-
-                    <div className="store-card-actions">
-                      {plugin.homepage && (
-                        <a
-                          href={plugin.homepage}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="store-link-btn"
-                          title="View on GitHub"
-                        >
-                          <ExternalLink size={14} />
-                        </a>
-                      )}
-
-                      {state === 'done' ? (
-                        <span className="action-success"><CheckCircle size={14} /> {msg}</span>
-                      ) : state === 'error' ? (
-                        <span className="action-error" title={msg}><AlertCircle size={14} /> Failed</span>
-                      ) : hasUpdate ? (
-                        <Button
-                          variant="accent"
-                          size="sm"
-                          onClick={() => handleUpdate(plugin)}
-                          disabled={state === 'updating'}
-                          icon={<ArrowUpCircle size={14} />}
-                        >
-                          {state === 'updating' ? 'Updating…' : 'Update'}
-                        </Button>
-                      ) : installed ? (
-                        <span className="action-installed"><CheckCircle size={14} /> Up to date</span>
-                      ) : (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleInstall(plugin)}
-                          disabled={state === 'installing'}
-                          icon={<Download size={14} />}
-                        >
-                          {state === 'installing' ? 'Installing…' : 'Install'}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-
-                  {state === 'error' && msg && (
-                    <p className="store-card-error">{msg}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          sections.map(section => section.items.length === 0 ? null : (
+            <div key={section.key} className="store-section">
+              <h2 className="store-section-title">{section.title} ({section.items.length})</h2>
+              <div className="store-grid">
+                {section.items.map(plugin => (
+                  <StoreCard
+                    key={plugin.id}
+                    plugin={plugin}
+                    installed={installedIds.has(plugin.id)}
+                    hasUpdate={updates[plugin.id]?.update_available}
+                    installedVersion={installedVersions[plugin.id]}
+                    state={actionState[plugin.id]}
+                    msg={actionMsg[plugin.id]}
+                    onInstall={handleInstall}
+                    onUpdate={handleUpdate}
+                  />
+                ))}
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>
