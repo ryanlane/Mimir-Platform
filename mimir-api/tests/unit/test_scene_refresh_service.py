@@ -28,13 +28,14 @@ def _cm(db_mock):
     return cm
 
 
-def _scene(scene_id="s1", channels=None, distribution_mode="MIRROR"):
+def _scene(scene_id="s1", channels=None, distribution_mode="MIRROR", rotation_index=0):
     s = MagicMock()
     s.id = scene_id
     s.channels = channels if channels is not None else [{"channel_id": "photo-frame"}]
     s.distribution_mode = distribution_mode
     s.content_hash = None
     s.content_epoch = None
+    s.rotation_index = rotation_index
     return s
 
 
@@ -300,6 +301,109 @@ class TestFingerprintGating:
         await service.refresh_scene("s1", trigger_reason="push")
 
         assert srs_module._last_scene_fingerprint.get("s1:") == fp
+
+
+# ---------------------------------------------------------------------------
+# Round-robin rotation across multi-source scenes
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestRoundRobinRotation:
+    """Scenes with more than one source should serve exactly one per
+    refresh (source 1, then 2, ... then back to 1), advancing a persisted
+    cursor, instead of rendering/distributing every configured source on
+    every tick."""
+
+    def _setup(self, monkeypatch, service, scene, requested_channels):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = scene
+        monkeypatch.setattr(srs_module, "SessionLocal", MagicMock(return_value=_cm(db)))
+
+        monkeypatch.setattr(service, "_collect_assigned_displays", lambda s: [
+            {"device_id": "disp-a", "width": 800, "height": 480, "orientation": "landscape"}
+        ])
+
+        fake_plugin = SimpleNamespace(instance=MagicMock())
+        monkeypatch.setattr(
+            "app.services.plugin_discovery.plugin_discovery_service",
+            SimpleNamespace(get_plugin=lambda _: fake_plugin),
+        )
+
+        async def fake_request(channel_id, payload):
+            requested_channels.append(channel_id)
+            # Distinct fingerprint per request so fingerprint gating never
+            # masks whether rotation itself picked the right source.
+            return (b"img-bytes", "image/png", f"fp-{channel_id}-{len(requested_channels)}", None)
+
+        monkeypatch.setattr(service, "_request_channel_image_http", fake_request)
+        monkeypatch.setattr(
+            srs_module, "save_swap_image",
+            MagicMock(return_value=(None, "http://mimir.local:5000/swap/s1/img.png", True)),
+        )
+        monkeypatch.setattr(srs_module.mqtt_scene_service, "send_display_image", AsyncMock(return_value=True))
+        monkeypatch.setattr(srs_module, "DisplayImagePersistenceService", MagicMock())
+
+    async def test_alternates_between_two_sources_and_wraps(self, service, monkeypatch):
+        scene = _scene("s1", channels=[{"channel_id": "ch-a"}, {"channel_id": "ch-b"}])
+        requested = []
+        self._setup(monkeypatch, service, scene, requested)
+
+        await service.refresh_scene("s1", trigger_reason="scheduler", force=True)
+        await service.refresh_scene("s1", trigger_reason="scheduler", force=True)
+        await service.refresh_scene("s1", trigger_reason="scheduler", force=True)
+
+        assert requested == ["ch-a", "ch-b", "ch-a"]
+
+    async def test_three_sources_full_cycle(self, service, monkeypatch):
+        scene = _scene("s1", channels=[
+            {"channel_id": "ch-a"}, {"channel_id": "ch-b"}, {"channel_id": "ch-c"},
+        ])
+        requested = []
+        self._setup(monkeypatch, service, scene, requested)
+
+        for _ in range(4):
+            await service.refresh_scene("s1", trigger_reason="scheduler", force=True)
+
+        assert requested == ["ch-a", "ch-b", "ch-c", "ch-a"]
+
+    async def test_cursor_advances_regardless_of_distribution_outcome(self, service, monkeypatch):
+        """The cursor must move on next refresh even when this refresh's
+        content was gated/skipped or otherwise didn't fully succeed —
+        otherwise a flaky source could stall rotation on it forever."""
+        scene = _scene("s1", channels=[{"channel_id": "ch-a"}, {"channel_id": "ch-b"}])
+        requested = []
+        self._setup(monkeypatch, service, scene, requested)
+
+        await service.refresh_scene("s1", trigger_reason="scheduler")
+        await service.refresh_scene("s1", trigger_reason="scheduler")
+
+        assert requested == ["ch-a", "ch-b"]
+        assert scene.rotation_index == 0  # wrapped back after 2 sources
+
+    async def test_single_source_scene_has_no_rotation(self, service, monkeypatch):
+        scene = _scene("s1", channels=[{"channel_id": "solo"}])
+        requested = []
+        self._setup(monkeypatch, service, scene, requested)
+
+        await service.refresh_scene("s1", trigger_reason="scheduler", force=True)
+        await service.refresh_scene("s1", trigger_reason="scheduler", force=True)
+
+        assert requested == ["solo", "solo"]
+        assert scene.rotation_index == 0  # untouched for single-source scenes
+
+    async def test_channel_subset_bypasses_rotation(self, service, monkeypatch):
+        """An explicit channel_subset (e.g. a manual per-channel refresh
+        request) is honored exactly and must not be redirected by the cursor."""
+        scene = _scene("s1", channels=[{"channel_id": "ch-a"}, {"channel_id": "ch-b"}])
+        requested = []
+        self._setup(monkeypatch, service, scene, requested)
+
+        await service.refresh_scene(
+            "s1", trigger_reason="manual", channel_subset=["ch-b"], force=True
+        )
+
+        assert requested == ["ch-b"]
+        assert scene.rotation_index == 0  # subset path doesn't touch the cursor
 
 
 # ---------------------------------------------------------------------------

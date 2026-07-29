@@ -164,10 +164,25 @@ class SceneRefreshService:
                     if channel_override_entry:
                         channel_entries = [channel_override_entry]
                     else:
-                        # Multi-channel: filter dict entries, optionally subset
-                        channel_entries = [c for c in scene.channels if isinstance(c, dict)]
+                        all_entries = [c for c in scene.channels if isinstance(c, dict)]
                         if channel_subset:
-                            channel_entries = [c for c in channel_entries if c.get("channel_id") in channel_subset]
+                            # Caller asked for a specific subset (e.g. a manual
+                            # per-channel refresh) — honor it exactly, no rotation.
+                            channel_entries = [c for c in all_entries if c.get("channel_id") in channel_subset]
+                        elif len(all_entries) > 1:
+                            # Round-robin across configured sources: serve exactly
+                            # one per refresh (source 1, then 2, ... then back to
+                            # 1), instead of rendering/distributing all of them
+                            # every tick. The cursor is persisted immediately —
+                            # before the network/distribution work below — so a
+                            # failed or slow source doesn't get retried forever;
+                            # the next refresh always moves on regardless.
+                            idx = (scene.rotation_index or 0) % len(all_entries)
+                            channel_entries = [all_entries[idx]]
+                            scene.rotation_index = (idx + 1) % len(all_entries)
+                            db.commit()
+                        else:
+                            channel_entries = all_entries
                     if not channel_entries:
                         return SceneRefreshResult(
                             scene_id=scene_id,

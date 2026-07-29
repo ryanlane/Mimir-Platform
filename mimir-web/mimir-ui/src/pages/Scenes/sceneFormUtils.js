@@ -37,14 +37,18 @@ export function normalizeScene(scene) {
       interrupt_sources: [],
     };
   }
-  // Normalize channels array into assignment objects; old format may be string ids
+  // Normalize channels array into assignment objects; old format may be string ids.
+  // Order matters here: it's the round-robin rotation order the backend cycles
+  // through when refreshing this scene, so it must be preserved, not truncated.
   const normalizedChannels = Array.isArray(scene.channels)
     ? scene.channels.map(ch => {
         if (typeof ch === 'string') return { channel_id: ch, subchannel_id: null };
         if (ch && typeof ch === 'object') {
           return {
             channel_id: ch.channel_id || ch.id || String(ch),
-            subchannel_id: ch.subchannel_id || null
+            subchannel_id: ch.subchannel_id || null,
+            position: ch.position || null,
+            config: ch.config || null,
           };
         }
         return { channel_id: String(ch), subchannel_id: null };
@@ -53,7 +57,7 @@ export function normalizeScene(scene) {
 
   return {
     name: scene.name || '',
-    channels: normalizedChannels.slice(0, 1), // current UI supports one channel
+    channels: normalizedChannels,
     distribution_mode: scene.distributionMode || scene.distribution_mode || 'MIRROR',
     overlay: scene.overlay || {
       overlays: [],

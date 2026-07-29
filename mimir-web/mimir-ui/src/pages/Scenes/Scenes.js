@@ -588,9 +588,13 @@ const Scenes = () => {
     }
   };
 
-  // Sync panelScene reference when scenes refresh (e.g. after WS event)
+  // Sync panelScene reference when scenes refresh (e.g. after WS event).
+  // Skipped while the editor is open: ProgramEditorPanel re-derives its form
+  // state from the `scene` prop's identity, so replacing it mid-edit (e.g.
+  // from a WS-triggered scenes refetch) would silently discard whatever the
+  // user just changed, including a source they just added but hadn't saved.
   useEffect(() => {
-    if (panelScene) {
+    if (panelScene && panelMode !== 'editor') {
       const fresh = scenes.find(s => s.id === panelScene.id);
       if (fresh) setPanelScene(fresh);
     }

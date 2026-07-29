@@ -88,6 +88,12 @@ class Scene(Base):
     timing_config = Column(JSON, nullable=True)  # Changed from 'schedule' to match DB
     is_active = Column(Boolean, index=True)
 
+    # Round-robin cursor: index into `channels` used by the NEXT refresh, when
+    # a scene has more than one source. Persisted (not in-memory) so rotation
+    # position survives a server restart. Unused/ignored for single-source
+    # scenes and when an interrupt source overrides the scene's own channels.
+    rotation_index = Column(Integer, nullable=False, default=0, server_default="0")
+
     # Redis integration: distribution mode
     distribution_mode = Column(String, index=True)
 
